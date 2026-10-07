@@ -1,0 +1,10 @@
+{
+  "description": "Create and manage Flutter applications effortlessly with an intuitive interface designed for developers and teams, enhancing productivity and collaboration.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
