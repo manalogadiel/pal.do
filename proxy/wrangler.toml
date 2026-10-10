@@ -1,0 +1,9 @@
+name = "paldo-groq"
+main = "groq-worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Capacitor Android serves the app from https://localhost; add your web domain here too.
+ALLOWED_ORIGINS = "https://localhost,http://localhost:8443,http://localhost:5173"
+
+# Secret (not in this file): npx wrangler secret put GROQ_API_KEY

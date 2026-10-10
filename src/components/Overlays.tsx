@@ -5,7 +5,9 @@ import { extractTitle, parseWhen, taskKind } from '../lib/parse'
 import type { Energy } from '../lib/schedule'
 import { Pal, PALS } from '../pals/Pal'
 import { Boundary } from './Chat'
-import { ChevronL, ChevronR, Glyph, SyllabusArt, Wordmark, X } from './Icons'
+import { ChevronL, ChevronR, Glyph, SyllabusArt, Trash, Wordmark, X } from './Icons'
+import { getSavedGroqKey, isGroqDisabled, setGroqApiKey, setGroqDisabled } from '../lib/groq'
+import { testAlarm } from '../lib/notifications'
 
 /* ---------- Pal stage: one character at a time, swipe or arrows ---------- */
 const IDS = Object.keys(PALS) as PalId[]
@@ -59,12 +61,35 @@ export function PalStage({ pal, hello, onPick }: { pal: PalId; hello: PalId | nu
 }
 
 /* ---------- Onboarding ---------- */
-export function Onboarding({ initial, onDone }: { initial?: { pal: PalId; name: string; energy: Energy }; onDone: (v: { pal: PalId; name: string; energy: Energy }) => void }) {
-  const [step, setStep] = useState(0)
+export function Onboarding({
+  initial,
+  onDone,
+  onClose,
+  brain,
+  onBrain,
+  prefsLabel,
+  onClearPrefs,
+}: {
+  initial?: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean }
+  onDone: (v: { pal: PalId; name: string; energy: Energy; advancedMode: boolean }) => void
+  onClose?: () => void
+  /** null = not downloaded, -1 = no WebGPU, 0..1 = progress */
+  brain?: number | null
+  onBrain?: () => void
+  /** "Nothing after 9pm · Sun free", or empty when nothing is remembered */
+  prefsLabel?: string
+  onClearPrefs?: () => void
+}) {
+  const isEditing = Boolean(initial)
+  const [step, setStep] = useState(isEditing ? 1 : 0)
   const [pal, setPal] = useState<PalId>(initial?.pal ?? 'rei')
   const [name, setName] = useState(PALS[initial?.pal ?? 'rei'].name)
   const [energy, setEnergy] = useState<Energy>(initial?.energy ?? 'afternoon')
+  const [advancedMode, setAdvancedMode] = useState<boolean>(initial?.advancedMode ?? false)
   const [hello, setHello] = useState<PalId | null>(null)
+  const [groqKey, setGroqKey] = useState(getSavedGroqKey)
+  const [groqOff, setGroqOff] = useState(() => isGroqDisabled())
+  const [alarmTesting, setAlarmTesting] = useState(false)
   useEffect(() => {
     if (!hello) return
     const t = setTimeout(() => setHello(null), 1400)
@@ -75,9 +100,36 @@ export function Onboarding({ initial, onDone }: { initial?: { pal: PalId; name: 
     <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-paper/55 p-4 pt-[max(56px,env(safe-area-inset-top))] sm:pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))] backdrop-blur-2xl backdrop-saturate-150">
       <div className="pop relative w-full max-w-[720px]">
         <div className="flex items-center justify-between px-7 pt-1">
-          <Wordmark className="text-[18px]" />
-          <div className="flex gap-1.5" aria-label={`Step ${step + 1} of 2`}>
-            {[0, 1].map((i) => <span key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === step ? 'w-5 bg-ink' : 'w-1.5 bg-ink/15'}`} />)}
+          <div className="flex items-center gap-3">
+            <Wordmark className="text-[18px]" />
+            {isEditing && (
+              <span className="rounded-full bg-ink/[0.06] px-2.5 py-0.5 text-[11px] font-medium text-ink-2">
+                Preferences
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1.5" aria-label={`Step ${step + 1} of 2`}>
+              {[0, 1].map((i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setStep(i)}
+                  className={`h-2 rounded-full transition-all duration-300 ${i === step ? 'w-6 bg-ink' : 'w-2 bg-ink/20 hover:bg-ink/40'}`}
+                  aria-label={i === 0 ? 'Pal selection' : 'Ground rules & settings'}
+                />
+              ))}
+            </div>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="press -mr-2 grid size-8 place-items-center rounded-full text-ink-3 hover-lift hover:text-ink"
+                aria-label="Close"
+              >
+                <X className="size-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -93,7 +145,7 @@ export function Onboarding({ initial, onDone }: { initial?: { pal: PalId; name: 
           <div className="grid gap-6 px-7 pt-6 pb-7 sm:grid-cols-[1fr_200px]">
             <div>
               <h1 className="font-serif text-[40px] leading-[1.02] tracking-[-0.02em]">A few ground rules.</h1>
-              <p className="mt-2 text-[15px] text-ink-2">{name || PALS[pal].name} runs fully on this device. Your plans never leave it.</p>
+              <p className="mt-2 text-[15px] text-ink-2">Your calendar stays on this device. When the AI Brain is on, {name || PALS[pal].name} sends a short summary of your schedule to answer you.</p>
               <div className="mt-5"><Boundary name={name || PALS[pal].name} /></div>
               <div className="mt-5">
                 <div className="text-[12px] font-medium text-ink-3">When do you focus best?</div>
@@ -103,12 +155,118 @@ export function Onboarding({ initial, onDone }: { initial?: { pal: PalId; name: 
                   ))}
                 </div>
               </div>
+
+              <div className="mt-5">
+                <div className="flex items-center justify-between text-[12px] font-medium text-ink-3">
+                  <span>AI Brain (Groq API)</span>
+                  <button
+                    onClick={() => { setGroqOff(!groqOff); setGroqDisabled(!groqOff) }}
+                    className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-tangerine/15 text-tangerine'}`}
+                  >
+                    {groqOff ? 'Off (local only)' : 'On'}
+                  </button>
+                  <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-tangerine hover:underline">Free API key ↗</a>
+                </div>
+                <input
+                  type="password"
+                  value={groqKey}
+                  onChange={(e) => {
+                    const k = e.target.value
+                    setGroqKey(k)
+                    setGroqApiKey(k)
+                  }}
+                  placeholder="gsk_... (optional, blank = offline rules)"
+                  className="mt-1.5 w-full rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[13px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]"
+                />
+                <div className="mt-1 text-[11px] text-ink-3">
+                  Primary: <span className="font-mono text-ink-2">qwen3.8-27b</span> · Fallback: <span className="font-mono text-ink-2">gpt-oss-20b</span> · Offline: <span className="font-mono text-ink-2">Qwen2.5 1.5B</span>
+                </div>
+              </div>
+
+              {/* Offline brain: explicit opt-in, it's a ~1 GB download */}
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-ink">Offline brain</div>
+                  <div className="text-[11.5px] text-ink-3">
+                    {brain == null ? 'Smarter replies with no internet. One-time ~1 GB download, best on Wi-Fi.'
+                      : brain < 0 ? "This browser doesn't support WebGPU, so offline replies use the rule engine."
+                      : brain >= 1 ? 'Ready. Works without internet.'
+                      : `Downloading… ${Math.round(brain * 100)}%`}
+                  </div>
+                  {brain != null && brain >= 0 && brain < 1 && (
+                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink/10">
+                      <div className="h-full rounded-full bg-tangerine transition-[width] duration-500" style={{ width: `${Math.round(brain * 100)}%` }} />
+                    </div>
+                  )}
+                </div>
+                {brain == null && onBrain && (
+                  <button type="button" onClick={onBrain} className="press h-8 shrink-0 rounded-full bg-paper px-3 text-[12px] font-medium text-ink shadow-sm hover:bg-paper-2">
+                    Download
+                  </button>
+                )}
+              </div>
+
+              {prefsLabel && (
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-ink">Remembered</div>
+                    <div className="text-[11.5px] text-ink-3">{prefsLabel}</div>
+                  </div>
+                  {onClearPrefs && (
+                    <button type="button" onClick={onClearPrefs} className="press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium text-ink-2 hover:bg-paper-3">
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Advanced Mode Toggle */}
+              <div className="mt-4 flex items-center justify-between rounded-[16px] bg-ink/[0.035] p-3">
+                <div>
+                  <div className="text-[13px] font-medium text-ink flex items-center gap-1.5">
+                    <span>Advanced Mode</span>
+                    <span className="rounded-full bg-tangerine/15 px-1.5 py-0.5 text-[10px] font-semibold text-tangerine">HUD</span>
+                  </div>
+                  <div className="text-[11.5px] text-ink-3">Show live AI model, online/offline status, and response latency on interface</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdvancedMode(!advancedMode)}
+                  className={`press relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${advancedMode ? 'bg-ink' : 'bg-ink/15'}`}
+                  role="switch"
+                  aria-checked={advancedMode}
+                  aria-label="Toggle Advanced Mode"
+                >
+                  <span
+                    className={`pointer-events-none inline-block size-5 transform rounded-full bg-paper shadow ring-0 transition duration-200 ease-in-out ${advancedMode ? 'translate-x-5' : 'translate-x-0'}`}
+                  />
+                </button>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between rounded-[16px] bg-ink/[0.035] p-3">
+                <div>
+                  <div className="text-[13px] font-medium text-ink">Offline Alarm Check</div>
+                  <div className="text-[11.5px] text-ink-3">Schedule a 5-second test alarm</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setAlarmTesting(true)
+                    await testAlarm(name || PALS[pal].name, 5)
+                    setTimeout(() => setAlarmTesting(false), 5500)
+                  }}
+                  disabled={alarmTesting}
+                  className="press h-8 rounded-full bg-paper px-3 text-[12px] font-medium text-ink shadow-sm hover:bg-paper-2 disabled:opacity-50"
+                >
+                  {alarmTesting ? 'Ringing in 5s...' : 'Test Alarm'}
+                </button>
+              </div>
             </div>
             <div className="flex flex-col items-center justify-end gap-4">
               <Pal id={pal} size={130} state="cheer" />
               <div className="flex w-full gap-2">
                 <button onClick={() => setStep(0)} className="press h-11 rounded-full px-4 text-[15px] text-ink-2 hover:bg-paper-3">Back</button>
-                <button onClick={() => onDone({ pal, name: name.trim() || PALS[pal].name, energy })} className="press h-11 flex-1 rounded-full bg-ink text-[15px] font-medium text-paper">Start</button>
+                <button onClick={() => onDone({ pal, name: name.trim() || PALS[pal].name, energy, advancedMode })} className="press h-11 flex-1 rounded-full bg-ink text-[15px] font-medium text-paper">{isEditing ? 'Save Changes' : 'Save & Start'}</button>
               </div>
             </div>
           </div>
@@ -264,6 +422,39 @@ function ToastItem({ t, dismiss }: { t: Toast; dismiss: (id: string) => void }) 
       ) : (
         <span className="w-1.5" />
       )}
+    </div>
+  )
+}
+
+/* ---------- Delete all plans (type "Delete" to confirm) ---------- */
+export function DeletePlansSheet({ count, onClose, onConfirm }: { count: number; onClose: () => void; onConfirm: () => void }) {
+  const [text, setText] = useState('')
+  const ok = text === 'Delete'
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-end bg-ink/25 sm:place-items-center sm:p-4" onClick={onClose}>
+      <div className="pop w-full max-w-[420px] rounded-t-[32px] liquid-solid p-6 sm:rounded-[32px]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between">
+          <div className="grid size-11 place-items-center rounded-full bg-red-500/15 text-red-500"><Trash className="size-5" /></div>
+          <button onClick={onClose} className="press grid size-9 place-items-center rounded-full text-ink-2 hover:bg-paper-3" aria-label="Close"><X /></button>
+        </div>
+        <h2 className="mt-3 font-serif text-[30px] leading-none tracking-[-0.02em]">Delete all plans?</h2>
+        <p className="mt-2 text-[14px] text-ink-2">This clears {count} calendar block{count === 1 ? '' : 's'} and every deadline from your planner. You can undo right after.</p>
+        <label className="mt-4 block text-[12px] font-medium text-ink-3">
+          Type <span className="font-semibold text-red-500">Delete</span> to confirm
+          <input
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && ok) onConfirm() }}
+            placeholder="Delete"
+            className={`mt-1.5 w-full rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[14px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08] ${ok ? 'text-red-500 ring-1 ring-red-500/50' : ''}`}
+          />
+        </label>
+        <div className="mt-5 flex gap-2">
+          <button onClick={onClose} className="press h-11 flex-1 rounded-full text-[15px] text-ink-2 hover:bg-paper-3">Cancel</button>
+          <button disabled={!ok} onClick={onConfirm} className="press h-11 flex-1 rounded-full bg-red-600 text-[15px] font-medium text-white transition-opacity disabled:opacity-35">Delete everything</button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,33 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { say, turn, type Awaiting, type Card, type Draft, type PendingEvent } from './lib/agent'
+import { defaultHours, say, turn, type Awaiting, type Card, type Draft, type PendingEvent } from './lib/agent'
 import { addDays, DAY, fmtDay, fmtHours, fmtTime, HOUR, hoursOf, MIN, seedWeek, startOfDay, startOfWeek, uid, type CalEvent, type PalId, type PalState, type Task } from './lib/core'
-import { propose, type Energy } from './lib/schedule'
+import { freeGaps, propose, type Energy, type Prefs } from './lib/schedule'
+import { buildContext } from './lib/context'
+import { getCachedWeather, refreshWeather, weatherLine, type Weather } from './lib/weather'
 import { Calendar, LoadStrip } from './components/Calendar'
 import { Chat, type Msg, type MascotBubble } from './components/Chat'
-import { BlockPopover, Onboarding, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
-import { ChevronL, ChevronR, Clock, Moon, Sun, Wordmark } from './components/Icons'
+import { BlockPopover, DeletePlansSheet, Onboarding, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
+import { ChevronL, ChevronR, Clock, Gear, Moon, Sun, Trash, Wordmark } from './components/Icons'
 import { Pal, PALS } from './pals/Pal'
 import { Rail, TabBar, type View } from './components/Nav'
 import { Today } from './components/Today'
 import { Tasks } from './components/Tasks'
 import { loadKokoro, speakKokoro, stopKokoro } from './lib/voice'
+import { syncEventAlarms, requestNotificationPermission } from './lib/notifications'
+import { askGroq, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, PRIMARY_MODEL, type AiAction } from './lib/groq'
+import { StatusBadge } from './components/StatusBadge'
 
 const KEY = 'paldo-v1'
 const QUIET: [number, number] = [23, 7]
 const MAX_CHECKINS = 3
 const VOICE_PITCH: Record<PalId, number> = { rei: 1.1, diel: 0.9, jhyvie: 1.3, jaypee: 1.05 }
 
-interface Settings { pal: PalId; name: string; energy: Energy; onboarded: boolean; voiceOn: boolean; notify: boolean; notifyAsked: boolean }
+interface Settings { pal: PalId; name: string; energy: Energy; onboarded: boolean; voiceOn: boolean; notify: boolean; notifyAsked: boolean; advancedMode?: boolean; prefs?: Prefs; lastBrief?: string }
 interface Saved { settings: Settings; events: CalEvent[]; tasks: Task[]; msgs: Msg[]; asked: string[]; alerted: string[]; log: Record<string, number>; offset: number }
 
 function load(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || '')
-    if (s?.settings) return { ...s, msgs: (s.msgs as Msg[]).filter((m) => m.from === 'me' || m.card || m.chips) }
+    if (s?.settings) return { ...s, msgs: (s.msgs as Msg[]) || [] }
   } catch {}
   const { events, tasks } = seedWeek(Date.now())
   return {
-    settings: { pal: 'rei', name: 'Rei', energy: 'afternoon', onboarded: false, voiceOn: false, notify: false, notifyAsked: false },
+    settings: { pal: 'rei', name: 'Rei', energy: 'afternoon', onboarded: false, voiceOn: false, notify: false, notifyAsked: false, advancedMode: false },
     events, tasks, msgs: [], asked: [], alerted: [], log: {}, offset: 0,
   }
 }
@@ -80,12 +85,59 @@ export default function App() {
   const [hover, setHover] = useState<string[]>([])
   const [pop, setPop] = useState<{ ev: CalEvent; rect: DOMRect } | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
+  const [activeModel, setActiveModel] = useState<string>(() => (hasCloudAi() ? PRIMARY_MODEL : 'Local Rules'))
+  const [lastLatency, setLastLatency] = useState<number | null>(null)
+  const [weather, setWeather] = useState<Weather | null>(getCachedWeather)
+  const [lastIntent, setLastIntent] = useState<string>('')
+  // In-browser model: null = not started, else download/compile progress 0..1
+  const [brain, setBrain] = useState<number | null>(null)
+  const brainStarted = useRef(false)
+  const loadBrain = useCallback(async () => {
+    if (brainStarted.current) return
+    brainStarted.current = true
+    const w = await import('./lib/webllm')
+    if (!(await w.isWebGpuSupported())) { brainStarted.current = false; setBrain(-1); return }
+    setBrain(0)
+    w.setWebLlmProgressHandler((p) => setBrain(Math.min(p, 0.99)))
+    const engine = await w.getWebLlmEngine()
+    setBrain(engine ? 1 : null)
+    if (!engine) brainStarted.current = false
+  }, [])
+  // Only auto-load when the ~1GB model is already cached: never surprise-download on mobile data
+  useEffect(() => {
+    const id = setTimeout(() => {
+      import('./lib/webllm').then(async (w) => { if (await w.isModelCached()) loadBrain() }).catch(() => {})
+    }, 3000)
+    return () => clearTimeout(id)
+  }, [loadBrain])
+  // Keep today's weather warm so offline questions still get an answer
+  useEffect(() => {
+    const go = () => refreshWeather().then((w) => w && setWeather(w))
+    go()
+    const i = setInterval(go, 30 * MIN)
+    window.addEventListener('online', go)
+    return () => { clearInterval(i); window.removeEventListener('online', go) }
+  }, [])
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
   const [syllabus, setSyllabus] = useState(false)
   const [editing, setEditing] = useState(false)
   const [weekOff, setWeekOff] = useState(0)
   const [dayIdx, setDayIdx] = useState((new Date().getDay() + 6) % 7)
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 899px)').matches)
   const [chatOpen, setChatOpen] = useState(false) // mobile drawer
+  const [clearing, setClearing] = useState(false)
   const [collapsed, setCollapsed] = useState(false) // desktop bubble
   const [instant, setInstant] = useState(false) // keyboard toggles skip the morph
   const [view, setViewRaw] = useState<View>(() => (localStorage.getItem('paldo.view') as View) || 'home')
@@ -179,34 +231,73 @@ export default function App() {
     return () => clearTimeout(t)
   }, [settings.voiceOn])
   const voiceOnRef = useRef(settings.voiceOn)
-  voiceOnRef.current = settings.voiceOn
+  /* ---------- voice & speech ---------- */
+  const cleanForSpeech = (raw: string): string => {
+    return raw
+      .replace(/[*#_~`>]/g, '') // remove markdown symbols
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // remove markdown links, keep text
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // remove emojis
+      .replace(/\b'yan\b/gi, 'yan') // normalize Tagalog contractions
+      .replace(/\b'to\b/gi, 'to')
+      .replace(/\b'di\b/gi, 'hindi')
+      .replace(/\b'ko\b/gi, 'ko')
+      .replace(/\b'yung\b/gi, 'yung')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
   const speak = useCallback((text: string, force = false) => {
     if ((!voiceOnRef.current && !force) || !text) return
-    // Offline Kokoro voice first; the browser voice only covers while it loads
-    const quiet = () => setMood((m) => (m?.state === 'talking' ? null : m))
-    if (speakKokoro(text, pal, () => feel('talking', 60_000), quiet)) {
-      window.speechSynthesis?.cancel()
-      return
-    }
     if (!('speechSynthesis' in window)) return
-    speechSynthesis.cancel()
-    const u = new SpeechSynthesisUtterance(text)
-    const en = voices.filter((v) => v.lang.toLowerCase().startsWith('en'))
-    // Fallback voice: match the pal's gender (Rei and Jhyvie are girls, Diel and Jaypee are boys)
-    const FEMALE = /female|samantha|victoria|karen|moira|tessa|fiona|zira|aria|jenny|libby|sonia|natasha|hazel|susan|serena|ava|allison|emma|michelle|google us english/i
-    const MALE = /\bmale|daniel|alex\b|fred|david|guy|ryan|mark|george|thomas|aaron|arthur|oliver|christopher|eric|google uk english male/i
-    const girl = pal === 'rei' || pal === 'jhyvie'
-    const pool = en.filter((v) => (girl ? FEMALE.test(v.name) && !/\bmale/i.test(v.name.replace(/female/i, '')) : MALE.test(v.name) && !/female/i.test(v.name)))
-    const pick = pool[pal === 'jhyvie' || pal === 'jaypee' ? Math.min(1, pool.length - 1) : 0] ?? en[0]
-    if (pick) u.voice = pick
-    u.lang = pick?.lang ?? 'en-US'
-    u.pitch = VOICE_PITCH[pal]
-    u.rate = pal === 'jaypee' ? 1.1 : 1
-    // Chrome pauses long utterances after ~15s; nudging resume keeps it going
+
+    const clean = cleanForSpeech(text)
+    if (!clean) return
+
+    window.speechSynthesis.cancel()
+    const u = new SpeechSynthesisUtterance(clean)
+    const all = voices.length ? voices : window.speechSynthesis.getVoices()
+
+    if (pal === 'jhyvie') {
+      // Jhyvie speaks Taglish: search for Philippine English (en-PH) or Filipino (fil-PH / tl-PH)
+      const ph = all.find((v) => v.lang === 'en-PH' || v.lang === 'fil-PH' || v.lang === 'tl-PH' || /philippines|filipino|tagalog/i.test(v.name))
+      if (ph) {
+        u.voice = ph
+        u.lang = ph.lang
+      } else {
+        const FEMALE = /female|samantha|victoria|karen|moira|tessa|fiona|zira|aria|jenny|libby|sonia|natasha|hazel|susan|serena|ava|allison|emma|michelle|google us english/i
+        const f = all.find((v) => FEMALE.test(v.name)) ?? all[0]
+        if (f) u.voice = f
+        u.lang = f?.lang ?? 'en-US'
+      }
+      u.pitch = 1.2
+      u.rate = 1.04
+    } else if (pal === 'rei') {
+      const FEMALE = /female|samantha|victoria|karen|moira|tessa|fiona|zira|aria|jenny|libby|sonia|natasha|hazel|susan|serena|ava|allison|emma|michelle|google us english/i
+      const f = all.find((v) => FEMALE.test(v.name)) ?? all[0]
+      if (f) u.voice = f
+      u.lang = f?.lang ?? 'en-US'
+      u.pitch = 1.05
+      u.rate = 0.96
+    } else if (pal === 'diel') {
+      const MALE = /\bmale|daniel|alex\b|fred|david|guy|ryan|mark|george|thomas|aaron|arthur|oliver|christopher|eric|google uk english male/i
+      const m = all.find((v) => MALE.test(v.name) && !/female/i.test(v.name)) ?? all[0]
+      if (m) u.voice = m
+      u.lang = m?.lang ?? 'en-US'
+      u.pitch = 0.95
+      u.rate = 1.0
+    } else {
+      const MALE = /\bmale|daniel|alex\b|fred|david|guy|ryan|mark|george|thomas|aaron|arthur|oliver|christopher|eric|google uk english male/i
+      const m = all.find((v) => MALE.test(v.name) && !/female/i.test(v.name)) ?? all[0]
+      if (m) u.voice = m
+      u.lang = m?.lang ?? 'en-US'
+      u.pitch = 1.05
+      u.rate = 1.12
+    }
+
     let keep = 0
     u.onstart = () => {
       feel('talking', 60_000)
-      keep = window.setInterval(() => speechSynthesis.speaking && speechSynthesis.resume(), 10_000)
+      keep = window.setInterval(() => window.speechSynthesis.speaking && window.speechSynthesis.resume(), 8_000)
     }
     const stop = () => {
       clearInterval(keep)
@@ -214,8 +305,11 @@ export default function App() {
     }
     u.onend = stop
     u.onerror = stop
-    // a tick after cancel(), or Chrome sometimes drops the utterance
-    setTimeout(() => speechSynthesis.speak(u), 40)
+
+    setTimeout(() => {
+      window.speechSynthesis.resume()
+      window.speechSynthesis.speak(u)
+    }, 25)
   }, [pal, voices])
 
   const recRef = useRef<any>(null)
@@ -226,11 +320,38 @@ export default function App() {
   const dismiss = useCallback((id: string) => setToasts((x) => x.filter((t) => t.id !== id)), [])
   const palSay = (text: string, extra: Partial<Msg> = {}, state: PalState = 'talking') => {
     setBubble({ id: uid(), mascotId: palRef.current, text, kind: 'response' })
-    // Only actionable replies enter the feed (their card/chips need a home); the text stays in the bubble
-    if (extra.card || extra.chips) setMsgs((m) => [...m, { id: uid(), from: 'pal', text, ...extra }])
+    // Always record pal replies in the chat history feed, avoiding immediate duplicates
+    setMsgs((m) => {
+      const last = m[m.length - 1]
+      if (last && last.from === 'pal' && last.text === text && !extra.card) {
+        return m
+      }
+      return [...m, { id: uid(), from: 'pal', text, ...extra }]
+    })
     feel(state, state === 'talking' ? Math.min(2600, 500 + text.length * 28) : 1800)
     speak(text)
   }
+
+  // Daily brief on the first open of the day, built only from app-computed facts
+  useEffect(() => {
+    if (!settings.onboarded || isQuiet(Date.now())) return
+    const today = new Date().toDateString()
+    if (settings.lastBrief === today) return
+    const id = setTimeout(async () => {
+      const w = (await Promise.race([refreshWeather(), new Promise<null>((r) => setTimeout(() => r(null), 4000))])) ?? getCachedWeather()
+      if (w) setWeather(w)
+      const s = buildContext(Date.now(), ev.current, tk.current, w, settings.prefs)
+      const h = new Date().getHours()
+      palSay([
+        h < 12 ? 'Good morning!' : h < 18 ? 'Good afternoon!' : 'Good evening!',
+        s.today === 'nothing else' ? 'Nothing else planned today.' : `Still today: ${s.today}.`,
+        s.weather ? `Weather: ${s.weather}.` : '',
+        s.insight,
+      ].filter(Boolean).join(' '))
+      setSettings((x) => ({ ...x, lastBrief: today }))
+    }, 1500)
+    return () => clearTimeout(id)
+  }, [settings.onboarded]) // eslint-disable-line react-hooks/exhaustive-deps
   const resolve = (id: string, resolved: string, patch: Partial<Msg> = {}) => setMsgs((m) => m.map((x) => (x.id === id ? { ...x, resolved, ...patch } : x)))
   const flash = (ids: string[]) => {
     setHighlight(new Set(ids))
@@ -243,7 +364,7 @@ export default function App() {
 
   /* ---------- planning ---------- */
   function offer(task: Task, hours: number, base: CalEvent[], lead: string) {
-    const p = propose(task, hours, base, nowRef.current, settings.energy)
+    const p = propose(task, hours, base, nowRef.current, settings.energy, settings.prefs)
     const next = [...base, ...p.blocks]
     setEvents(next)
     const commute = task.kind === 'exam' && base.some((e) => e.kind === 'commute' && e.start > nowRef.current && e.start < task.due && !e.note)
@@ -255,7 +376,7 @@ export default function App() {
     }
   }
 
-  function createTask(d: Draft) {
+  function createTask(d: Draft, lead = say(pal, 'proposal')) {
     if (!d.due || !d.hours) return
     const hasTime = new Date(d.due).getHours() !== 23
     const task: Task = { id: uid(), title: d.title, kind: d.kind, due: d.due, hours: d.hours, doneHours: 0 }
@@ -264,7 +385,7 @@ export default function App() {
         ? { id: uid(), title: d.title, kind: 'exam', start: d.due, end: d.due + 1.5 * HOUR, status: 'planned', taskId: task.id }
         : { id: uid(), title: d.title, kind: 'deadline', start: d.due, end: d.due, status: 'planned', taskId: task.id }
     setTasks((t) => [...t, task])
-    offer(task, d.hours, [...ev.current, marker], say(pal, 'proposal'))
+    offer(task, d.hours, [...ev.current, marker], lead)
   }
 
   function reflow(taskId: string, base: CalEvent[], doneDelta = 0) {
@@ -290,36 +411,153 @@ export default function App() {
     reflow(t.id, ev.current)
   }
 
+  /** Show one event as a confirm card (Add it / Never mind). Older unanswered event cards are marked replaced. */
+  function previewEvent(text: string, e: { title: string; kind: string; start: number; end: number; days?: number[] }) {
+    const slots = e.days?.length ? occurrences(e.start, e.end, e.days, nowRef.current) : [{ start: e.start, end: e.end }]
+    const conflicts = ev.current.filter((x) => x.kind === 'work' && (x.status === 'planned' || x.status === 'proposed') && slots.some((s) => x.start < s.end && x.end > s.start)).length
+    const first = slots[0] ?? { start: e.start, end: e.end }
+    setMsgs((ms) => ms.map((m) => (m.card?.type === 'event' && !m.resolved ? { ...m, resolved: 'Changed' } : m)))
+    palSay(text, { card: { type: 'event', title: e.title, kind: e.kind, start: first.start, end: first.end, conflicts, whatIf: true, days: e.days } }, conflicts ? 'alarmed' : 'talking')
+    showWeekOf(first.start)
+  }
+
   const sendRef = useRef(send)
   sendRef.current = send
-  function send(text: string) {
+  async function send(text: string) {
+    // Recent chat + the card still waiting for an answer, so follow-ups ("no, it's lunch") have context
+    const openCard = [...msgs].reverse().find((m) => m.from === 'pal' && m.card?.type === 'event' && !m.resolved)?.card
+    const lastEvent = openCard?.type === 'event' ? { title: openCard.title, kind: openCard.kind, start: openCard.start, end: openCard.end, days: openCard.days } : null
+    const history = msgs.slice(-8).filter((m) => m.text || m.card?.type === 'event').map((m) => ({
+      role: m.from === 'me' ? ('user' as const) : ('assistant' as const),
+      content: [m.text, m.card?.type === 'event' ? `[Proposed event: ${m.card.title}, ${fmtDay(m.card.start)} ${fmtTime(m.card.start)}-${fmtTime(m.card.end)}${m.resolved ? ` (${m.resolved})` : ' (waiting for user to confirm)'}]` : ''].filter(Boolean).join(' '),
+    }))
+
     setMsgs((m) => [...m, { id: uid(), from: 'me', text }])
-    const t = turn(text, { pal, now: nowRef.current, draft, awaiting, pending })
+    const snap = buildContext(nowRef.current, ev.current, tk.current, weather, settings.prefs)
+    const t = turn(text, { pal, now: nowRef.current, draft, awaiting, pending, lastEvent, facts: { next: snap.next } })
     setDraft(t.draft)
     setAwaiting(t.awaiting)
     if (t.pending !== undefined) setPending(t.pending)
     feel('listening', 500)
+
+    const groqKey = getGroqApiKey()
+    let groqText: string | null = null
+    let groqAction: AiAction | undefined
+    let usedModel: string | undefined
+
+    // Layer 1 Guardrail: If local safety rules detected cheating, grade prediction,
+    // psychiatric diagnosis, or prompt injection, bypass AI entirely and use the safe refusal.
+    // Off-topic is NOT a safety block: let the AI write its own warm redirect.
+    const isSafetyFilterTriggered = Boolean(t.rule && !/off-topic/.test(t.rule))
+
+    // Call AI (Groq or local Ollama) if configured, input is safe, and we're not inside a tight draft confirmation prompt
+    if (!isSafetyFilterTriggered && (!draft || !awaiting)) {
+      setTyping(true)
+      const t0 = performance.now()
+      try {
+        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap)
+        if (ai?.text) {
+          groqText = ai.text
+          groqAction = ai.action
+          usedModel = ai.modelUsed
+          setLastLatency(Math.round(performance.now() - t0))
+        }
+      } catch {}
+      setTyping(false)
+    }
+
+    if (usedModel) {
+      setActiveModel(usedModel)
+    } else {
+      setActiveModel('Local Rules')
+    }
+    setLastIntent(groqAction && groqAction.type !== 'none' && t.action?.type !== 'reviseEvent' && t.action?.type !== 'pref' ? groqAction.type : t.action?.type ?? (t.rule ? 'scope filter' : 'chat'))
+
     setTimeout(() => {
       const a = t.action
-      if (!a) return palSay(t.text, { card: t.card, chips: t.chips, rule: t.rule })
+      // 0. A correction to the waiting card is deterministic; it wins over whatever the AI guessed
+      if (a?.type === 'reviseEvent') return previewEvent(t.text, a)
+      if (a?.type === 'pref') {
+        setSettings((s) => ({ ...s, prefs: a.clear ? {} : { ...s.prefs, ...(a.latestHour != null ? { latestHour: a.latestHour } : {}), ...(a.blockedDays ? { blockedDays: [...new Set([...(s.prefs?.blockedDays ?? []), ...a.blockedDays])] } : {}) } }))
+        return palSay(t.text, {}, 'happy')
+      }
+
+      // 1. AI-proposed event or task: always shown for confirmation first
+      if (groqAction && groqAction.type === 'addEvent') {
+        const startMs = parseIsoToLocalMs(groqAction.start) || nowRef.current
+        const endMs = parseIsoToLocalMs(groqAction.end) || (startMs + 1 * HOUR)
+        return previewEvent(groqText || say(pal, 'eventAdd'), {
+          title: groqAction.title?.trim() || 'Event',
+          kind: groqAction.kind || 'work',
+          start: startMs,
+          end: Math.max(endMs, startMs + 30 * MIN),
+          days: groqAction.days,
+        })
+      }
+
+      if (groqAction && groqAction.type === 'createTask') {
+        const dueMs = parseIsoToLocalMs(groqAction.due) || (nowRef.current + 2 * DAY)
+        const title = groqAction.title?.trim() || 'Task'
+        const kind = groqAction.kind === 'exam' ? 'exam' : 'assignment'
+        const d: Draft = { title, kind, due: dueMs, hours: groqAction.hours || defaultHours(kind) }
+        setDraft(d)
+        setAwaiting('confirm')
+        return palSay(groqText || say(pal, 'readback'), { card: { type: 'readback', draft: d } }, 'talking')
+      }
+
+      // The model picks the intent; the app does the math (slots, free time) so nothing is hallucinated
+      if (groqAction?.type === 'findTime') {
+        const due = parseIsoToLocalMs(groqAction.due) || (nowRef.current + 7 * DAY)
+        const title = groqAction.title?.trim() || 'Study'
+        return createTask({ title, kind: 'assignment', due, hours: groqAction.hours || 2 }, groqText || say(pal, 'proposal'))
+      }
+      if (groqAction?.type === 'analyzeWeek') return palSay(groqText || `${summary()} ${snap.insight}`)
+      // A "redirect" is only trusted when the rules engine also saw nothing to plan (e.g. "math exam tuesday" is in scope)
+      if (groqAction?.type === 'redirect' && groqText && !a && !t.draft) return palSay(groqText, { rule: 'Scope: redirected to planning' })
+      if (groqAction?.type === 'redirect') groqText = null
+
+      // 2. Local rule action if present
+      const replyText = groqText || t.text
+      if (!a) return palSay(replyText, { card: t.card, chips: groqText ? undefined : t.chips, rule: t.rule })
       if (a.type === 'confirmDraft') return createTask(a.draft)
       if (a.type === 'openSyllabus') {
-        palSay(t.text)
+        palSay(replyText)
         return setSyllabus(true)
       }
       if (a.type === 'energy') {
         setSettings((s) => ({ ...s, energy: a.value }))
-        return palSay(t.text)
+        return palSay(replyText)
       }
-      if (a.type === 'summary') return palSay(summary())
-      if (a.type === 'addEvent') {
-        const slots = a.days?.length ? occurrences(a.start, a.end, a.days, nowRef.current) : [{ start: a.start, end: a.end }]
-        const conflicts = ev.current.filter((e) => e.kind === 'work' && (e.status === 'planned' || e.status === 'proposed') && slots.some((s) => e.start < s.end && e.end > s.start)).length
-        const first = slots[0] ?? { start: a.start, end: a.end }
-        palSay(say(pal, a.whatIf ? 'whatIf' : 'eventAdd'), { card: { type: 'event', title: a.title, kind: a.kind, start: first.start, end: first.end, conflicts, whatIf: a.whatIf, days: a.days } }, conflicts ? 'alarmed' : 'talking')
-        showWeekOf(first.start)
+      if (a.type === 'summary') return palSay(groqText || `${summary()} ${snap.insight}`)
+      if (a.type === 'weather') {
+        setTyping(true)
+        return void refreshWeather().then((w) => {
+          setTyping(false)
+          if (w) setWeather(w)
+          palSay(w ? weatherReply(w) : say(pal, 'weatherNone'))
+        })
       }
-    }, 380 + Math.random() * 380)
+      if (a.type === 'freeTime') return palSay(freeTimeReply(a.day))
+      if (a.type === 'addEvent') previewEvent(replyText || say(pal, a.whatIf ? 'whatIf' : 'eventAdd'), a)
+    }, groqText ? 0 : 380 + Math.random() * 380)
+  }
+
+  function weatherReply(w: Weather) {
+    const base = `Right now it's ${weatherLine(w)}.`
+    if (!w.rainHours.length) return base
+    const r0 = w.rainHours[0], r1 = w.rainHours[w.rainHours.length - 1] + HOUR
+    const wet = ev.current.find((e) => e.status === 'planned' && e.kind !== 'deadline' && e.start < r1 && e.end > r0)
+    return wet ? `${base} Heads up, that overlaps your ${wet.title} at ${fmtTime(wet.start)}, so bring an umbrella!` : base
+  }
+
+  function freeTimeReply(day: number) {
+    const d = startOfDay(day)
+    const busy = ev.current.filter((e) => e.status !== 'done' && e.status !== 'missed')
+    const gaps = freeGaps(d, Math.max(nowRef.current, d), d + DAY, busy, settings.prefs)
+    const when = d === startOfDay(nowRef.current) ? 'today' : fmtDay(d).replace(/,.*/, '')
+    if (!gaps.length) return `${when[0].toUpperCase()}${when.slice(1)} is packed, no free 45-minute windows left.`
+    const total = gaps.reduce((a, g) => a + (g.e - g.s), 0) / HOUR
+    return `Free ${when}: ${gaps.map((g) => `${fmtTime(g.s)}–${fmtTime(g.e)}`).join(', ')} (${fmtHours(total)} total).`
   }
 
   function summary() {
@@ -388,6 +626,9 @@ export default function App() {
       const added: CalEvent[] = slots.map((s) => ({ id: uid(), title: c.title, kind: c.kind as CalEvent['kind'], start: s.start, end: s.end, status: 'planned' }))
       const hit = ev.current.filter((e) => e.kind === 'work' && (e.status === 'planned' || e.status === 'proposed') && added.some((a) => e.start < a.end && e.end > a.start))
       const base = [...ev.current.filter((e) => !hit.includes(e)), ...added]
+      showWeekOf(added[0].start)
+      setView('week')
+      if (mobile) setChatOpen(false)
       resolve(id, c.conflicts ? 'Added. Re-planning the overlap…' : added.length > 1 ? `Added ${added.length} sessions over the next 8 weeks` : 'Added')
       setTimeout(() => feel('happy', 1400), 60)
       const affected = [...new Set(hit.map((e) => e.taskId).filter(Boolean))] as string[]
@@ -399,12 +640,22 @@ export default function App() {
       return
     }
     if (c?.type === 'notify') {
-      if (action === 'notifyOn' && 'Notification' in window) {
-        Notification.requestPermission().then((p) => setSettings((s) => ({ ...s, notify: p === 'granted' })))
+      if (action === 'notifyOn') {
+        requestNotificationPermission().then((granted) => {
+          setSettings((s) => ({ ...s, notify: granted }))
+          if (granted) syncEventAlarms(ev.current, name)
+        })
         resolve(id, 'Reminders on')
       } else resolve(id, 'In-app reminders only')
     }
   }
+
+  // Keep offline hardware alarms synchronized with planned events
+  useEffect(() => {
+    if (settings.notify) {
+      syncEventAlarms(events, name)
+    }
+  }, [events, settings.notify, name])
 
   function answerCheckin(eventId: string, a: 'done' | 'partly' | 'notyet') {
     const e = ev.current.find((x) => x.id === eventId)
@@ -545,9 +796,9 @@ export default function App() {
     }
   }
 
-  function finishOnboarding(v: { pal: PalId; name: string; energy: Energy }) {
+  function finishOnboarding(v: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean }) {
     const first = !settings.onboarded
-    setSettings((s) => ({ ...s, ...v, onboarded: true }))
+    setSettings((s) => ({ ...s, ...v, onboarded: true, advancedMode: v.advancedMode ?? s.advancedMode ?? false }))
     setEditing(false)
     if (first)
       setTimeout(() => {
@@ -555,6 +806,15 @@ export default function App() {
         setBubble({ id: uid(), mascotId: v.pal, text: say(v.pal, 'greet'), kind: 'greeting' })
         feel('wave', 1600)
       }, 250)
+  }
+
+  function clearAllPlans() {
+    const beforeEv = ev.current, beforeTk = tk.current
+    setEvents([])
+    setTasks([])
+    setClearing(false)
+    feel('shocked', 1100)
+    toast({ text: 'All plans deleted', action: { label: 'Undo', fn: () => { setEvents(beforeEv); setTasks(beforeTk) } } })
   }
 
   function resetDemo() {
@@ -654,6 +914,7 @@ export default function App() {
       <button onClick={() => setWeekOff((w) => w - 1)} className="press grid size-10 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Previous week"><ChevronL /></button>
       <span className="tnum min-w-[96px] text-center text-[14px] font-semibold">{weekLabel}</span>
       <button onClick={() => setWeekOff((w) => w + 1)} className="press grid size-10 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Next week"><ChevronR /></button>
+      <button onClick={() => setClearing(true)} className="press ml-1 grid size-10 place-items-center rounded-full text-ink-3 hover-lift hover:text-red-500" aria-label="Delete all plans" title="Delete all plans"><Trash /></button>
       {weekOff !== 0 && <button onClick={() => setWeekOff(0)} className="pop press ml-1 h-8 rounded-full bg-tangerine-soft px-3 text-[12px] font-medium text-ink">This week</button>}
     </div>
   )
@@ -700,8 +961,28 @@ export default function App() {
           <header className="flex shrink-0 items-center gap-2 px-2 pt-1">
             <Wordmark className="text-[18px]" />
             <div className="flex-1" />
+            {settings.advancedMode && (
+              <StatusBadge
+                isOnline={isOnline}
+                hasGroqKey={hasCloudAi()}
+                activeModel={activeModel}
+                latency={lastLatency}
+                brain={brain}
+                lastIntent={lastIntent}
+                compact
+                onOpenSettings={() => setEditing(true)}
+              />
+            )}
             {palSwitch}
             {themeBtn}
+            <button
+              onClick={() => setEditing(true)}
+              className="press grid size-10 place-items-center rounded-full text-ink-2"
+              aria-label="Pal and preferences"
+              title="Pal and preferences"
+            >
+              <Gear className="size-[18px]" />
+            </button>
           </header>
           <main key={view} className="under-dock view-in liquid min-h-0 flex-1 overflow-hidden rounded-[28px]">{content}</main>
           {/* Floating composer + pal above the tab bar; tap expands into the full conversation */}
@@ -726,7 +1007,20 @@ export default function App() {
             <div className="h-full w-[clamp(400px,34vw,520px)]">{chat}</div>
           </aside>
           <section className="liquid relative min-h-0 flex-1 overflow-hidden rounded-[30px]">
-            <div className="absolute top-3 right-3 z-30">{palSwitch}</div>
+            <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+              {settings.advancedMode && (
+                <StatusBadge
+                  isOnline={isOnline}
+                  hasGroqKey={hasCloudAi()}
+                  activeModel={activeModel}
+                  latency={lastLatency}
+                brain={brain}
+                lastIntent={lastIntent}
+                  onOpenSettings={() => setEditing(true)}
+                />
+              )}
+              {palSwitch}
+            </div>
             <div key={view} className="view-in h-full">{content}</div>
           </section>
           {collapsed && (
@@ -751,9 +1045,21 @@ export default function App() {
           onDelete={() => deleteEvent(pop.ev)}
         />
       )}
+      {clearing && <DeletePlansSheet onClose={() => setClearing(false)} onConfirm={clearAllPlans} count={events.length} />}
       {syllabus && <SyllabusSheet now={now} onClose={() => setSyllabus(false)} onAdd={addSyllabus} />}
       {(!settings.onboarded || editing) && (
-        <Onboarding initial={settings.onboarded ? settings : undefined} onDone={finishOnboarding} />
+        <Onboarding
+          initial={settings.onboarded ? settings : undefined}
+          onDone={finishOnboarding}
+          onClose={settings.onboarded ? () => setEditing(false) : undefined}
+          brain={brain}
+          onBrain={loadBrain}
+          prefsLabel={[
+            settings.prefs?.latestHour != null ? `Nothing after ${fmtTime(new Date().setHours(settings.prefs.latestHour, 0, 0, 0))}` : '',
+            settings.prefs?.blockedDays?.length ? `${settings.prefs.blockedDays.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')} kept free` : '',
+          ].filter(Boolean).join(' · ')}
+          onClearPrefs={() => setSettings((s) => ({ ...s, prefs: {} }))}
+        />
       )}
       {editing && (
         <button onClick={resetDemo} className="fixed bottom-4 left-1/2 z-[55] -translate-x-1/2 rounded-full bg-paper px-4 py-2 text-[12.5px] text-ink-2 shadow-[var(--shadow-lg)]">Reset demo week</button>
