@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
+import { eventAlarmId, SESSION_ALARM_ID } from './alarmIds'
 import type { CalEvent } from './core'
 
 export const isNative = Capacitor.isNativePlatform()
@@ -46,16 +47,6 @@ export async function checkNotificationPermission(): Promise<boolean> {
   return false
 }
 
-/** Convert string ID to a numeric ID for Capacitor LocalNotifications */
-function hashId(id: string): number {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash << 5) - hash + id.charCodeAt(i)
-    hash |= 0
-  }
-  return Math.abs(hash)
-}
-
 /** Sync all upcoming calendar events to native offline alarms */
 export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
   if (!isNative) return
@@ -74,7 +65,7 @@ export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
     const notifications = upcoming.slice(0, 50).map((e) => {
       const alertTime = Math.max(now + 5000, e.start - 10 * 60 * 1000)
       return {
-        id: hashId(e.id),
+        id: eventAlarmId(e.id),
         title: `${palName}: ${e.title}`,
         body: `Starts at ${new Date(e.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Ready to begin?`,
         schedule: { at: new Date(alertTime) },
@@ -83,11 +74,12 @@ export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
       }
     })
 
-    // Cancel existing pending notifications and reschedule clean set
+    // Cancel pending calendar alarms and reschedule a clean set. Never touch the Study timer's alarm.
     const pending = await LocalNotifications.getPending()
-    if (pending.notifications.length > 0) {
+    const stale = pending.notifications.filter((n) => n.id !== SESSION_ALARM_ID)
+    if (stale.length > 0) {
       await LocalNotifications.cancel({
-        notifications: pending.notifications.map((n) => ({ id: n.id })),
+        notifications: stale.map((n) => ({ id: n.id })),
       })
     }
 
@@ -137,4 +129,54 @@ export async function testAlarm(palName = 'Rei', delaySeconds = 5): Promise<bool
   }
 
   return false
+}
+
+/** Study tab: native alarm for the end of the current phase (one at a time). No-op on web. */
+export async function scheduleSessionAlarm(at: number, title: string, body: string) {
+  if (!isNative) return
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: SESSION_ALARM_ID }] })
+    await LocalNotifications.schedule({
+      notifications: [{ id: SESSION_ALARM_ID, title, body, schedule: { at: new Date(at), allowWhileIdle: true }, sound: 'beep.wav' }],
+    })
+  } catch (err) {
+    console.warn('[notifications] Session alarm failed:', err)
+  }
+}
+
+export async function cancelSessionAlarm() {
+  if (!isNative) return
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: SESSION_ALARM_ID }] })
+  } catch (err) {
+    console.warn('[notifications] Cancel session alarm failed:', err)
+  }
+}
+
+/** Browser notification if already permitted. Never prompts, never throws. */
+export function notifyWeb(title: string, body: string) {
+  try {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') new Notification(title, { body })
+  } catch {}
+}
+
+/** Two short 880 Hz beeps via WebAudio; no asset needed. Never throws. */
+export function playChime() {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctx) return
+    const ctx = new Ctx()
+    for (const offset of [0, 0.25]) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.frequency.value = 880
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset)
+      gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + offset + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.15)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(ctx.currentTime + offset)
+      osc.stop(ctx.currentTime + offset + 0.16)
+    }
+    setTimeout(() => ctx.close().catch(() => {}), 800)
+  } catch {}
 }

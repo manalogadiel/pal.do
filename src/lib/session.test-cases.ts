@@ -1,4 +1,5 @@
 // Pomodoro session model regression net. Run by `pnpm eval:chat` (scripts/eval-chat.mjs).
+import { eventAlarmId, SESSION_ALARM_ID } from './alarmIds'
 import { FOCUS_MS, IDLE, pause, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './session'
 
 const MIN = 60_000
@@ -34,5 +35,13 @@ export function runSessionTests(): string[] {
   eq('skip paused focus', pick(skip(pause(s0, 5 * MIN), 40 * MIN)), { phase: 'break', round: 1, phaseEndsAt: 45 * MIN, completedFocusMs: 5 * MIN })
   eq('idle tick', tick(IDLE, 5 * MIN), IDLE)
   eq('stop', stop(), IDLE)
+
+  // Calendar alarm ids must never collide with the reserved session alarm id
+  for (const id of ['a', 'zzzzzzzzzz', 'k3j4h5', '0000000', 'event-with-a-long-id-1234567890']) {
+    const n = eventAlarmId(id)
+    if (!(n >= 1 && n < 900_000)) fails.push(`eventAlarmId(${id}) = ${n} outside 1..899999`)
+  }
+  eq('eventAlarmId stable', eventAlarmId('abc'), eventAlarmId('abc'))
+  eq('session id reserved', SESSION_ALARM_ID, 900001)
   return fails
 }
