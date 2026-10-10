@@ -142,6 +142,16 @@ export default function App() {
   const [clearing, setClearing] = useState(false)
   const [collapsed, setCollapsed] = useState(false) // desktop bubble
   const [instant, setInstant] = useState(false) // keyboard toggles skip the morph
+  // Width of the floating badge + pal switch (desktop), so the Week header can keep clear of it
+  const clusterRef = useRef<HTMLDivElement>(null)
+  const [clusterW, setClusterW] = useState(0)
+  useEffect(() => {
+    const el = clusterRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setClusterW(Math.ceil(el.getBoundingClientRect().width)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [mobile])
   const [view, setViewRaw] = useState<View>(() => (localStorage.getItem('paldo.view') as View) || 'home')
   const setView = (v: View) => {
     setViewRaw(v)
@@ -567,7 +577,7 @@ export default function App() {
         const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!openMsg)
         if (ai?.text) {
           // A reply claiming it already added something it can't add: point at the real way instead
-          groqText = ai.claimed ? (openMsg || ai.action?.type === 'addEvent' ? say(pal, 'confirmHint') : null) : ai.text
+          groqText = ai.claimed ? say(pal, openMsg || ai.action?.type === 'addEvent' ? 'confirmHint' : 'nothingWaiting') : ai.text
           groqAction = ai.action
           usedModel = ai.modelUsed
           setLastLatency(Math.round(performance.now() - t0))
@@ -1075,7 +1085,7 @@ export default function App() {
       </div>
     ) : (
       <div className="flex h-full flex-col">
-        <div className="flex shrink-0 items-center gap-4 px-4 pt-3 pb-1">
+        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-3 pb-1" style={{ paddingRight: clusterW ? clusterW + 24 : undefined }}>
           {weekNav}
           {simCluster}
           <div className="hidden xl:block"><LoadStrip weekStart={weekStart} events={events} active={weekOff === 0 ? (new Date(now).getDay() + 6) % 7 : undefined} onPick={(i) => setDayIdx(i)} /></div>
@@ -1141,7 +1151,7 @@ export default function App() {
             <div className="h-full w-[clamp(400px,34vw,520px)]">{chat}</div>
           </aside>
           <section className="liquid relative min-h-0 flex-1 overflow-hidden rounded-[30px]">
-            <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+            <div ref={clusterRef} className="absolute top-3 right-3 z-30 flex items-center gap-2">
               {settings.advancedMode && (
                 <StatusBadge
                   isOnline={isOnline}

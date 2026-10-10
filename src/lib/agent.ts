@@ -112,6 +112,7 @@ const BASE: Lines = {
   eventAdd: ['Add this?', 'Want me to put this in?'],
   eventAdded: ['Added! {what} is on your calendar.', 'Done, {what} is in.'],
   eventSkipped: ["Okay, I left it off.", 'Sure, not adding it.'],
+  nothingWaiting: ["Hmm, I don't have anything ready to add yet. What should I put in, and when?"],
   confirmHint: ["Tap Add it on the card, or just tell me to go ahead, and it's on your calendar.", 'Say the word or tap Add it, and I\'ll put it in.'],
   whatIf: ['It would look like this:'],
   notify: ['Want a little heads-up before each block starts?'],

@@ -57,7 +57,22 @@ export const SANITIZE_CASES: { name: string; ok: () => boolean }[] = [
   { name: 'skipEvent with no card waiting → none', ok: () => sanitizeAi({ text: 'Okay!', action: { type: 'skipEvent' } }, 'wag na', 0, false)?.action?.type === 'none' },
   { name: '"Done! Added" with no write is flagged', ok: () => sanitizeAi({ text: "Done! Added your simba for tomorrow.", action: { type: 'none' } }, 'tama', 0, true)?.claimed === true },
   { name: '"I\'ve locked in" with no write is flagged', ok: () => sanitizeAi({ text: "I've locked in your simba!", action: { type: 'none' } }, 'simba 9am', 0, false)?.claimed === true },
+  { name: '"Want me to lock it in?" is a question, not a claim', ok: () => !sanitizeAi({ text: 'Moving it to 10-11am. Want me to lock it in?', action: { type: 'none' } }, 'hi', 0, false)?.claimed },
   { name: 'a plain question is not flagged', ok: () => !sanitizeAi({ text: 'Simba tomorrow 9-10am, want me to add it?', action: { type: 'none' } }, 'hi', 0, false)?.claimed },
+  // Re-proposals grounded in an earlier message ("asan na" after "simba bukas 9 to 10am")
+  { name: 'addEvent grounded in a recent user message is kept', ok: () => sanitizeAi({ text: 'Simba bukas 9-10am, tama ba?', action: { type: 'addEvent', title: 'Simba', start: '2026-10-11T09:00:00', end: '2026-10-11T10:00:00' } }, 'asan na', 0, false, 'simba bukas 9 to 10am')?.action?.type === 'addEvent' },
+  { name: 'addEvent with no time anywhere → none', ok: () => sanitizeAi({ text: 'Gym?', action: { type: 'addEvent', title: 'Gym', start: '2026-10-11T09:00:00' } }, 'hi', 0, false, 'hello there')?.action?.type === 'none' },
+  { name: 'yes to a cardless proposal becomes a card', ok: () => sanitizeAi({ text: 'Sige!', action: { type: 'confirmEvent', title: 'Simba', kind: 'protected', start: '2026-10-11T09:00:00', end: '2026-10-11T10:00:00' } }, 'oo', 0, false, 'simba bukas 9 to 10am')?.action?.type === 'addEvent' },
+  {
+    name: 'yes with no card and no details → none + claimed',
+    ok: () => { const r = sanitizeAi({ text: 'Adding it now!', action: { type: 'confirmEvent' } }, 'oo', 0, false, ''); return r?.action?.type === 'none' && r.claimed === true },
+  },
+  { name: '"Adding Simba now" with no write is flagged', ok: () => sanitizeAi({ text: 'Got it! Adding Simba now.', action: { type: 'none' } }, 'oo', 0, false)?.claimed === true },
+  { name: '"Let me lock it in again" with no write is flagged', ok: () => sanitizeAi({ text: 'Let me lock it in again: Simba bukas 9am.', action: { type: 'none' } }, 'asan na', 0, false)?.claimed === true },
+  {
+    name: 'ISO timestamps become human times',
+    ok: () => { const t = sanitizeAi({ text: 'Adding Simba from 2026-10-11T09:00:00 to 2026-10-11T10:00:00.', action: { type: 'none' } }, 'hi', 0, false)?.text ?? ''; return !/\d{4}-\d{2}-\d{2}T/.test(t) && t.includes('9am') && t.includes('10am') },
+  },
   {
     name: '[Proposed event …] and \\n are stripped',
     ok: () => sanitizeAi({ text: 'Got it, 9 to 10am! [Proposed event: Simba, Sun, Oct 11 9am-10am]\\n', action: { type: 'none' } }, 'hi', 0, false)?.text === 'Got it, 9 to 10am!',
@@ -92,6 +107,12 @@ export const LLM_CASES: Case[] = [
   { input: 'cancel that', lastEvent: SIMBA, history: ASKED, expect: { action: 'skipEvent' } },
   { input: 'make it 10 to 11 instead', lastEvent: SIMBA, history: ASKED, expect: { action: 'addEvent' } },
   { input: 'ok add it', expect: { notAction: 'confirmEvent' }, note: 'nothing waiting, so nothing to confirm' },
+  // The screenshot: Pal proposed in words, no card exists, user says "oo" → a working card, not a dead end
+  {
+    input: 'oo',
+    history: [{ role: 'user', content: 'simba bukas 9 to 10am' }, { role: 'assistant', content: 'Simba bukas, 9am to 10am. Tama ba?' }],
+    expect: { action: 'addEvent' },
+  },
 ]
 
 function score(c: Case, text: string, action: string | undefined, now: number) {
