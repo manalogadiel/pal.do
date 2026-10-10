@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
-import { eventAlarmId, SESSION_ALARM_ID } from './alarmIds'
+import { alarmMode, eventAlarmId, isReservedAlarmId, makeSerial, SESSION_ALARM_IDS, type AlarmMode } from './alarmIds'
+import { makeChime } from './chime'
 import type { CalEvent } from './core'
 
 export const isNative = Capacitor.isNativePlatform()
@@ -52,8 +53,9 @@ export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
   if (!isNative) return
 
   try {
-    const hasPerm = await checkNotificationPermission()
-    if (!hasPerm) return
+    // Never prompts: schedule() would otherwise open OS permission/settings screens on every calendar change
+    const mode = await nativeAlarmMode()
+    if (mode === 'off') return
 
     const now = Date.now()
     // Find future events that are planned
@@ -70,13 +72,14 @@ export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
         body: `Starts at ${new Date(e.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Ready to begin?`,
         schedule: { at: new Date(alertTime) },
         sound: 'beep.wav',
+        isExactNotification: mode === 'exact',
         extra: { eventId: e.id },
       }
     })
 
-    // Cancel pending calendar alarms and reschedule a clean set. Never touch the Study timer's alarm.
+    // Cancel pending calendar alarms and reschedule a clean set. Never touch the Study timer's alarms.
     const pending = await LocalNotifications.getPending()
-    const stale = pending.notifications.filter((n) => n.id !== SESSION_ALARM_ID)
+    const stale = pending.notifications.filter((n) => !isReservedAlarmId(n.id))
     if (stale.length > 0) {
       await LocalNotifications.cancel({
         notifications: stale.map((n) => ({ id: n.id })),
@@ -131,26 +134,72 @@ export async function testAlarm(palName = 'Rei', delaySeconds = 5): Promise<bool
   return false
 }
 
-/** Study tab: native alarm for the end of the current phase (one at a time). No-op on web. */
-export async function scheduleSessionAlarm(at: number, title: string, body: string) {
-  if (!isNative) return
+/** Current policy for native alarms, without ever prompting. */
+async function nativeAlarmMode(): Promise<AlarmMode> {
+  const notifications = await checkNotificationPermission()
+  let exact: string | undefined
   try {
-    await LocalNotifications.cancel({ notifications: [{ id: SESSION_ALARM_ID }] })
-    await LocalNotifications.schedule({
-      notifications: [{ id: SESSION_ALARM_ID, title, body, schedule: { at: new Date(at), allowWhileIdle: true }, sound: 'beep.wav' }],
-    })
+    exact = (await LocalNotifications.checkExactNotificationSetting()).exact_alarm
+  } catch {}
+  return alarmMode(notifications, exact)
+}
+
+/**
+ * The only place the app may show OS permission screens, so call it only from an explicit "Turn on alarms" tap:
+ * asks for notifications, then (Android 12+) sends the user to "Alarms & reminders" if exact alarms are off.
+ */
+export async function enableAlarms(): Promise<boolean> {
+  const granted = await requestNotificationPermission()
+  if (granted && isNative) {
+    try {
+      const { exact_alarm } = await LocalNotifications.checkExactNotificationSetting()
+      if (exact_alarm !== 'granted') await LocalNotifications.changeExactNotificationSetting()
+    } catch {}
+  }
+  return granted
+}
+
+
+// One at a time, in call order, so the latest Start/Pause/Skip/Resume decides which alarms exist
+const sessionOps = makeSerial()
+
+async function cancelSessionAlarmsNow() {
+  try {
+    await LocalNotifications.cancel({ notifications: SESSION_ALARM_IDS.map((id) => ({ id })) })
   } catch (err) {
-    console.warn('[notifications] Session alarm failed:', err)
+    console.warn('[notifications] Cancel session alarms failed:', err)
   }
 }
 
-export async function cancelSessionAlarm() {
-  if (!isNative) return
+/** Study tab: one native alarm per remaining phase end of the set, so they fire with the app in the background. */
+export function scheduleSessionAlarms(alarms: { at: number; title: string; body: string }[]) {
+  if (!isNative) return Promise.resolve()
+  return sessionOps(() => armSessionAlarmsNow(alarms))
+}
+
+async function armSessionAlarmsNow(alarms: { at: number; title: string; body: string }[]) {
   try {
-    await LocalNotifications.cancel({ notifications: [{ id: SESSION_ALARM_ID }] })
+    await cancelSessionAlarmsNow()
+    const mode = await nativeAlarmMode()
+    if (mode === 'off' || alarms.length === 0) return
+    await LocalNotifications.schedule({
+      notifications: alarms.slice(0, SESSION_ALARM_IDS.length).map((a, i) => ({
+        id: SESSION_ALARM_IDS[i],
+        title: a.title,
+        body: a.body,
+        schedule: { at: new Date(a.at), allowWhileIdle: true },
+        sound: 'beep.wav',
+        isExactNotification: mode === 'exact',
+      })),
+    })
   } catch (err) {
-    console.warn('[notifications] Cancel session alarm failed:', err)
+    console.warn('[notifications] Session alarms failed:', err)
   }
+}
+
+export function cancelSessionAlarms() {
+  if (!isNative) return Promise.resolve()
+  return sessionOps(cancelSessionAlarmsNow)
 }
 
 /** Browser notification if already permitted. Never prompts, never throws. */
@@ -160,23 +209,10 @@ export function notifyWeb(title: string, body: string) {
   } catch {}
 }
 
-/** Two short 880 Hz beeps via WebAudio; no asset needed. Never throws. */
-export function playChime() {
-  try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!Ctx) return
-    const ctx = new Ctx()
-    for (const offset of [0, 0.25]) {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.frequency.value = 880
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset)
-      gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + offset + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.15)
-      osc.connect(gain).connect(ctx.destination)
-      osc.start(ctx.currentTime + offset)
-      osc.stop(ctx.currentTime + offset + 0.16)
-    }
-    setTimeout(() => ctx.close().catch(() => {}), 800)
-  } catch {}
-}
+const chime = makeChime(() =>
+  typeof window === 'undefined' ? undefined : window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext,
+)
+/** Call from a tap (Start/Resume/Skip) so the phase-end chime is allowed to sound later. */
+export const unlockChime = () => chime.unlock()
+/** Two short beeps; silent if the browser blocks audio or has none. Never throws. */
+export const playChime = () => chime.play()

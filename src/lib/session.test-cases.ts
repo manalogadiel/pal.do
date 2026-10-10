@@ -1,10 +1,11 @@
 // Pomodoro session model regression net. Run by `pnpm eval:chat` (scripts/eval-chat.mjs).
-import { eventAlarmId, SESSION_ALARM_ID } from './alarmIds'
-import { focusElapsed, fromSaved, FOCUS_MS, IDLE, pause, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './session'
+import { alarmMode, eventAlarmId, isReservedAlarmId, makeSerial, SESSION_ALARM_ID, SESSION_ALARM_IDS } from './alarmIds'
+import { makeChime } from './chime'
+import { focusElapsed, fromSaved, FOCUS_MS, IDLE, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './session'
 
 const MIN = 60_000
 
-export function runSessionTests(): string[] {
+export async function runSessionTests(): Promise<string[]> {
   const fails: string[] = []
   const eq = (name: string, got: unknown, want: unknown) => {
     if (JSON.stringify(got) !== JSON.stringify(want)) fails.push(`${name}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`)
@@ -19,7 +20,11 @@ export function runSessionTests(): string[] {
   // r4 focus 90–115, long break 115–130
   const r4 = tick(s0, 116 * MIN)
   eq('long break', [r4.phase, r4.round, phaseLabel(r4), r4.phaseEndsAt], ['break', 4, 'Long break', 130 * MIN])
-  eq('after long break', pick(tick(s0, 130 * MIN)), { phase: 'focus', round: 1, phaseEndsAt: 155 * MIN, completedFocusMs: 100 * MIN })
+  // A long break that ends on its own closes the set, so a forgotten timer can't log hours of fake focus
+  eq('after long break', pick(tick(s0, 130 * MIN)), { phase: 'idle', round: 1, phaseEndsAt: 0, completedFocusMs: 100 * MIN })
+  eq('forgotten 24h credits one set only', pick(tick(s0, 24 * 60 * MIN)), { phase: 'idle', round: 1, phaseEndsAt: 0, completedFocusMs: 100 * MIN })
+  eq('skip long break keeps going', pick(skip(r4, 117 * MIN)), { phase: 'focus', round: 1, phaseEndsAt: 142 * MIN, completedFocusMs: 100 * MIN })
+  eq('ancient phaseEndsAt is bounded', pick(tick(fromSaved({ ...s0, phaseEndsAt: 0 }), 1e12)), { phase: 'idle', round: 1, phaseEndsAt: 0, completedFocusMs: 100 * MIN })
   eq('jump 2h', pick(tick(s0, 120 * MIN)), { phase: 'break', round: 4, phaseEndsAt: 130 * MIN, completedFocusMs: 100 * MIN })
 
   const p = pause(s0, 10 * MIN)
@@ -55,5 +60,51 @@ export function runSessionTests(): string[] {
   }
   eq('eventAlarmId stable', eventAlarmId('abc'), eventAlarmId('abc'))
   eq('session id reserved', SESSION_ALARM_ID, 900001)
+
+  // Every remaining phase end of the set gets its own alarm, so background Android still hears "break's over"
+  const ends = (s: Session, now: number) => phaseEnds(s, now).map((e) => [e.at / MIN, e.phase, e.round])
+  eq('phaseEnds from start', ends(s0, 0), [[25, 'focus', 1], [30, 'break', 1], [55, 'focus', 2], [60, 'break', 2], [85, 'focus', 3], [90, 'break', 3], [115, 'focus', 4], [130, 'break', 4]])
+  eq('phaseEnds mid-set', ends(tick(s0, 100 * MIN), 100 * MIN), [[115, 'focus', 4], [130, 'break', 4]])
+  eq('phaseEnds paused', phaseEnds(p, 0), [])
+  eq('phaseEnds idle', phaseEnds(IDLE, 0), [])
+  eq('alarm block fits a whole set', SESSION_ALARM_IDS.length >= phaseEnds(s0, 0).length, true)
+  eq('alarm block ids', [SESSION_ALARM_IDS[0], SESSION_ALARM_IDS.every(isReservedAlarmId)], [900001, true])
+  eq('event ids not reserved', isReservedAlarmId(eventAlarmId('zzzzzzzzzz')), false)
+
+  // A running timer must never open OS permission/settings screens on its own
+  eq('alarmMode no permission', alarmMode(false, 'granted'), 'off')
+  eq('alarmMode exact', alarmMode(true, 'granted'), 'exact')
+  eq('alarmMode exact denied', alarmMode(true, 'denied'), 'inexact')
+  eq('alarmMode exact unknown', alarmMode(true, undefined), 'inexact')
+
+  // One shared AudioContext, resumed inside a tap, so browsers let the chime play later from a timer
+  let made = 0, resumed = 0, beeps = 0
+  class FakeAudio {
+    state = 'suspended'
+    currentTime = 0
+    destination = {}
+    constructor() { made++ }
+    resume() { resumed++; this.state = 'running'; return Promise.resolve() }
+    createOscillator() { beeps++; return { frequency: { value: 0 }, connect: (n: unknown) => n, start() {}, stop() {} } }
+    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect: (n: unknown) => n } }
+  }
+  const chime = makeChime(() => FakeAudio as unknown as new () => AudioContext)
+  chime.unlock()
+  chime.play()
+  chime.play()
+  eq('chime one shared context', made, 1)
+  eq('chime resumed in the tap', resumed, 1)
+  eq('chime two beeps per play', beeps, 4)
+  // Alarm ops run in call order: a quick Pause must not finish before the Start's slower arming
+  const order: string[] = []
+  const serial = makeSerial()
+  serial(() => new Promise<void>((ok) => setTimeout(() => { order.push('arm'); ok() }, 20)))
+  await serial(async () => { order.push('cancel') })
+  eq('alarm ops keep call order', order, ['arm', 'cancel'])
+  const afterFailure: string[] = []
+  serial(async () => { throw new Error('plugin failed') })
+  await serial(async () => { afterFailure.push('ran') })
+  eq('alarm ops continue after a failure', afterFailure, ['ran'])
+  eq('chime without audio support is silent', (() => { try { makeChime(() => undefined).play(); return 'ok' } catch { return 'threw' } })(), 'ok')
   return fails
 }

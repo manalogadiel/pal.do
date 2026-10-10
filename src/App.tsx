@@ -13,8 +13,8 @@ import { Rail, TabBar, type View } from './components/Nav'
 import { Today } from './components/Today'
 import { Tasks } from './components/Tasks'
 import { loadKokoro, speakKokoro, stopKokoro } from './lib/voice'
-import { cancelSessionAlarm, notifyWeb, playChime, requestNotificationPermission, scheduleSessionAlarm, syncEventAlarms } from './lib/notifications'
-import { focusElapsed, fromSaved, isPaused, pause, phaseLabel, resume, skip, start, stop, tick, type Session } from './lib/session'
+import { cancelSessionAlarms, enableAlarms, notifyWeb, playChime, scheduleSessionAlarms, syncEventAlarms, unlockChime } from './lib/notifications'
+import { focusElapsed, fromSaved, isPaused, LONG_EVERY, pause, phaseEnds, phaseLabel, resume, skip, start, stop, tick, type Session } from './lib/session'
 import { Study } from './components/Study'
 import { askGroq, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, PRIMARY_MODEL, type AiAction } from './lib/groq'
 import { StatusBadge } from './components/StatusBadge'
@@ -188,41 +188,76 @@ export default function App() {
     const day = new Date().toDateString()
     setFocusLog((l) => ({ ...l, [day]: (l[day] ?? 0) + min }))
   }
-  const alarmBody = (s: Session) => (s.phase === 'focus' ? 'Round done! Time for a break.' : "Break's over. Ready for the next round?")
+  // The view as of now, for callbacks created in older renders (the reconcile interval)
+  const viewRef = useRef(view)
+  viewRef.current = view
+  // Alarms are armed ahead of time, so each text names the phase that is ending
+  const alarmBody = (e: { phase: 'focus' | 'break'; round: number }) =>
+    e.phase === 'focus'
+      ? e.round === LONG_EVERY ? 'Four rounds done! Time for a longer break.' : 'Round done! Time for a break.'
+      : e.round === LONG_EVERY ? "Set complete! Start another whenever you're ready." : "Break's over. Next round is starting."
+  /** One native alarm per phase end left in the set. Only user actions re-arm; natural transitions are already armed. */
+  const armSession = (s: Session) =>
+    scheduleSessionAlarms(phaseEnds(s, Date.now()).map((e) => ({ at: e.at, title: PALS[palRef.current].name, body: alarmBody(e) })))
+  /** Explicit opt-in (reminders card or Study hint): the only path allowed to show OS permission screens. */
+  const turnOnAlarms = () =>
+    enableAlarms().then((granted) => {
+      setSettings((s) => ({ ...s, notify: granted }))
+      if (!granted) return
+      syncEventAlarms(ev.current, name)
+      const s = sessionRef.current
+      if (s.phase !== 'idle' && !isPaused(s)) armSession(s)
+    })
 
-  /** The one place a session changes: logs focus, re-arms the alarm, and lets the pal react to a new phase. */
+  /** The one place a session changes: logs focus and lets the pal react to a new phase (or a finished set). */
   function applySession(next: Session, prev: Session, natural = false) {
     // Update the ref now, not on next render: a second check() before re-render must not re-apply the same transition
     sessionRef.current = next
     logFocus(next.completedFocusMs - prev.completedFocusMs)
-    if (next.phase !== 'idle' && (next.phase !== prev.phase || next.round !== prev.round)) {
-      const line = say(palRef.current, next.phase === 'focus' ? 'focusStart' : phaseLabel(next) === 'Long break' ? 'longBreak' : 'breakStart')
-      scheduleSessionAlarm(next.phaseEndsAt, PALS[palRef.current].name, alarmBody(next))
+    const changed = next.phase !== prev.phase || next.round !== prev.round
+    // Moving to idle on its own means the set finished; the user's Stop goes through studyStop instead
+    if (changed && (next.phase !== 'idle' || natural)) {
+      const key = next.phase === 'idle' ? 'setDone' : next.phase === 'focus' ? 'focusStart' : phaseLabel(next) === 'Long break' ? 'longBreak' : 'breakStart'
+      const line = say(palRef.current, key)
       if (natural) {
         if (document.hidden) notifyWeb(PALS[palRef.current].name, line)
         if (!isQuiet(Date.now())) playChime()
+        // The Study screen shows the line itself; on other tabs a toast is the visual cue, which stays in quiet hours
+        if (viewRef.current !== 'study') toast({ text: line })
       }
       setStudyLine(line)
       if (prev.phase === 'focus' && next.phase === 'break') feel('cheer', 1500)
     }
     setSession(next)
   }
-  const studyStart = () => applySession(start(Date.now()), sessionRef.current)
+  // Start/Resume/Skip are taps, so they also unlock audio for the chime that plays later from a timer
+  const studyStart = () => {
+    unlockChime()
+    const s = start(Date.now())
+    applySession(s, sessionRef.current)
+    armSession(s)
+  }
   const studyPause = () => {
-    cancelSessionAlarm()
+    cancelSessionAlarms()
     applySession(pause(sessionRef.current, Date.now()), sessionRef.current)
   }
   const studyResume = () => {
+    unlockChime()
     const r = resume(sessionRef.current, Date.now())
     applySession(r, sessionRef.current)
-    scheduleSessionAlarm(r.phaseEndsAt, PALS[palRef.current].name, alarmBody(r))
+    armSession(r)
   }
-  const studySkip = () => applySession(skip(sessionRef.current, Date.now()), sessionRef.current)
+  const studySkip = () => {
+    unlockChime()
+    const s = skip(sessionRef.current, Date.now())
+    applySession(s, sessionRef.current)
+    armSession(s)
+  }
   const studyStop = () => {
     const s = sessionRef.current
     const partial = Math.round(focusElapsed(s, Date.now()) / 60_000)
     logFocus(focusElapsed(s, Date.now()))
-    cancelSessionAlarm()
+    cancelSessionAlarms()
     setStudyLine(say(palRef.current, 'sessionDone', { m: todayFocus + Math.max(0, partial) }))
     setSession(stop())
   }
@@ -711,10 +746,7 @@ export default function App() {
     }
     if (c?.type === 'notify') {
       if (action === 'notifyOn') {
-        requestNotificationPermission().then((granted) => {
-          setSettings((s) => ({ ...s, notify: granted }))
-          if (granted) syncEventAlarms(ev.current, name)
-        })
+        turnOnAlarms()
         resolve(id, 'Reminders on')
       } else resolve(id, 'In-app reminders only')
     }
@@ -1005,10 +1037,7 @@ export default function App() {
         onResume={studyResume}
         onSkip={studySkip}
         onStop={studyStop}
-        onEnableAlarms={() => requestNotificationPermission().then((granted) => {
-          setSettings((s) => ({ ...s, notify: granted }))
-          if (granted) syncEventAlarms(ev.current, name)
-        })}
+        onEnableAlarms={turnOnAlarms}
       />
     ) : view === 'tasks' ? (
       <Tasks now={now} tasks={tasks} events={events} onPlan={planTask} onAdd={(t) => { send(t); if (mobile) setChatOpen(true) }} />

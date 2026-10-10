@@ -94,6 +94,7 @@ const BASE: Lines = {
   breakStart: ['Nice round! Take 5, stretch and drink water.', 'Break time. Look away from the screen for a bit.'],
   longBreak: ['Four rounds done! Take a longer 15-minute break.'],
   sessionDone: ['Session saved. {m} min focused today.'],
+  setDone: ["Set complete, four rounds done! Start another whenever you're ready."],
   weatherNone: ["I can't check the weather right now, sorry! Once you're online I'll grab it.", 'No weather info yet, I need internet for that. Try again in a bit?'],
   thanks: ['Anytime!', 'Of course :)'],
   chatHow: ["Doing good, thanks for asking! How's your week going?", 'All good here! Anything coming up for you?'],

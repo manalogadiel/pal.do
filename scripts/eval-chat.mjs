@@ -11,7 +11,7 @@ try {
   console.log(`\nrules: ${r.rules.pass}/${r.rules.total}${r.llm ? `   model: ${r.llm.pass}/${r.llm.total}` : ''}`)
 
   const { runSessionTests } = await vite.ssrLoadModule('/src/lib/session.test-cases.ts')
-  const sessionFails = runSessionTests()
+  const sessionFails = await runSessionTests()
   for (const f of sessionFails) console.log(`✗ session ${f}`)
   console.log(`session: ${sessionFails.length ? `${sessionFails.length} failing` : 'pass'}`)
 
