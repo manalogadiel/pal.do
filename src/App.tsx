@@ -16,7 +16,7 @@ import { loadKokoro, speakKokoro, stopKokoro } from './lib/voice'
 import { cancelSessionAlarms, enableAlarms, notifyWeb, playChime, scheduleSessionAlarms, syncEventAlarms, unlockChime } from './lib/notifications'
 import { focusElapsed, fromSaved, isPaused, LONG_EVERY, pause, phaseEnds, phaseLabel, resume, skip, start, stop, tick, type Session } from './lib/session'
 import { Study } from './components/Study'
-import { askGroq, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, PRIMARY_MODEL, type AiAction } from './lib/groq'
+import { askGroq, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, PRIMARY_MODEL, recoverEvent, type AiAction } from './lib/groq'
 import { StatusBadge } from './components/StatusBadge'
 
 const KEY = 'paldo-v1'
@@ -579,6 +579,14 @@ export default function App() {
           // A reply claiming it already added something it can't add: point at the real way instead
           groqText = ai.claimed ? say(pal, openMsg || ai.action?.type === 'addEvent' ? 'confirmHint' : 'nothingWaiting') : ai.text
           groqAction = ai.action
+          // Pal talked an event through in words ("i-lock ko na!") but sent no card: recover it from the chat as a card
+          if (ai.claimed && !openMsg && ai.action?.type !== 'addEvent') {
+            const found = await recoverEvent([...history, { role: 'user', content: text }, { role: 'assistant', content: ai.text }], nowRef.current, groqKey)
+            if (found) {
+              groqAction = found
+              groqText = say(pal, 'confirmHint')
+            }
+          }
           usedModel = ai.modelUsed
           setLastLatency(Math.round(performance.now() - t0))
         }
@@ -645,9 +653,10 @@ export default function App() {
       // 2. Local rule action if present
       const replyText = groqText || t.text
       if (!a) return palSay(replyText, { card: t.card, chips: groqText ? undefined : t.chips, rule: t.rule })
-      // Offline net: only when no model answered, so a model that heard "not yet" isn't overruled
+      // A short, time-free "oo nga" / "wag na" to the waiting card. Reached only when the model sent no action of
+      // its own (offline, or it just chatted), so a model that read a change or a new plan isn't overruled
       if (a.type === 'confirmEvent' || a.type === 'skipEvent') {
-        if (groqText || !openMsg) return palSay(replyText)
+        if (!openMsg) return palSay(replyText)
         onCard(openMsg.id, a.type === 'confirmEvent' ? 'addEvent' : 'skipEvent')
         return palSay(t.text, {}, 'happy')
       }

@@ -1,6 +1,6 @@
 import { fmtDay, fmtTime, type PalId } from './core'
 import { BLOCKED_OUTPUT } from './agent'
-import { parseRange, parseWhen, taskKind } from './parse'
+import { eventKind, parseRange, parseWhen, taskKind } from './parse'
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 // Groq retired the llama-3.x models (Oct 2026). Re-check `GET /openai/v1/models` if cloud replies ever stop.
@@ -132,7 +132,7 @@ export interface AiResponse {
 const TEMPLATE_ECHO = /spoken reply|in character|YYYY|1-3 sentences/i
 // "Done! Added…", "I've locked in your simba", "Adding Simba now", "let me lock it in again", "nasa calendar mo na".
 // Not "when you're done studying"
-const CLAIMS_WRITE = /^\W*(done|added)\b|\b(i'?ve|i have|i)\s+(just\s+)?(added|put|set|locked|scheduled|booked)\b|\badded (it|your|the|that)\b|\block(ed)? (it )?in\b|\badding\b.*\bnow\b|\bi'?ll (add|put|lock) (it|this|that)( in)? now\b|\bnaka-?(add|lagay)\b|\bnasa calendar (mo )?na\b|\b(is|it'?s) (now )?on your calendar\b/i
+const CLAIMS_WRITE = /^\W*(done|added)\b|\b(i'?ve|i have|i)\s+(just\s+)?(added|put|set|locked|scheduled|booked)\b|\badded (it|your|the|that)\b|\block(ed)? (it )?in\b|\badding\b.*\bnow\b|\bi'?ll (add|put|lock) (it|this|that)( in)? now\b|\bnaka-?(add|lagay)\b|\bi-?(lock|add|lagay) ko na\b|\b(i)?lalagay ko na\b|\bnasa calendar (mo )?na\b|\b(is|it'?s) (now )?on your calendar\b/i
 /** A claim is a statement: "Want me to lock it in?" asks, it doesn't claim */
 const claimsWrite = (text: string) => text.split(/(?<=[.!?])\s+/).some((s) => !s.trim().endsWith('?') && CLAIMS_WRITE.test(s))
 const ISO_IN_TEXT =/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?\b/g
@@ -167,6 +167,72 @@ export function sanitizeAi(p: AiResponse | null, prompt: string, now: number, ca
   if (a?.type === 'findTime' && !/\b(find|free|slot|time|hours?|oras|study|review|aral|kailan|when)\b/i.test(prompt)) p.action = { type: 'none' }
   if (a?.type === 'analyzeWeek' && !/\b(week|linggo|schedule|sched|busy|free|load|plan|ready|kaya|today|bukas|tomorrow)\b/i.test(prompt)) p.action = { type: 'none' }
   return p
+}
+
+/**
+ * A recovered event is trusted only if its start time appears in chat text the user actually saw
+ * ("Bukas 9-11am ang Simba"). A range that matches the start must match the end too.
+ */
+export function isGroundedEvent(a: AiAction, texts: string[], now: number): boolean {
+  const title = a.title?.trim()
+  const start = parseIsoToLocalMs(a.start)
+  const end = parseIsoToLocalMs(a.end) ?? (start == null ? null : start + 3_600_000)
+  if (!title || title.length > 60 || start == null || end == null || end <= start) return false
+  return texts.some((t) => {
+    const r = parseRange(t, now)
+    if (r && r.start === start) return r.end === end
+    const w = parseWhen(t, now)
+    return !!w?.hadTime && w.t === start && end - start <= 4 * 3_600_000
+  })
+}
+
+/**
+ * Pal talked an event through in words but never sent a card. Ask the model, narrowly, which event it offered,
+ * and keep it only if grounded in the visible chat. Shown as a normal card, so the user still confirms.
+ */
+export async function recoverEvent(turns: ChatTurn[], now: number, apiKey = getGroqApiKey()): Promise<AiAction | null> {
+  const online = typeof navigator === 'undefined' || navigator.onLine !== false
+  if (!online || !(apiKey || GROQ_PROXY_URL) || isGroqDisabled()) return null
+  const d = new Date(now)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const day = (t: Date) => `${t.toLocaleDateString('en-US', { weekday: 'short' })}=${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`
+  const dates = Array.from({ length: 7 }, (_, i) => day(new Date(now + i * 86_400_000))).join(', ')
+  const chat = turns.slice(-8).map((t) => `${t.role === 'user' ? 'User' : 'Pal'}: ${t.content}`).join('\n')
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+    const res = await fetch(apiKey ? GROQ_API_URL : GROQ_PROXY_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+      body: JSON.stringify({
+        model: PRIMARY_MODEL,
+        ...(REASONING[PRIMARY_MODEL] ? { reasoning_effort: REASONING[PRIMARY_MODEL] } : {}),
+        temperature: 0,
+        max_tokens: 120,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `Now: ${d.toDateString()} ${pad(d.getHours())}:${pad(d.getMinutes())}. Dates: ${dates}.
+Which one event did Pal offer to put on the calendar in this chat (the latest version of it)? Use only details said in the chat.
+Reply ONLY JSON: {"title":"...","kind":"work|class|shift|protected|exam","start":"YYYY-MM-DDTHH:MM:00","end":"YYYY-MM-DDTHH:MM:00"}, or {"title":null} if none.`,
+          },
+          { role: 'user', content: chat },
+        ],
+      }),
+    })
+    clearTimeout(timer)
+    if (!res.ok) return null
+    const j = JSON.parse((await res.json()).choices?.[0]?.message?.content ?? '{}')
+    const kinds = ['work', 'class', 'shift', 'protected', 'exam']
+    // The app's own word list knows "simba", "gym", "shift"…; the model's guess is the fallback
+    const kind = (eventKind(String(j.title ?? '')) ?? (kinds.includes(j.kind) ? j.kind : 'protected')) as AiAction['kind']
+    const a: AiAction = { type: 'addEvent', title: j.title ?? undefined, kind, start: j.start, end: j.end }
+    return isGroundedEvent(a, turns.map((t) => t.content), now) ? a : null
+  } catch {
+    return null
+  }
 }
 
 /** Robust ISO to local timestamp parser */

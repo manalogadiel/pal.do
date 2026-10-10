@@ -4,7 +4,7 @@
 import { turn, type LastEvent } from './agent'
 import { buildContext } from './context'
 import { fmtTime, seedWeek, type PalId } from './core'
-import { askGroq, sanitizeAi, type AiAction, type ChatTurn } from './groq'
+import { askGroq, isGroundedEvent, recoverEvent, sanitizeAi, type AiAction, type ChatTurn } from './groq'
 
 type Check = { action?: string | string[]; notAction?: string; includes?: string[]; excludes?: string[] }
 export interface Case { input: string; expect: Check; lastEvent?: LastEvent; history?: ChatTurn[]; note?: string }
@@ -50,6 +50,11 @@ export const RULE_CASES: Case[] = [
   { input: 'ok', expect: { notAction: 'confirmEvent' }, note: 'nothing waiting, nothing to confirm' },
 ]
 
+// Fixed clock for the grounding cases: Sat Oct 10 2026, 10pm; "bukas 9am" is Sun 9am
+const NOW = new Date(2026, 9, 10, 22, 0).getTime()
+const T9 = new Date(2026, 9, 11, 9, 0).getTime()
+const iso = (t: number) => { const d = new Date(t), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00` }
+
 /** sanitizeAi: the guard between the model and the calendar. Must pass 100%. */
 export const SANITIZE_CASES: { name: string; ok: () => boolean }[] = [
   { name: 'confirmEvent with no card waiting → none', ok: () => sanitizeAi({ text: 'Added!', action: { type: 'confirmEvent' } }, 'add it', 0, false)?.action?.type === 'none' },
@@ -73,6 +78,12 @@ export const SANITIZE_CASES: { name: string; ok: () => boolean }[] = [
     name: 'ISO timestamps become human times',
     ok: () => { const t = sanitizeAi({ text: 'Adding Simba from 2026-10-11T09:00:00 to 2026-10-11T10:00:00.', action: { type: 'none' } }, 'hi', 0, false)?.text ?? ''; return !/\d{4}-\d{2}-\d{2}T/.test(t) && t.includes('9am') && t.includes('10am') },
   },
+  { name: '"Sige, i-lock ko na!" with no write is flagged', ok: () => sanitizeAi({ text: 'Sige, i-lock ko na! Simba bukas 9-11am.', action: { type: 'none' } }, 'wala na', 0, false)?.claimed === true },
+  { name: '"i-add ko na ba?" is a question, not a claim', ok: () => !sanitizeAi({ text: 'Simba 9am. Sige, i-add ko na ba?', action: { type: 'none' } }, '9am', 0, false)?.claimed },
+  // A recovered event only counts if its time is in text the user actually saw
+  { name: 'recovered event grounded in the chat is accepted', ok: () => isGroundedEvent({ type: 'addEvent', title: 'Simba', start: iso(T9), end: iso(T9 + 2 * 3_600_000) }, ['Ayan! Bukas 9-11am ang Simba.'], NOW) },
+  { name: 'recovered event at a time nobody said is rejected', ok: () => !isGroundedEvent({ type: 'addEvent', title: 'Simba', start: iso(T9 + 3_600_000), end: iso(T9 + 2 * 3_600_000) }, ['Ayan! Bukas 9-11am ang Simba.'], NOW) },
+  { name: 'recovered event with no title is rejected', ok: () => !isGroundedEvent({ type: 'addEvent', start: iso(T9), end: iso(T9 + 3_600_000) }, ['Bukas 9-10am.'], NOW) },
   {
     name: '[Proposed event …] and \\n are stripped',
     ok: () => sanitizeAi({ text: 'Got it, 9 to 10am! [Proposed event: Simba, Sun, Oct 11 9am-10am]\\n', action: { type: 'none' } }, 'hi', 0, false)?.text === 'Got it, 9 to 10am!',
@@ -174,5 +185,19 @@ export async function runEval(opts: { llm?: boolean; apiKey?: string; pal?: PalI
     if (!fails.length) pass++
     log(`${fails.length ? '✗' : '✓'} ${c.input}  →  ${a ?? ''} ${r?.text ?? ''}${fails.length ? `   [${fails.join('; ')}]` : ''}`)
   }
+  // The screenshot: Pal talked the event through in words and never sent a card. Recovery must find it.
+  const said: ChatTurn[] = [
+    { role: 'user', content: 'simba bukas 9am' },
+    { role: 'assistant', content: 'Sige, Simba bukas 9am. Ilang oras?' },
+    { role: 'user', content: '2' },
+    { role: 'assistant', content: 'Ayan! Bukas 9-11am ang Simba. Tapos na ba o may ibang detalye?' },
+    { role: 'user', content: 'wala na' },
+    { role: 'assistant', content: 'Sige, i-lock ko na! Simba bukas 9-11am.' },
+  ]
+  const got = await recoverEvent(said, NOW, opts.apiKey ?? '')
+  const okRecover = !!got && /simba/i.test(got.title ?? '') && got.kind === 'protected' &&got.start === iso(T9) && got.end === iso(T9 + 2 * 3_600_000)
+  total++
+  if (okRecover) pass++
+  log(`${okRecover ? '✓' : '✗'} recover the event Pal only talked about  →  ${JSON.stringify(got)}`)
   return { rules, llm: { pass, total } }
 }
