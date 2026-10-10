@@ -32,6 +32,8 @@ export type Action =
   | { type: 'energy'; value: 'morning' | 'afternoon' | 'evening' }
   | { type: 'openSyllabus' }
   | { type: 'reviseEvent'; title: string; kind: string; start: number; end: number; days?: number[] }
+  | { type: 'confirmEvent' }
+  | { type: 'skipEvent' }
 
 export interface Turn {
   text: string
@@ -108,6 +110,9 @@ const BASE: Lines = {
   ],
   energy: ["Got it, I'll put things in the {v} first."],
   eventAdd: ['Add this?', 'Want me to put this in?'],
+  eventAdded: ['Added! {what} is on your calendar.', 'Done, {what} is in.'],
+  eventSkipped: ["Okay, I left it off.", 'Sure, not adding it.'],
+  confirmHint: ["Tap Add it on the card, or just tell me to go ahead, and it's on your calendar.", 'Say the word or tap Add it, and I\'ll put it in.'],
   whatIf: ['It would look like this:'],
   notify: ['Want a little heads-up before each block starts?'],
   voiceOn: ["Okay, I'll talk out loud now.", 'Voice on! You can just talk to me too.'],
@@ -197,6 +202,15 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
     // They moved on to something else: drop the question and handle the new message
     const r = turn(input, { ...ctx, pending: null })
     return { ...r, pending: r.pending === undefined ? null : r.pending }
+  }
+
+  // Offline safety net for answering the waiting card. Online, the model reads intent in any wording.
+  // Short and time-free only: "yes but make it 3pm" is a change, handled below
+  if (ctx.lastEvent && text.split(/\s+/).length <= 4 && !parseRange(text, now) && !parseWhen(text, now)) {
+    const le = ctx.lastEvent
+    if (isNo(text) || /^\s*(ayaw|ayoko)\b/i.test(text)) return out('eventSkipped', { action: { type: 'skipEvent' } })
+    if (isYes(text) || /^\s*(ok+(ay+)?|oki+|sige+|oo+|ye+s+|tama+|g+o*|push|ilagay|lagay|add (it|na)|lock it|put it)\b/i.test(text))
+      return out('eventAdded', { action: { type: 'confirmEvent' } }, { what: `${le.title}, ${fmtDay(le.start)} ${fmtTime(le.start)}` })
   }
 
   // Correcting the event card still waiting: "no, it's a lunch date", "make it 3pm", "call it Gym"

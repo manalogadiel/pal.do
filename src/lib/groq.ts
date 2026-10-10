@@ -104,10 +104,11 @@ Tone: High-energy, upbeat, athletic, and encouraging.
 Style: Keep it punchy, short, and actionable. Motivate them like a coach or supportive bro to knock out their tasks. If the user asks how you are, tell them you're 100% hyped, locked in, and ready to conquer whatever is next!`,
 }
 
-export const AI_ACTIONS = ['addEvent', 'createTask', 'findTime', 'analyzeWeek', 'redirect', 'none'] as const
+export const AI_ACTIONS = ['addEvent', 'confirmEvent', 'skipEvent', 'createTask', 'findTime', 'analyzeWeek', 'redirect', 'none'] as const
 
 export interface AiAction {
-  /** findTime: carve study blocks before a date. analyzeWeek: review their load. redirect: steered an off-topic ask back to planning. */
+  /** findTime: carve study blocks before a date. analyzeWeek: review their load. redirect: steered an off-topic ask back to planning.
+   *  confirmEvent / skipEvent: the user answered the event card that's waiting (the app adds it, from the card's own details). */
   type: (typeof AI_ACTIONS)[number]
   title?: string
   kind?: 'class' | 'shift' | 'exam' | 'work' | 'protected' | 'assignment'
@@ -124,14 +125,27 @@ export interface AiResponse {
   text: string
   modelUsed?: string
   action?: AiAction
+  /** The text says something was added, but only the app can add things: the caller swaps the line */
+  claimed?: boolean
 }
 
 const TEMPLATE_ECHO = /spoken reply|in character|YYYY|1-3 sentences/i
+// "Done! Added…", "I've locked in your simba", "nasa calendar mo na". Not "when you're done studying"
+const CLAIMS_WRITE = /^\W*(done|added)\b|\b(i'?ve|i have|i)\s+(just\s+)?(added|put|set|locked|scheduled|booked)\b|\badded (it|your|the|that)\b|\blocked (it )?in\b|\bnaka-?(add|lagay)\b|\bnasa calendar (mo )?na\b|\b(is|it'?s) (now )?on your calendar\b/i
 
-/** Drop placeholder echoes, and drop actions the user's message never asked for (hallucinated events). */
-export function sanitizeAi(p: AiResponse | null, prompt: string, now: number): AiResponse | null {
-  if (!p?.text || TEMPLATE_ECHO.test(JSON.stringify(p))) return null
+/**
+ * Drop placeholder echoes, and drop actions the user's message never asked for (hallucinated events).
+ * `cardOpen`: an event card is waiting for the user's answer, the only thing confirmEvent/skipEvent can act on.
+ */
+export function sanitizeAi(p: AiResponse | null, prompt: string, now: number, cardOpen = false): AiResponse | null {
+  if (!p?.text) return null
+  // Old history labels and escaped newlines the model sometimes copies into its line
+  p.text = p.text.replace(/\[Proposed event:[^\]]*\]?/gi, '').replace(/\s*(\\n|\n)\s*/g, ' ').replace(/\s{2,}/g, ' ').trim()
+  if (!p.text || TEMPLATE_ECHO.test(JSON.stringify(p))) return null
   const a = p.action
+  if ((a?.type === 'confirmEvent' || a?.type === 'skipEvent') && !cardOpen) p.action = { type: 'none' }
+  // Only a real confirmEvent writes, so any other "done, added!" is untrue
+  p.claimed = p.action?.type !== 'confirmEvent' && CLAIMS_WRITE.test(p.text)
   if (a?.type === 'addEvent' && !(parseRange(prompt, now) || parseWhen(prompt, now))) p.action = { type: 'none' }
   if (a?.type === 'createTask' && !taskKind(prompt)) p.action = { type: 'none' }
   if (a?.type === 'findTime' && !/\b(find|free|slot|time|hours?|oras|study|review|aral|kailan|when)\b/i.test(prompt)) p.action = { type: 'none' }
@@ -176,7 +190,11 @@ User: "I'm bored"
 User: "find me 3 hours to review Bio before Friday"
 {"text":"On it! Here's how I'd split it.","action":{"type":"findTime","title":"Bio review","hours":3,"due":"2026-10-16T23:59:00"}}
 User: "anong oras na?"
-{"text":"4:13pm na! May gusto ka bang tapusin bago mag-6?","action":{"type":"none"}}`
+{"text":"4:13pm na! May gusto ka bang tapusin bago mag-6?","action":{"type":"none"}}
+(card WAITING FOR CONFIRM) User: "sige push mo na"
+{"text":"Ayan, adding it now!","action":{"type":"confirmEvent"}}
+(card WAITING FOR CONFIRM) User: "wag na pala"
+{"text":"Okay, I'll leave it off.","action":{"type":"skipEvent"}}`
 
 /** System prompt for the big models. `facts` comes from buildContext() so the model never invents times or weather. */
 export function generateSystemPrompt(pal: PalId, now: number, facts = ''): string {
@@ -201,7 +219,10 @@ Dates: ${upcomingReference}
 
 Any class, exam, quiz, deadline, shift, task or study need the user mentions is ALWAYS in scope: use createTask/addEvent/findTime, never redirect.
 
-ACTIONS. Nothing is written to the calendar until the user taps confirm, so propose freely, but never say it's already added/locked in: say "Want me to add it?" or similar.
+ACTIONS. You can't add or change anything yourself: the app does it when the user taps Add it or tells you to go ahead. Propose freely, but never say something is already added/locked in unless you send confirmEvent.
+- confirmEvent: APP FACTS show an event WAITING FOR CONFIRM and the user means "go ahead" in any words or language (tama, oo, sige ilagay mo na, push, lock it in, g, add it na, where's the button just add it). No fields: the app uses the card's details.
+- skipEvent: an event is WAITING FOR CONFIRM and the user means "drop it" (wag na, cancel, never mind).
+- If they change the waiting event's details, send a new addEvent instead. With nothing waiting, never use confirmEvent or skipEvent.
 - addEvent: a specific block. Needs title, kind ("work" study, "class", "shift", "protected" gym/personal/meals, "exam"), start, end as local ISO "2026-10-10T15:00:00". No duration given → 1 hour. Recurring ("MWF 10-11:30am") → days: [1,3,5] (0=Sun).
 - createTask: an assignment/exam with a due date. Needs title, kind ("assignment"|"exam"), due (local ISO), hours (estimate).
 - findTime: they want study time found for them. Needs title, hours, due (local ISO, the "before" date; default 7 days out). The app picks the slots.
@@ -223,11 +244,12 @@ export async function askGroq(
   apiKey = getGroqApiKey(),
   now = Date.now(),
   history: ChatTurn[] = [],
-  facts: { full: string; short: string } = { full: '', short: '' }
+  facts: { full: string; short: string } = { full: '', short: '' },
+  cardOpen = false
 ): Promise<AiResponse | null> {
   const systemPrompt = generateSystemPrompt(pal, now, facts.full)
 
-  const clean = (r: AiResponse | null) => sanitizeAi(r, prompt, now)
+  const clean = (r: AiResponse | null) => sanitizeAi(r, prompt, now, cardOpen)
   // Past replies in the same JSON shape we demand; plain-text turns teach the model to drop JSON (→ 400 json_validate_failed)
   const turns = history.map((h) => (h.role === 'assistant' ? { ...h, content: JSON.stringify({ text: h.content, action: { type: 'none' } }) } : h))
 

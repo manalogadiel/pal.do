@@ -23,7 +23,10 @@ export interface Snapshot {
 const BOOKED = new Set(['class', 'shift', 'work', 'exam', 'protected'])
 const short = (t: number) => new Date(t).toLocaleDateString('en-US', { weekday: 'short' })
 
-export function buildContext(now: number, events: CalEvent[], tasks: Task[], weather: Weather | null, prefs: Prefs = {}): Snapshot {
+/** The event card still waiting for the user's answer in chat */
+export type Waiting = { title: string; start: number; end: number } | null | undefined
+
+export function buildContext(now: number, events: CalEvent[], tasks: Task[], weather: Weather | null, prefs: Prefs = {}, waiting?: Waiting): Snapshot {
   const busy = events.filter((e) => e.status !== 'done' && e.status !== 'missed')
   const today = startOfDay(now)
   const clock = `${new Date(now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}, ${fmtTime(now)}`
@@ -64,6 +67,9 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
     prefs.blockedDays?.length ? `keep ${prefs.blockedDays.map((d) => DAYN[d]).join(', ')} free` : '',
   ].filter(Boolean).join('; ')
   const wx = weather ? weatherLine(weather) : 'unknown (offline or not fetched yet)'
+  const wait = waiting
+    ? `WAITING FOR CONFIRM: ${waiting.title}, ${fmtDay(waiting.start)} ${fmtTime(waiting.start)}–${fmtTime(waiting.end)}. Not on the calendar yet; only the user can add it (Add it button, or telling you to go ahead → confirmEvent).`
+    : ''
   const full = `APP FACTS (computed by the app; use these, never invent times, dates, free slots or weather):
 - Now: ${clock}
 - Still today: ${leftLine}
@@ -73,10 +79,11 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
 - Next deadline: ${nextLine}
 - Needs attention: ${atRisk.length ? atRisk.map((t) => `${t.title} due ${fmtDay(t.due)}`).join('; ') : 'nothing'}
 - Weather: ${wx}${prefLine ? `
-- User preferences (always respect): ${prefLine}` : ''}`
+- User preferences (always respect): ${prefLine}` : ''}${wait ? `
+- ${wait}` : ''}`
 
   const shortBlock = `Now: ${clock}. Still today: ${leftLine}. Free today: ${fmtHours(freeH)}.
-Next deadline: ${nextLine}. Weather: ${wx}.`
+Next deadline: ${nextLine}. Weather: ${wx}.${wait ? ` ${wait}` : ''}`
 
   return {
     full,

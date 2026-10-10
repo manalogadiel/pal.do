@@ -435,6 +435,8 @@ export default function App() {
     })
     feel(state, state === 'talking' ? Math.min(2600, 500 + text.length * 28) : 1800)
     speak(text)
+    // A card needs a tap, and on phones the collapsed drawer hides cards: open it so the button is in reach
+    if (mobile && (extra.card?.type === 'event' || extra.card?.type === 'readback')) setChatOpen(true)
   }
 
   // Daily brief on the first open of the day, built only from app-computed facts
@@ -530,15 +532,17 @@ export default function App() {
   sendRef.current = send
   async function send(text: string) {
     // Recent chat + the card still waiting for an answer, so follow-ups ("no, it's lunch") have context
-    const openCard = [...msgs].reverse().find((m) => m.from === 'pal' && m.card?.type === 'event' && !m.resolved)?.card
+    const openMsg = [...msgs].reverse().find((m) => m.from === 'pal' && m.card?.type === 'event' && !m.resolved)
+    const openCard = openMsg?.card
     const lastEvent = openCard?.type === 'event' ? { title: openCard.title, kind: openCard.kind, start: openCard.start, end: openCard.end, days: openCard.days } : null
-    const history = msgs.slice(-8).filter((m) => m.text || m.card?.type === 'event').map((m) => ({
+    // Plain lines only: the waiting card goes in the facts, since labels here get copied into replies
+    const history = msgs.slice(-8).filter((m) => m.text).map((m) => ({
       role: m.from === 'me' ? ('user' as const) : ('assistant' as const),
-      content: [m.text, m.card?.type === 'event' ? `[Proposed event: ${m.card.title}, ${fmtDay(m.card.start)} ${fmtTime(m.card.start)}-${fmtTime(m.card.end)}${m.resolved ? ` (${m.resolved})` : ' (waiting for user to confirm)'}]` : ''].filter(Boolean).join(' '),
+      content: m.text,
     }))
 
     setMsgs((m) => [...m, { id: uid(), from: 'me', text }])
-    const snap = buildContext(nowRef.current, ev.current, tk.current, weather, settings.prefs)
+    const snap = buildContext(nowRef.current, ev.current, tk.current, weather, settings.prefs, lastEvent)
     const t = turn(text, { pal, now: nowRef.current, draft, awaiting, pending, lastEvent, facts: { next: snap.next } })
     setDraft(t.draft)
     setAwaiting(t.awaiting)
@@ -560,9 +564,10 @@ export default function App() {
       setTyping(true)
       const t0 = performance.now()
       try {
-        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap)
+        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!openMsg)
         if (ai?.text) {
-          groqText = ai.text
+          // A reply claiming it already added something it can't add: point at the real way instead
+          groqText = ai.claimed ? (openMsg || ai.action?.type === 'addEvent' ? say(pal, 'confirmHint') : null) : ai.text
           groqAction = ai.action
           usedModel = ai.modelUsed
           setLastLatency(Math.round(performance.now() - t0))
@@ -585,6 +590,12 @@ export default function App() {
       if (a?.type === 'pref') {
         setSettings((s) => ({ ...s, prefs: a.clear ? {} : { ...s.prefs, ...(a.latestHour != null ? { latestHour: a.latestHour } : {}), ...(a.blockedDays ? { blockedDays: [...new Set([...(s.prefs?.blockedDays ?? []), ...a.blockedDays])] } : {}) } }))
         return palSay(t.text, {}, 'happy')
+      }
+
+      // The user answered the waiting card in their own words: the model read the intent, the card supplies the details
+      if (openMsg && (groqAction?.type === 'confirmEvent' || groqAction?.type === 'skipEvent')) {
+        onCard(openMsg.id, groqAction.type === 'confirmEvent' ? 'addEvent' : 'skipEvent')
+        return palSay(groqText || say(pal, groqAction.type === 'confirmEvent' ? 'eventAdded' : 'eventSkipped', { what: openCard?.type === 'event' ? `${openCard.title}, ${fmtDay(openCard.start)} ${fmtTime(openCard.start)}` : 'It' }), {}, 'happy')
       }
 
       // 1. AI-proposed event or task: always shown for confirmation first
@@ -624,6 +635,12 @@ export default function App() {
       // 2. Local rule action if present
       const replyText = groqText || t.text
       if (!a) return palSay(replyText, { card: t.card, chips: groqText ? undefined : t.chips, rule: t.rule })
+      // Offline net: only when no model answered, so a model that heard "not yet" isn't overruled
+      if (a.type === 'confirmEvent' || a.type === 'skipEvent') {
+        if (groqText || !openMsg) return palSay(replyText)
+        onCard(openMsg.id, a.type === 'confirmEvent' ? 'addEvent' : 'skipEvent')
+        return palSay(t.text, {}, 'happy')
+      }
       if (a.type === 'confirmDraft') return createTask(a.draft)
       if (a.type === 'openSyllabus') {
         palSay(replyText)

@@ -81,6 +81,8 @@ Days: ${days}.
 Output ONLY JSON.
 User: "lagay mo bukas 3pm study"
 {"text":"Sige! Study bukas 3pm, okay ba?","action":{"type":"addEvent","title":"Study Session","kind":"work","start":"${tmrw}T15:00:00","end":"${tmrw}T16:00:00"}}
+(event WAITING FOR CONFIRM) User: "sige push mo na"
+{"text":"Ayan, adding it!","action":{"type":"confirmEvent"}}
 User: "who is the president of france"
 {"text":"Hala, di ko yan forte! Pero gusto mo i-plan natin yung free time mo later?","action":{"type":"redirect"}}
 User: "hi bosing"
