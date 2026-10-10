@@ -82,6 +82,7 @@ interface Session {
   - `scheduleSessionAlarm(at: number, title: string, body: string)`: Android `LocalNotifications` with `id = SESSION_ALARM_ID (900001)`. On web, a `setTimeout`-free check: the 1-second UI tick fires the Web Notification when it crosses `phaseEndsAt`, if permission is granted.
   - `cancelSessionAlarm()`
 - Reschedule on start, resume, skip and each phase change. Cancel on pause and stop.
+- **Known web limitation:** browsers freeze background tabs, so on web the alarm fires when the tab is next visible, not exactly on time. The timer itself stays correct because it's timestamp-based. Only the Android app gets a true background alarm. A service-worker push alarm is out of scope for this slice.
 - In-app: a short chime (WebAudio oscillator, no asset) when a phase ends while the app is open. During quiet hours (`isQuiet`), the chime is muted but the visual change stays.
 
 ### 6. Focus log
