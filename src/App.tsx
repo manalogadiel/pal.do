@@ -177,6 +177,8 @@ export default function App() {
   // Not ticked yet: the reconcile effect below catches up time spent closed, so those minutes get logged
   const [session, setSession] = useState<Session>(() => fromSaved(init.session))
   const [focusLog, setFocusLog] = useState<Record<string, number>>(() => init.focusLog ?? {})
+  // The pal's latest session line, shown on the Study screen (the chat bubble is hidden while the chat log is open)
+  const [studyLine, setStudyLine] = useState('')
   const sessionRef = useRef(session)
   sessionRef.current = session
   const todayFocus = focusLog[new Date().toDateString()] ?? 0
@@ -200,7 +202,7 @@ export default function App() {
         if (document.hidden) notifyWeb(PALS[palRef.current].name, line)
         if (!isQuiet(Date.now())) playChime()
       }
-      setBubble({ id: uid(), mascotId: palRef.current, text: line, kind: 'response' })
+      setStudyLine(line)
       if (prev.phase === 'focus' && next.phase === 'break') feel('cheer', 1500)
     }
     setSession(next)
@@ -221,7 +223,7 @@ export default function App() {
     const partial = Math.round(focusElapsed(s, Date.now()) / 60_000)
     logFocus(focusElapsed(s, Date.now()))
     cancelSessionAlarm()
-    setBubble({ id: uid(), mascotId: palRef.current, text: say(palRef.current, 'sessionDone', { m: todayFocus + Math.max(0, partial) }), kind: 'response' })
+    setStudyLine(say(palRef.current, 'sessionDone', { m: todayFocus + Math.max(0, partial) }))
     setSession(stop())
   }
   // Catch up from timestamps every second while running, and right away when the tab becomes visible again
@@ -915,7 +917,7 @@ export default function App() {
         if (v) speak(say(pal, 'voiceOn'), true)
         else { window.speechSynthesis?.cancel(); stopKokoro() }
       }}
-      micOn={micOn} toggleMic={toggleMic} micSupported={!!SR} interim={interim} compact={mobile} noPal={view === 'home' && !chatOpen}
+      micOn={micOn} toggleMic={toggleMic} micSupported={!!SR} interim={interim} compact={mobile} noPal={(view === 'home' || view === 'study') && !chatOpen}
       onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)}
       open={chatOpen} setOpen={setChatOpen} onCollapse={mobile ? undefined : toggleCollapse}
     />
@@ -996,6 +998,7 @@ export default function App() {
         pal={pal}
         palState={mood ? mood.state : session.phase === 'break' ? 'happy' : 'idle'}
         todayMinutes={todayFocus}
+        palLine={studyLine}
         alarmsOn={settings.notify}
         onStart={studyStart}
         onPause={studyPause}

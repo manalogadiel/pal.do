@@ -8,6 +8,8 @@ interface Props {
   pal: PalId
   palState: PalState
   todayMinutes: number
+  /** The pal's latest line about the session, '' for none */
+  palLine?: string
   alarmsOn: boolean
   onStart: () => void
   onPause: () => void
@@ -23,7 +25,7 @@ const mmss = (ms: number) => {
 }
 
 /** Pomodoro screen. Presentational: the session lives in App so switching tabs never stops it. */
-export function Study({ session, pal, palState, todayMinutes, alarmsOn, onStart, onPause, onResume, onSkip, onStop, onEnableAlarms }: Props) {
+export function Study({ session, pal, palState, todayMinutes, palLine, alarmsOn, onStart, onPause, onResume, onSkip, onStop, onEnableAlarms }: Props) {
   const running = session.phase !== 'idle' && !isPaused(session)
   // Display-only clock; correctness comes from the session's timestamps
   const [now, setNow] = useState(Date.now())
@@ -42,8 +44,9 @@ export function Study({ session, pal, palState, todayMinutes, alarmsOn, onStart,
   const secondary = 'press h-11 rounded-full px-5 text-[15px] text-ink-2 hover:bg-paper-3'
 
   return (
-    <div className="flex h-full flex-col items-center justify-center overflow-y-auto px-4 py-6">
-      <div className="flex w-full max-w-[420px] flex-col items-center">
+    // my-auto (not justify-center) so an overflowing column stays scrollable from the top on short phone screens
+    <div className="flex h-full flex-col overflow-y-auto px-4 pt-6 pb-10">
+      <div className="my-auto flex w-full max-w-[420px] flex-col items-center self-center">
         <div className="text-[13px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
         <div className="tnum mt-2 text-[64px] font-semibold leading-none tracking-[-0.02em]" role="timer" aria-live="off">{mmss(left)}</div>
 
@@ -56,10 +59,7 @@ export function Study({ session, pal, palState, todayMinutes, alarmsOn, onStart,
           })}
         </div>
 
-        <div className="mt-6">
-          <Pal id={pal} state={palState} size={120} />
-        </div>
-
+        {/* Controls sit right under the time so they stay above the fold on phones */}
         <div className="mt-6 flex gap-2">
           {idle && <button type="button" onClick={onStart} className={primary}>Start</button>}
           {running && (
@@ -77,12 +77,21 @@ export function Study({ session, pal, palState, todayMinutes, alarmsOn, onStart,
         </div>
 
         {!alarmsOn && (
-          <button type="button" onClick={onEnableAlarms} className="press mt-4 rounded-full px-3 py-1.5 text-[13px] text-tangerine hover:bg-tangerine-soft">
+          <button type="button" onClick={onEnableAlarms} className="press mt-3 rounded-full px-3 py-1.5 text-[13px] text-tangerine hover:bg-tangerine-soft">
             Turn on alarms so you hear when a round ends
           </button>
         )}
 
-        <div className="mt-6 text-[13px] text-ink-3">Today: {todayMinutes} min focused</div>
+        <div className="mt-6 flex flex-col items-center">
+          {palLine && (
+            <p key={palLine} className="pop mb-2 max-w-[300px] rounded-[20px] rounded-bl-[6px] bg-paper px-3.5 py-2 text-center text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(60_44_30/0.35)]" aria-live="polite">
+              {palLine}
+            </p>
+          )}
+          <Pal id={pal} state={palState} size={120} />
+        </div>
+
+        <div className="mt-4 text-[13px] text-ink-3">Today: {todayMinutes} min focused</div>
       </div>
     </div>
   )
