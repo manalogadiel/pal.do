@@ -9,7 +9,13 @@ try {
   const { runEval } = await vite.ssrLoadModule('/src/lib/chat.eval.ts')
   const r = await runEval({ llm, apiKey: process.env.GROQ_API_KEY })
   console.log(`\nrules: ${r.rules.pass}/${r.rules.total}${r.llm ? `   model: ${r.llm.pass}/${r.llm.total}` : ''}`)
-  process.exitCode = r.rules.pass === r.rules.total ? 0 : 1
+
+  const { runSessionTests } = await vite.ssrLoadModule('/src/lib/session.test-cases.ts')
+  const sessionFails = runSessionTests()
+  for (const f of sessionFails) console.log(`✗ session ${f}`)
+  console.log(`session: ${sessionFails.length ? `${sessionFails.length} failing` : 'pass'}`)
+
+  process.exitCode = r.rules.pass === r.rules.total && !sessionFails.length ? 0 : 1
 } finally {
   await vite.close()
 }
