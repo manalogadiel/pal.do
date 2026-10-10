@@ -74,6 +74,21 @@ export function tick(s: Session, now: number): Session {
   return cur
 }
 
+/** Focus time spent in the current focus phase so far (0 outside focus). Used when stopping mid-round. */
+export function focusElapsed(s: Session, now: number): number {
+  return s.phase === 'focus' ? FOCUS_MS - remaining(s, now) : 0
+}
+
+/** Accept a session from storage only if it has the right shape; anything else is idle. */
+export function fromSaved(x: unknown): Session {
+  const s = x as Partial<Session> | null | undefined
+  const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+  if (!s || (s.phase !== 'idle' && s.phase !== 'focus' && s.phase !== 'break')) return IDLE
+  if (!num(s.round) || s.round! < 1 || s.round! > LONG_EVERY || !num(s.phaseEndsAt) || !num(s.completedFocusMs)) return IDLE
+  if (s.pausedLeft !== undefined && !num(s.pausedLeft)) return IDLE
+  return { phase: s.phase, round: s.round!, phaseEndsAt: s.phaseEndsAt!, completedFocusMs: s.completedFocusMs!, ...(s.pausedLeft !== undefined ? { pausedLeft: s.pausedLeft } : {}) }
+}
+
 export function phaseLabel(s: Session): 'Focus' | 'Break' | 'Long break' | '' {
   if (s.phase === 'focus') return 'Focus'
   if (s.phase === 'break') return s.round % LONG_EVERY === 0 ? 'Long break' : 'Break'

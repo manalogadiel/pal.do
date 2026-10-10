@@ -1,6 +1,6 @@
 // Pomodoro session model regression net. Run by `pnpm eval:chat` (scripts/eval-chat.mjs).
 import { eventAlarmId, SESSION_ALARM_ID } from './alarmIds'
-import { FOCUS_MS, IDLE, pause, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './session'
+import { focusElapsed, fromSaved, FOCUS_MS, IDLE, pause, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './session'
 
 const MIN = 60_000
 
@@ -35,6 +35,18 @@ export function runSessionTests(): string[] {
   eq('skip paused focus', pick(skip(pause(s0, 5 * MIN), 40 * MIN)), { phase: 'break', round: 1, phaseEndsAt: 45 * MIN, completedFocusMs: 5 * MIN })
   eq('idle tick', tick(IDLE, 5 * MIN), IDLE)
   eq('stop', stop(), IDLE)
+
+  // Stopping mid-focus still counts the minutes actually focused
+  eq('focusElapsed running', focusElapsed(s0, 20 * MIN), 20 * MIN)
+  eq('focusElapsed paused', focusElapsed(pause(s0, 7 * MIN), 99 * MIN), 7 * MIN)
+  eq('focusElapsed on break', focusElapsed(tick(s0, 26 * MIN), 27 * MIN), 0)
+  eq('focusElapsed idle', focusElapsed(IDLE, 5 * MIN), 0)
+
+  // A corrupt or missing save never crashes the tab; it just becomes idle
+  eq('fromSaved missing', fromSaved(undefined), IDLE)
+  eq('fromSaved junk', fromSaved({ phase: 'focus', phaseEndsAt: 'soon' }), IDLE)
+  eq('fromSaved bad phase', fromSaved({ ...s0, phase: 'nap' }), IDLE)
+  eq('fromSaved valid', fromSaved(JSON.parse(JSON.stringify(p))), p)
 
   // Calendar alarm ids must never collide with the reserved session alarm id
   for (const id of ['a', 'zzzzzzzzzz', 'k3j4h5', '0000000', 'event-with-a-long-id-1234567890']) {

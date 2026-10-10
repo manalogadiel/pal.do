@@ -13,7 +13,9 @@ import { Rail, TabBar, type View } from './components/Nav'
 import { Today } from './components/Today'
 import { Tasks } from './components/Tasks'
 import { loadKokoro, speakKokoro, stopKokoro } from './lib/voice'
-import { syncEventAlarms, requestNotificationPermission } from './lib/notifications'
+import { cancelSessionAlarm, notifyWeb, playChime, requestNotificationPermission, scheduleSessionAlarm, syncEventAlarms } from './lib/notifications'
+import { focusElapsed, fromSaved, isPaused, pause, phaseLabel, resume, skip, start, stop, tick, type Session } from './lib/session'
+import { Study } from './components/Study'
 import { askGroq, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, PRIMARY_MODEL, type AiAction } from './lib/groq'
 import { StatusBadge } from './components/StatusBadge'
 
@@ -23,7 +25,7 @@ const MAX_CHECKINS = 3
 const VOICE_PITCH: Record<PalId, number> = { rei: 1.1, diel: 0.9, jhyvie: 1.3, jaypee: 1.05 }
 
 interface Settings { pal: PalId; name: string; energy: Energy; onboarded: boolean; voiceOn: boolean; notify: boolean; notifyAsked: boolean; advancedMode?: boolean; prefs?: Prefs; lastBrief?: string }
-interface Saved { settings: Settings; events: CalEvent[]; tasks: Task[]; msgs: Msg[]; asked: string[]; alerted: string[]; log: Record<string, number>; offset: number }
+interface Saved { settings: Settings; events: CalEvent[]; tasks: Task[]; msgs: Msg[]; asked: string[]; alerted: string[]; log: Record<string, number>; offset: number; session?: Session; focusLog?: Record<string, number> }
 
 function load(): Saved {
   try {
@@ -171,6 +173,72 @@ export default function App() {
   palRef.current = pal
   const name = PALS[pal].name // names are fixed per pal
 
+  /* ---------- study session (Pomodoro). Lives here, not in the tab, so switching tabs never stops it ---------- */
+  // Not ticked yet: the reconcile effect below catches up time spent closed, so those minutes get logged
+  const [session, setSession] = useState<Session>(() => fromSaved(init.session))
+  const [focusLog, setFocusLog] = useState<Record<string, number>>(() => init.focusLog ?? {})
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+  const todayFocus = focusLog[new Date().toDateString()] ?? 0
+  const logFocus = (ms: number) => {
+    const min = Math.round(ms / 60_000)
+    if (min <= 0) return
+    const day = new Date().toDateString()
+    setFocusLog((l) => ({ ...l, [day]: (l[day] ?? 0) + min }))
+  }
+  const alarmBody = (s: Session) => (s.phase === 'focus' ? 'Round done! Time for a break.' : "Break's over. Ready for the next round?")
+
+  /** The one place a session changes: logs focus, re-arms the alarm, and lets the pal react to a new phase. */
+  function applySession(next: Session, prev: Session, natural = false) {
+    // Update the ref now, not on next render: a second check() before re-render must not re-apply the same transition
+    sessionRef.current = next
+    logFocus(next.completedFocusMs - prev.completedFocusMs)
+    if (next.phase !== 'idle' && (next.phase !== prev.phase || next.round !== prev.round)) {
+      const line = say(palRef.current, next.phase === 'focus' ? 'focusStart' : phaseLabel(next) === 'Long break' ? 'longBreak' : 'breakStart')
+      scheduleSessionAlarm(next.phaseEndsAt, PALS[palRef.current].name, alarmBody(next))
+      if (natural) {
+        if (document.hidden) notifyWeb(PALS[palRef.current].name, line)
+        if (!isQuiet(Date.now())) playChime()
+      }
+      setBubble({ id: uid(), mascotId: palRef.current, text: line, kind: 'response' })
+      if (prev.phase === 'focus' && next.phase === 'break') feel('cheer', 1500)
+    }
+    setSession(next)
+  }
+  const studyStart = () => applySession(start(Date.now()), sessionRef.current)
+  const studyPause = () => {
+    cancelSessionAlarm()
+    applySession(pause(sessionRef.current, Date.now()), sessionRef.current)
+  }
+  const studyResume = () => {
+    const r = resume(sessionRef.current, Date.now())
+    applySession(r, sessionRef.current)
+    scheduleSessionAlarm(r.phaseEndsAt, PALS[palRef.current].name, alarmBody(r))
+  }
+  const studySkip = () => applySession(skip(sessionRef.current, Date.now()), sessionRef.current)
+  const studyStop = () => {
+    const s = sessionRef.current
+    const partial = Math.round(focusElapsed(s, Date.now()) / 60_000)
+    logFocus(focusElapsed(s, Date.now()))
+    cancelSessionAlarm()
+    setBubble({ id: uid(), mascotId: palRef.current, text: say(palRef.current, 'sessionDone', { m: todayFocus + Math.max(0, partial) }), kind: 'response' })
+    setSession(stop())
+  }
+  // Catch up from timestamps every second while running, and right away when the tab becomes visible again
+  const sessionRunning = session.phase !== 'idle' && !isPaused(session)
+  useEffect(() => {
+    if (!sessionRunning) return
+    const check = () => {
+      const prev = sessionRef.current
+      const next = tick(prev, Date.now())
+      if (next !== prev) applySession(next, prev, true)
+    }
+    check()
+    const i = setInterval(check, 1000)
+    document.addEventListener('visibilitychange', check)
+    return () => { clearInterval(i); document.removeEventListener('visibilitychange', check) }
+  }, [sessionRunning]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
@@ -193,8 +261,8 @@ export default function App() {
 
   /* ---------- persistence & clocks ---------- */
   useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify({ settings, events, tasks, msgs: msgs.slice(-80), asked, alerted, log, offset } satisfies Saved))
-  }, [settings, events, tasks, msgs, asked, alerted, log, offset])
+    localStorage.setItem(KEY, JSON.stringify({ settings, events, tasks, msgs: msgs.slice(-80), asked, alerted, log, offset, session, focusLog } satisfies Saved))
+  }, [settings, events, tasks, msgs, asked, alerted, log, offset, session, focusLog])
   useEffect(() => {
     const i = setInterval(() => setClock(Date.now()), 20_000)
     const mq = window.matchMedia('(max-width: 899px)')
@@ -922,6 +990,23 @@ export default function App() {
   const content =
     view === 'home' ? (
       <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} pal={pal} palName={name} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} onTalk={() => (mobile ? setChatOpen(true) : setCollapsed(false))} />
+    ) : view === 'study' ? (
+      <Study
+        session={session}
+        pal={pal}
+        palState={mood ? mood.state : session.phase === 'break' ? 'happy' : 'idle'}
+        todayMinutes={todayFocus}
+        alarmsOn={settings.notify}
+        onStart={studyStart}
+        onPause={studyPause}
+        onResume={studyResume}
+        onSkip={studySkip}
+        onStop={studyStop}
+        onEnableAlarms={() => requestNotificationPermission().then((granted) => {
+          setSettings((s) => ({ ...s, notify: granted }))
+          if (granted) syncEventAlarms(ev.current, name)
+        })}
+      />
     ) : view === 'tasks' ? (
       <Tasks now={now} tasks={tasks} events={events} onPlan={planTask} onAdd={(t) => { send(t); if (mobile) setChatOpen(true) }} />
     ) : mobile ? (
@@ -994,12 +1079,12 @@ export default function App() {
             {chat}
           </div>
           <div className="fixed inset-x-3 z-30" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-            <TabBar view={view} setView={(v) => { setView(v); setChatOpen(false) }} taskCount={openTasks} />
+            <TabBar view={view} setView={(v) => { setView(v); setChatOpen(false) }} taskCount={openTasks} studying={session.phase !== 'idle'} />
           </div>
         </>
       ) : (
         <>
-          <Rail view={view} setView={setView} onSyllabus={() => setSyllabus(true)} onSettings={() => setEditing(true)} taskCount={openTasks} dark={dark} onTheme={() => setDark((d) => !d)} />
+          <Rail view={view} setView={setView} onSyllabus={() => setSyllabus(true)} onSettings={() => setEditing(true)} taskCount={openTasks} dark={dark} onTheme={() => setDark((d) => !d)} studying={session.phase !== 'idle'} />
           <aside
             className={`liquid relative min-h-0 shrink-0 overflow-hidden rounded-[30px] ${instant ? '' : 'transition-[width,opacity,transform,margin] duration-[260ms] [transition-timing-function:var(--ease-out)]'} ${collapsed ? 'pointer-events-none -mr-4 w-0 -translate-x-4 opacity-0' : 'w-[clamp(400px,34vw,520px)]'}`}
             aria-hidden={collapsed}
