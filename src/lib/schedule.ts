@@ -1,5 +1,5 @@
 // Greedy, explainable slot finder. Never writes to the calendar — it only proposes.
-import { addDays, at, HOUR, MIN, startOfDay, uid, type CalEvent, type Task } from './core'
+import { addDays, at, fmtTime, HOUR, MIN, startOfDay, uid, type CalEvent, type Task } from './core'
 
 export type Energy = 'morning' | 'afternoon' | 'evening'
 const DAY_START = 7
@@ -10,9 +10,16 @@ const SEARCH_FROM: Record<Energy, number[]> = {
   evening: [18, 13, 7],
 }
 
-function freeGaps(dayStart: number, from: number, to: number, busy: CalEvent[]) {
+/** Things the user told Pal once and expects it to remember ("no studying after 9pm", "keep Sundays free"). */
+export interface Prefs {
+  latestHour?: number
+  blockedDays?: number[] // 0=Sun…6=Sat
+}
+
+export function freeGaps(dayStart: number, from: number, to: number, busy: CalEvent[], prefs: Prefs = {}) {
+  if (prefs.blockedDays?.includes(new Date(dayStart).getDay())) return []
   const lo = Math.max(from, at(dayStart, DAY_START))
-  const hi = Math.min(to, at(dayStart, DAY_END))
+  const hi = Math.min(to, at(dayStart, Math.min(DAY_END, prefs.latestHour ?? DAY_END)))
   if (hi - lo < 30 * MIN) return []
   const blocks = busy
     .filter((e) => e.kind !== 'deadline' && e.end > lo && e.start < hi)
@@ -35,7 +42,7 @@ export interface Proposal {
   why: string
 }
 
-export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now: number, energy: Energy = 'afternoon'): Proposal {
+export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now: number, energy: Energy = 'afternoon', prefs: Prefs = {}): Proposal {
   const busy = events.filter((e) => e.status !== 'done' && e.status !== 'missed')
   const startAt = Math.ceil(now / (15 * MIN)) * (15 * MIN)
   const days: number[] = []
@@ -51,7 +58,7 @@ export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now
       if (remaining <= 0) break
       const placedToday = out.filter((b) => startOfDay(b.start) === d).length
       if (placedToday >= pass) continue
-      const gaps = freeGaps(d, startAt, task.due, [...busy, ...out])
+      const gaps = freeGaps(d, startAt, task.due, [...busy, ...out], prefs)
       if (pass === 1) freeHours += gaps.reduce((a, g) => a + (g.e - g.s) / HOUR, 0)
       let slot: { s: number; e: number } | null = null
       for (const h of SEARCH_FROM[energy]) {
@@ -78,7 +85,7 @@ export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now
   const spread = new Set(out.map((b) => startOfDay(b.start))).size
   const hasShift = busy.some((e) => e.kind === 'shift' && e.start < task.due && e.end > now)
   const why = out.length
-    ? `Spread over ${spread} day${spread > 1 ? 's' : ''} so no session runs longer than ${perBlock}h, placed around your classes${hasShift ? ' and shifts' : ''}, with a 15-min buffer after commutes. Nothing after 11pm.`
+    ? `Spread over ${spread} day${spread > 1 ? 's' : ''} so no session runs longer than ${perBlock}h, placed around your classes${hasShift ? ' and shifts' : ''}, with a 15-min buffer after commutes. Nothing after ${fmtTime(at(startOfDay(now), Math.min(DAY_END, prefs.latestHour ?? DAY_END)))}${prefs.blockedDays?.length ? ', and your rest days stay free' : ''}.`
     : 'There are no free 45-minute windows left before the deadline.'
   out.forEach((b) => (b.why = why))
   return { blocks: out, shortfall: Math.max(0, Math.round(remaining * 4) / 4), freeHours: Math.round(freeHours * 2) / 2, why }

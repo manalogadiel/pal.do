@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "instrument serif",
+        "createdAt": "2026-10-10T15:41:49.018Z",
+        "reason": "User confirmed: Instrument Serif + Inter Tight pairing with pixel-art pals is intentional"
+      }
+    ]
+  }
+}

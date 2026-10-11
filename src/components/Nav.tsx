@@ -1,10 +1,11 @@
-import { Doc, Gear, Moon, Sun, HomeIcon, TasksIcon, WeekIcon } from './Icons'
+import { Doc, Gear, Moon, Sun, HomeIcon, TasksIcon, TimerIcon, WeekIcon } from './Icons'
 
-export type View = 'home' | 'week' | 'tasks'
+export type View = 'home' | 'week' | 'tasks' | 'study'
 const ITEMS: { id: View; label: string; Icon: (p: { className?: string }) => React.ReactElement }[] = [
   { id: 'home', label: 'Today', Icon: HomeIcon },
   { id: 'week', label: 'Week', Icon: WeekIcon },
   { id: 'tasks', label: 'Tasks', Icon: TasksIcon },
+  { id: 'study', label: 'Study', Icon: TimerIcon },
 ]
 
 interface Props {
@@ -15,10 +16,12 @@ interface Props {
   dark?: boolean
   onTheme?: () => void
   taskCount: number
+  /** A Study session is running: show a dot on the Study item */
+  studying?: boolean
 }
 
 /** Desktop: a slim glass rail. The active pill slides between items instead of jumping. */
-export function Rail({ view, setView, onSyllabus, onSettings, taskCount, dark, onTheme }: Props) {
+export function Rail({ view, setView, onSyllabus, onSettings, taskCount, dark, onTheme, studying }: Props) {
   const i = ITEMS.findIndex((x) => x.id === view)
   return (
     <nav className="liquid relative z-30 flex w-[68px] shrink-0 flex-col items-center gap-1 rounded-[30px] py-4" aria-label="Views">
@@ -41,6 +44,7 @@ export function Rail({ view, setView, onSyllabus, onSettings, taskCount, dark, o
             <Icon className="size-[18px]" />
             {label}
             {id === 'tasks' && taskCount > 0 && <span className="tnum absolute top-2 right-2 grid h-4 min-w-4 place-items-center rounded-full bg-tangerine px-1 text-[9.5px] font-semibold text-white">{taskCount}</span>}
+            {id === 'study' && studying && <span className="pulse-dot absolute top-2 right-2 size-2 rounded-full bg-tangerine" aria-label="Session running" />}
           </button>
         ))}
       </div>
@@ -53,12 +57,12 @@ export function Rail({ view, setView, onSyllabus, onSettings, taskCount, dark, o
 }
 
 /** Mobile: bottom tab bar, same sliding pill. */
-export function TabBar({ view, setView, taskCount }: Pick<Props, 'view' | 'setView' | 'taskCount'>) {
+export function TabBar({ view, setView, taskCount, studying }: Pick<Props, 'view' | 'setView' | 'taskCount' | 'studying'>) {
   const i = ITEMS.findIndex((x) => x.id === view)
   return (
-    <nav className="liquid relative grid grid-cols-3 rounded-full p-1" aria-label="Views">
+    <nav className="liquid relative grid grid-cols-4 rounded-full p-1" aria-label="Views">
       <span
-        className="absolute inset-y-1 left-1 w-[calc((100%-8px)/3)] rounded-full bg-paper shadow-[0_4px_14px_-6px_rgb(60_44_30/0.25)] transition-transform duration-[380ms] [transition-timing-function:var(--ease-drawer)]"
+        className="absolute inset-y-1 left-1 w-[calc((100%-8px)/4)] rounded-full bg-paper shadow-[0_4px_14px_-6px_rgb(60_44_30/0.25)] transition-transform duration-[380ms] [transition-timing-function:var(--ease-drawer)]"
         style={{ transform: `translateX(${i * 100}%)` }}
         aria-hidden
       />
@@ -69,9 +73,10 @@ export function TabBar({ view, setView, taskCount }: Pick<Props, 'view' | 'setVi
           aria-current={view === id ? 'page' : undefined}
           className={`press relative flex h-11 items-center justify-center gap-1.5 rounded-full text-[13px] font-medium transition-colors duration-200 ${view === id ? 'text-ink' : 'text-ink-3'}`}
         >
-          <Icon className="size-4" />
+          <Icon className="size-4 max-[380px]:hidden" />
           {label}
           {id === 'tasks' && taskCount > 0 && <span className="tnum grid h-4 min-w-4 place-items-center rounded-full bg-tangerine px-1 text-[9.5px] font-semibold text-white">{taskCount}</span>}
+          {id === 'study' && studying && <span className="pulse-dot size-2 rounded-full bg-tangerine" aria-label="Session running" />}
         </button>
       ))}
     </nav>

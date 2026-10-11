@@ -1,0 +1,58 @@
+- generic [ref=f28e3]:
+  - banner [ref=f28e4]:
+    - generic "Pal.Do" [ref=f28e5]:
+      - generic [ref=f28e6]: Pal
+      - generic [ref=f28e8]: Do
+    - radiogroup "Switch pal" [ref=f28e9]:
+      - radio [ref=f28e10] [cursor=pointer]:
+        - img "Rei, idle" [ref=f28e12]
+      - radio [ref=f28e96] [cursor=pointer]:
+        - img "Diel, idle" [ref=f28e98]
+      - radio "Jhyvie, idle Jhyvie" [checked] [ref=f28e184] [cursor=pointer]:
+        - img "Jhyvie, idle" [ref=f28e186]
+        - generic [ref=f28e284]: Jhyvie
+      - radio [ref=f28e285] [cursor=pointer]:
+        - img "Jaypee, idle" [ref=f28e287]
+    - button "Switch to light mode" [ref=f28e366] [cursor=pointer]
+    - button "Pal and preferences" [ref=f28e371] [cursor=pointer]
+  - main [ref=f28e376]:
+    - generic [ref=f28e377]:
+      - generic [ref=f28e378]:
+        - heading "Tasks" [level=1] [ref=f28e379]
+        - paragraph [ref=f28e380]: Exams and assignments your pal is tracking. Tap Plan it and they'll suggest study blocks that fit around your classes.
+      - generic [ref=f28e381]:
+        - button "+ Math quiz next Tuesday" [ref=f28e382] [cursor=pointer]
+        - button "+ History essay due Friday" [ref=f28e383] [cursor=pointer]
+        - button "+ Paste my syllabus" [ref=f28e384] [cursor=pointer]
+      - list [ref=f28e385]:
+        - listitem [ref=f28e386]:
+          - img "0m of 3h done" [ref=f28e387]:
+            - generic [ref=f28e391]: "0"
+          - generic [ref=f28e392]:
+            - generic [ref=f28e393]: Bio review
+            - generic [ref=f28e397]: Due Fri, Oct 16 · 3h left
+          - button "Plan it" [ref=f28e398] [cursor=pointer]
+      - heading "Done" [level=2] [ref=f28e399]
+      - list [ref=f28e400]:
+        - listitem [ref=f28e401]:
+          - img "3h of 3h done" [ref=f28e402]:
+            - generic [ref=f28e406]: "100"
+          - generic [ref=f28e407]:
+            - generic [ref=f28e408]: Rizal reflection paper
+            - generic [ref=f28e412]: Past due · all done
+  - generic [ref=f28e415]:
+    - generic [ref=f28e417]:
+      - button "Jhyvie, idle. Poke" [ref=f28e418] [cursor=pointer]
+      - button "Jhyvie says" [ref=f28e559] [cursor=pointer]:
+        - generic [ref=f28e560]: Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.
+    - generic [ref=f28e562]:
+      - textbox "Message" [ref=f28e563]:
+        - /placeholder: Tell Jhyvie your plan…
+      - button "Switch to voice mode" [ref=f28e564] [cursor=pointer]
+  - navigation "Views" [ref=f28e569]:
+    - button "Today" [ref=f28e571] [cursor=pointer]
+    - button "Week" [ref=f28e575] [cursor=pointer]
+    - button "Tasks 1" [ref=f28e579] [cursor=pointer]:
+      - text: Tasks
+      - generic [ref=f28e582]: "1"
+    - button "Study" [ref=f28e583] [cursor=pointer]

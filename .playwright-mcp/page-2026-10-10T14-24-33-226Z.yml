@@ -1,0 +1,93 @@
+- generic [ref=f27e3]:
+  - navigation "Views" [ref=f27e4]:
+    - generic [ref=f27e7]:
+      - button "Today" [ref=f27e9] [cursor=pointer]
+      - button "Week" [ref=f27e13] [cursor=pointer]
+      - button "Tasks 1" [ref=f27e17] [cursor=pointer]:
+        - text: Tasks
+        - generic [ref=f27e20]: "1"
+      - button "Study" [ref=f27e21] [cursor=pointer]
+    - button "Paste a syllabus" [ref=f27e25] [cursor=pointer]
+    - button "Switch to light mode" [ref=f27e29] [cursor=pointer]
+    - button "Pal and preferences" [ref=f27e33] [cursor=pointer]
+  - complementary [ref=f27e38]:
+    - generic [ref=f27e40]:
+      - generic [ref=f27e41]:
+        - button "Hide chat (⌘/)" [ref=f27e42] [cursor=pointer]
+        - button "Speak replies aloud" [ref=f27e45] [cursor=pointer]
+      - log [ref=f27e49]:
+        - generic [ref=f27e50]:
+          - generic [ref=f27e51]: who won the nba finals?
+          - generic [ref=f27e53]: "Good afternoon! Nothing else planned today. Weather: 29°C and partly cloudy, rain likely 5pm–8pm (as of 5:50pm). Sat is your heaviest day (6h booked)."
+          - generic [ref=f27e57]:
+            - generic [ref=f27e58]: Ooh, basketball talk! That's outside my lane though. You've got a nice open block from 7:15pm to 11pm tonight—want to use some of that for a quick study break?
+            - generic [ref=f27e59]: "Scope: redirected to planning"
+          - generic [ref=f27e60]: hi
+          - generic [ref=f27e62]: Hi, I'm Rei. Tell me about your week, we'll figure it out together.
+          - generic [ref=f27e65]: I don't study after 9pm
+          - generic [ref=f27e67]: Got it, nothing after 9pm. I'll plan around that from now on.
+          - generic [ref=f27e70]: find me 3 hours to review bio before friday
+          - generic [ref=f27e73]:
+            - generic [ref=f27e74]: Sure thing! I'll find 3 hours for you to review Biology before Friday.
+            - generic [ref=f27e75]:
+              - list [ref=f27e76]:
+                - listitem [ref=f27e77]: No blocks fit before the deadline.
+              - button "Why these times?" [ref=f27e78] [cursor=pointer]
+              - generic [ref=f27e79]: Kept your calendar as is
+          - generic [ref=f27e81]: All good, I saved it. Just say "plan it" whenever.
+      - generic [ref=f27e85]:
+        - generic [ref=f27e86]:
+          - generic [ref=f27e88]: Jhyvie
+          - generic [ref=f27e89]: · here
+        - generic [ref=f27e91]:
+          - textbox "Message" [ref=f27e92]:
+            - /placeholder: Tell Jhyvie your plan…
+          - button "Switch to voice mode" [ref=f27e93] [cursor=pointer]
+  - generic [ref=f27e97]:
+    - radiogroup "Switch pal" [ref=f27e99]:
+      - radio [ref=f27e100] [cursor=pointer]:
+        - img "Rei, idle" [ref=f27e102]
+      - radio [ref=f27e186] [cursor=pointer]:
+        - img "Diel, idle" [ref=f27e188]
+      - radio "Jhyvie, idle Jhyvie" [checked] [ref=f27e274] [cursor=pointer]:
+        - img "Jhyvie, idle" [ref=f27e276]
+        - generic [ref=f27e374]: Jhyvie
+      - radio [ref=f27e375] [cursor=pointer]:
+        - img "Jaypee, idle" [ref=f27e377]
+    - generic [ref=f27e457]:
+      - generic [ref=f27e458]:
+        - button "Jhyvie, idle. Poke" [ref=f27e461] [cursor=pointer]
+        - button "Talk to Jhyvie" [ref=f27e603] [cursor=pointer]
+        - generic [ref=f27e604]: Saturday
+        - heading "October 10" [level=1] [ref=f27e605]
+        - paragraph [ref=f27e606]: Nothing else booked today. The evening is yours.
+      - generic [ref=f27e607]:
+        - heading "Today" [level=2] [ref=f27e608]
+        - list [ref=f27e609]:
+          - listitem [ref=f27e611]:
+            - generic [ref=f27e612]: 1pm
+            - button "Café shift 6h" [ref=f27e614] [cursor=pointer]:
+              - generic [ref=f27e618]: Café shift
+              - generic [ref=f27e619]: 6h
+      - generic [ref=f27e620]:
+        - generic [ref=f27e621]:
+          - heading "This week" [level=2] [ref=f27e622]
+          - button "Open week" [ref=f27e623] [cursor=pointer]
+        - generic "Committed hours per day" [ref=f27e625]:
+          - button "2" [ref=f27e626] [cursor=pointer]
+          - button "4" [ref=f27e630] [cursor=pointer]
+          - button "6" [ref=f27e634] [cursor=pointer]
+          - button "7" [ref=f27e638] [cursor=pointer]
+          - button "2" [ref=f27e642] [cursor=pointer]
+          - button "6" [ref=f27e646] [cursor=pointer]
+          - button "3" [ref=f27e650] [cursor=pointer]
+      - generic [ref=f27e654]:
+        - heading "Coming up" [level=2] [ref=f27e655]
+        - list [ref=f27e656]:
+          - listitem [ref=f27e657]:
+            - 'img "Bio review: 0m of 3h done" [ref=f27e658]':
+              - generic [ref=f27e662]: "0"
+            - generic [ref=f27e663]:
+              - generic [ref=f27e664]: Bio review
+              - generic [ref=f27e665]: Fri · 3h left
+            - button "Plan it" [ref=f27e666] [cursor=pointer]

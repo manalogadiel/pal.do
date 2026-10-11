@@ -1,5 +1,5 @@
 // Pal's brain: scope filter → intent → slot-filling dialog. Deterministic and auditable.
-import { fmtDay, fmtHours, fmtTime, type PalId, type PalState, type TaskKind } from './core'
+import { fmtDay, fmtHours, fmtTime, HOUR, type PalId, type PalState, type TaskKind } from './core'
 import { eventKind, extractTitle, hasSingleDay, isNo, isYes, parseDays, parseHours, parseRange, parseWhen, taskKind } from './parse'
 
 export interface Draft {
@@ -11,12 +11,14 @@ export interface Draft {
 export type Awaiting = null | 'due' | 'hours' | 'confirm'
 /** A class/shift we heard but still need weekdays for. */
 export interface PendingEvent { title: string; kind: string; start: number; end: number }
+/** The event card still waiting for Add it / Never mind, so "no, it's a lunch date" can revise it. */
+export interface LastEvent { title: string; kind: string; start: number; end: number; days?: number[] }
 
 export type Card =
   | { type: 'readback'; draft: Draft }
   | { type: 'proposal'; taskId: string; blockIds: string[]; why: string; shortfall: number; freeHours: number; commute?: boolean }
   | { type: 'checkin'; eventIds: string[] }
-  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; whatIf: boolean; days?: number[] }
+  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; whatIf?: boolean; days?: number[] }
   | { type: 'notify' }
   | { type: 'boundary' }
 
@@ -24,8 +26,14 @@ export type Action =
   | { type: 'confirmDraft'; draft: Draft }
   | { type: 'addEvent'; title: string; kind: string; start: number; end: number; whatIf: boolean; days?: number[] }
   | { type: 'summary' }
+  | { type: 'weather' }
+  | { type: 'pref'; latestHour?: number; blockedDays?: number[]; clear?: boolean }
+  | { type: 'freeTime'; day: number }
   | { type: 'energy'; value: 'morning' | 'afternoon' | 'evening' }
   | { type: 'openSyllabus' }
+  | { type: 'reviseEvent'; title: string; kind: string; start: number; end: number; days?: number[] }
+  | { type: 'confirmEvent' }
+  | { type: 'skipEvent' }
 
 export interface Turn {
   text: string
@@ -69,16 +77,43 @@ const BASE: Lines = {
   checkinMany: ['A few of these went by. How did they go?'],
   doneOk: ['Nice!! Checked off.', 'Yesss, done.'],
   reflow: ["That's okay, happens. I moved the {h} left around, does this work?", 'No stress. Redid the last {h}, want this instead?'],
+  revised: ['Ahh got it. Like this?', 'Oops, fixed it. This one?'],
   reflowNone: ["Nothing left to move. You're good on this one."],
   graded: ["I can't write it for you, but I can save you some focus time for it. How long do you think you need?"],
   grades: ["I honestly can't tell you your grade. I can show how much study time fits before the exam though."],
   stress: ["I can't really tell how you're feeling, but I can look at your week and see what we can move. And if it's getting heavy, the guidance office is there for you."],
   inject: ["Let's stick to your schedule. Anything else coming up?"],
-  offtopic: ["Haha I'm only good at planning stuff. Anything coming up this week?"],
+  offtopic: [
+    "Ooh, I get what you're asking, but that's outside what I can help with. Want to look at {next} instead?",
+    "That one's not really my thing, sorry! I'm better at time stuff. Should we plan around {next}?",
+    "I'd love to, but I'm just your planning buddy. How about we block some time for {next}?",
+    "Hmm, can't help with that one. What I can do is make your week lighter. Start with {next}?",
+  ],
+  time: ["It's {t}, {d}.", '{t} right now, {d}.'],
+  prefSaved: ["Noted! I'll remember: {what}.", 'Got it, {what}. I\'ll plan around that from now on.'],
+  prefCleared: ['Okay, I forgot your planning preferences. Fresh start!'],
+  focusStart: ["Focus time! I'll stay right here.", "Okay, 25 minutes. You've got this."],
+  breakStart: ['Nice round! Take 5, stretch and drink water.', 'Break time. Look away from the screen for a bit.'],
+  longBreak: ['Four rounds done! Take a longer 15-minute break.'],
+  sessionDone: ['Session saved. {m} min focused today.'],
+  setDone: ["Set complete, four rounds done! Start another whenever you're ready."],
+  weatherNone: ["I can't check the weather right now, sorry! Once you're online I'll grab it.", 'No weather info yet, I need internet for that. Try again in a bit?'],
   thanks: ['Anytime!', 'Of course :)'],
-  unknown: ['Hmm, I didn\'t get that one. Try "Bio exam Friday" or "shift Sat 2-8pm"?', "Sorry, lost me there. What's coming up?"],
+  chatHow: ["Doing good, thanks for asking! How's your week going?", 'All good here! Anything coming up for you?'],
+  chatWho: ["I'm your planning buddy. Tell me your classes, deadlines or shifts and I'll fit them into your week.", 'I help you plan your week. Try "Bio exam Friday" or "gym tomorrow 5pm".'],
+  chatAck: ['Okay! Just tell me whenever something comes up.', "Sige! I'm here if you need to plan something."],
+  chatHuh: ['Oops, was I unclear? I can add things to your week, like "study tomorrow 3pm" or "Math quiz Friday".', "Hmm, sorry! Ask me to add a class, shift or deadline and I'll handle it."],
+  unknown: [
+    'Hmm, not sure I caught that. If it\'s about your schedule, try "Bio exam Friday" or "gym tomorrow 5pm". Or should we look at {next}?',
+    "I might've missed that one! I'm best with plans and deadlines. Want to check {next}?",
+    "Sorry, I didn't quite get it. Tell me what's coming up and I'll fit it in.",
+  ],
   energy: ["Got it, I'll put things in the {v} first."],
   eventAdd: ['Add this?', 'Want me to put this in?'],
+  eventAdded: ['Added! {what} is on your calendar.', 'Done, {what} is in.'],
+  eventSkipped: ["Okay, I left it off.", 'Sure, not adding it.'],
+  nothingWaiting: ["Hmm, I don't have anything ready to add yet. What should I put in, and when?"],
+  confirmHint: ["Tap Add it on the card, or just tell me to go ahead, and it's on your calendar.", 'Say the word or tap Add it, and I\'ll put it in.'],
   whatIf: ['It would look like this:'],
   notify: ['Want a little heads-up before each block starts?'],
   voiceOn: ["Okay, I'll talk out loud now.", 'Voice on! You can just talk to me too.'],
@@ -89,12 +124,14 @@ const VOICE: Record<PalId, Partial<Lines>> = {
   rei: {
     greet: ["Hi, I'm Rei. Tell me about your week, we'll figure it out together."],
     doneOk: ["That one's done. Proud of you.", 'Nice and steady. Checked off.'],
+    offtopic: ["I hear you, but that's not something I can help with. Maybe we take a gentle look at {next}?"],
   },
   diel: {
     greet: ["Hey, Diel here. Give me your classes, deadlines, shifts. I like a good schedule."],
     askHours: ['How many hours, roughly?', "What's your estimate in hours?"],
     accepted: ["In the calendar. I'll check in after each block."],
     doneOk: ['Done. Love a clean list.'],
+    offtopic: ['Outside my parameters, unfortunately. Within them: {next}. Want me to plan it?'],
   },
   jhyvie: {
     greet: ['Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.'],
@@ -103,6 +140,10 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     accepted: ["G! Nasa calendar na. Kamustahin kita after each block ha."],
     doneOk: ['Yay, tapos na yan!', 'Galing! Done!'],
     notNow: ['Sige, later na lang. Sabihin mo lang "plan it".'],
+    offtopic: ['Gets ko yan, pero hindi ko talaga forte yan hehe. Tara, {next} na lang natin pag-usapan?', 'Ay, di ko kaya sagutin yan! Pero kaya kitang tulungan sa {next}, game?'],
+    time: ['{t} na! {d} ngayon.'],
+    focusStart: ['Tara, focus muna! Nandito lang ako.'],
+    breakStart: ['Galing! Break muna, 5 minutes. Inom ka tubig!'],
   },
   jaypee: {
     greet: ["Yo, Jaypee here! What's the week look like?"],
@@ -110,6 +151,7 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     askHours: ['How many hours?'],
     accepted: ["Locked in! Let's go."],
     doneOk: ["Let's gooo, done!", 'Boom. Checked off.'],
+    offtopic: ["Ha, not my sport! What I CAN coach is your week. Let's lock in {next}?"],
   },
 }
 
@@ -124,10 +166,11 @@ export function say(pal: PalId, key: string, vars: Record<string, string | numbe
 export const defaultHours = (k: TaskKind) => (k === 'exam' ? 6 : 4)
 
 /* ---------- One dialog turn ---------- */
-export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft | null; awaiting: Awaiting; pending?: PendingEvent | null }): Turn {
+export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft | null; awaiting: Awaiting; pending?: PendingEvent | null; lastEvent?: LastEvent | null; facts?: { next: string } }): Turn {
   const { pal, now } = ctx
   const text = input.trim()
   const keep = { draft: ctx.draft, awaiting: ctx.awaiting }
+  const F = { next: ctx.facts?.next ?? 'your week' }
   const out = (key: string, extra: Partial<Turn> = {}, vars?: Record<string, string | number>): Turn => ({
     ...keep, text: say(pal, key, vars), ...extra,
   })
@@ -162,6 +205,53 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
     return { ...r, pending: r.pending === undefined ? null : r.pending }
   }
 
+  // Offline safety net for answering the waiting card. Online, the model reads intent in any wording.
+  // Short and time-free only: "yes but make it 3pm" is a change, handled below
+  if (ctx.lastEvent && text.split(/\s+/).length <= 4 && !parseRange(text, now) && !parseWhen(text, now)) {
+    const le = ctx.lastEvent
+    if (isNo(text) || /^\s*(ayaw|ayoko)\b/i.test(text)) return out('eventSkipped', { action: { type: 'skipEvent' } })
+    if (isYes(text) || /^\s*(ok+(ay+)?|oki+|sige+|oo+|ye+s+|tama+|g+o*|push|ilagay|lagay|add (it|na)|lock it|put it)\b/i.test(text))
+      return out('eventAdded', { action: { type: 'confirmEvent' } }, { what: `${le.title}, ${fmtDay(le.start)} ${fmtTime(le.start)}` })
+  }
+
+  // Correcting the event card still waiting: "no, it's a lunch date", "make it 3pm", "call it Gym"
+  // Standing preferences: "I don't study after 9pm", "keep Sundays free", "forget my preferences"
+  if (/\b(forget|reset|clear)\b.*\b(pref(erence)?s?|rules?)\b/i.test(text)) return out('prefCleared', { action: { type: 'pref', clear: true } })
+  const negates = /\b(don'?t|do not|never|no|ayoko(ng)?|wag|huwag|walang)\b/i.test(text)
+  const late = negates && /\b(study|studying|aral|mag-?aral|work|plan|schedule|sched|anything|review)\b/i.test(text)
+    ? text.match(/\b(?:after|past|lampas(?: ng)?|beyond)\s+(\d{1,2})(?::00)?\s*(am|pm)?/i) : null
+  // A time range means a real event ("keep friday free for my class 9-12"), not a rest day
+  const restDays = !parseRange(text, now) && (negates || /\b(keep|leave|rest day|day off)\b/i.test(text)) && /\b(free|rest|off|plans?|study|schedule|sched|anything)\b/i.test(text)
+    ? parseDays(`every ${text}`) : null
+  if (late || restDays) {
+    const h = late ? +late[1] : NaN
+    const latestHour = late ? (/am/i.test(late[2] ?? '') ? h % 12 : h < 12 ? h + 12 : h) : undefined
+    const names = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays']
+    const what = [latestHour != null ? `nothing after ${fmtTime(new Date(now).setHours(latestHour, 0, 0, 0))}` : '', restDays ? `${restDays.map((d) => names[d]).join(' and ')} stay free` : ''].filter(Boolean).join(', ')
+    return out('prefSaved', { action: { type: 'pref', latestHour, blockedDays: restDays ?? undefined } }, { what })
+  }
+
+  // Today questions: answered from the clock / cached weather, never guessed
+  const day = (o: Intl.DateTimeFormatOptions) => new Date(now).toLocaleDateString('en-US', { weekday: 'long', ...o })
+  if (/\b(what time is it|what'?s the time|time check|anong oras na|anong oras ngayon|oras na ba)\b/i.test(text) || /^\s*(what time|time|oras)\W*$/i.test(text))
+    return out('time', {}, { t: fmtTime(now), d: day({ month: 'short', day: 'numeric' }) })
+  if (/\b(what day is (it|today)|what'?s the date|anong araw (na|ngayon)|anong petsa|what'?s today)\b/i.test(text))
+    return out('time', {}, { t: fmtTime(now), d: day({ month: 'long', day: 'numeric' }) })
+  if (/\b(weather|panahon|forecast|temperature|uulan|maulan|will it rain|is it raining|umuulan)\b/i.test(text)) return { ...keep, text: '', action: { type: 'weather' } }
+  if (/\b(am i free|free (ba )?ako|free time|bakante|when am i free|kailan ako free)\b/i.test(text)) {
+    const w = hasSingleDay(text, now) ? parseWhen(text, now) : null
+    return { ...keep, text: '', action: { type: 'freeTime', day: w ? w.t : now } }
+  }
+
+  const fix = ctx.lastEvent && text.match(/^\s*(?:no+|nope|hindi|mali|wait|actually|ay)?[\s,.!]*(?:it'?s|its|it is|make it|call it|change (?:it )?to|rename (?:it )?to|dapat|gawin mong)\s+(?:an?\s+|the\s+)?(.+)$/i)
+  if (ctx.lastEvent && fix) {
+    const le = ctx.lastEvent
+    const w = parseWhen(fix[1], now)
+    const start = w?.hadTime ? w.t : le.start
+    const title = extractTitle(fix[1], le.title)
+    return { ...keep, text: say(pal, 'revised'), action: { type: 'reviseEvent', title, kind: eventKind(fix[1]) ?? le.kind, start, end: start + (le.end - le.start), days: le.days } }
+  }
+
   // Fixed events first, so a class mid-task doesn't get eaten as a due date
   const range = parseRange(text, now)
   const ek = eventKind(text)
@@ -176,6 +266,16 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
       return { ...keep, pending: { title, kind, start: range.start, end: range.end }, text: say(pal, 'askDays', { what }), chips: ['MWF', 'TTh', 'Every weekday', 'Just today'] }
     }
     return { ...keep, pending: null, text: '', action: { type: 'addEvent', title, kind, start: range.start, end: range.end, whatIf, days: days ?? undefined } }
+  }
+
+  // Single time event (e.g. "gym at 5pm", "lagay mo bukas 3pm study", "review tomorrow 2pm")
+  const singleWhen = parseWhen(text, now)
+  if (singleWhen?.hadTime && (ek || /\b(gym|workout|study|review|shift|class|duty|meeting|org|training|practice|lagay|schedule|add|put|set)\b/i.test(text))) {
+    const kind = ek ?? (/\b(gym|workout|run|training)\b/i.test(text) ? 'protected' : 'work')
+    const title = extractTitle(text.replace(/\b(lagay( mo)?|schedule|add|put|set)\b/gi, ''), kind === 'protected' ? 'Gym' : kind === 'class' ? 'Class' : kind === 'shift' ? 'Shift' : 'Study Session')
+    const start = singleWhen.t
+    const end = start + 1 * HOUR
+    return { ...keep, pending: null, text: '', action: { type: 'addEvent', title, kind, start, end, whatIf: false } }
   }
 
   // Slot filling for the current draft
@@ -198,16 +298,23 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
     if (w || h) return next(d)
   }
 
-  if (/^\s*(hi|hello|hey|yo|kumusta|musta|good (morning|afternoon|evening))\b/i.test(text)) return out('greet')
+  if (/^\s*(hi|hello|hey|yo|kumusta|musta|good (morning|afternoon|evening))\b/i.test(text) && text.split(/\s+/).length <= 3) return out('greet') // "hey add plan at 5" falls through
   if (/^\s*(thanks|thank you|ty|salamat|tnx)\b/i.test(text)) return out('thanks')
+  if (/\b(how are you|how r u|how'?s it going|kumusta ka|musta ka|kamusta ka)\b/i.test(text)) return out('chatHow')
+  if (/\b(who are you|what are you|what can you do|sino ka|anong kaya mo)\b/i.test(text)) return out('chatWho')
+  if (/^\s*(what|huh|ha|ano|eh)\W*$/i.test(text)) return out('chatHuh')
+  if (/^\s*(ok|okay|sige|ayun|ayos|lol|haha+|hehe+|nice|cool|g|sure|alright|i see)\W*$/i.test(text)) return out('chatAck')
   if (/\b(syllabus|course outline)\b/i.test(text)) return { ...keep, text: 'Paste your syllabus and I\'ll pull out the deadlines for you to confirm.', action: { type: 'openSyllabus' } }
-  if (/\b(how'?s my week|my week|what'?s (on|up|coming)|anong meron|schedule ko|show my week|what do i have)\b/i.test(text))
+  if (/\b(how'?s my week|my week|how busy|analy[sz]e|workload|kaya ko ba|what'?s (on|up|coming)|anong meron|schedule ko|show my week|what do i have)\b/i.test(text))
     return { ...keep, text: '', action: { type: 'summary' } }
   const en = text.match(/\b(focus|work|study) best (in the |at )?(morning|afternoon|evening|night)s?\b/i)
   if (en) {
     const v = (en[3] === 'night' ? 'evening' : en[3]) as 'morning' | 'afternoon' | 'evening'
     return out('energy', { action: { type: 'energy', value: v } }, { v })
   }
+
+  // "who won the nba finals" is trivia, not a finals exam: off-topic questions that aren't about *their* stuff
+  if (OFFTOPIC.test(text) && !/\b(my|me|i|ko|ako|deadline|due|sched(ule)?|plan|free|busy)\b/i.test(text)) return out('offtopic', { rule: 'Scope filter: off-topic' }, F)
 
   // New task
   const k = taskKind(text)
@@ -217,8 +324,8 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
     return next(d)
   }
 
-  if (OFFTOPIC.test(text)) return out('offtopic', { rule: 'Scope filter: off-topic' })
-  return out('unknown', { chips: ['Bio exam Friday', 'Shift Sat 2-8pm', "How's my week?"] })
+  if (OFFTOPIC.test(text)) return out('offtopic', { rule: 'Scope filter: off-topic' }, F)
+  return out('unknown', {}, F)
 
   function next(d: Draft, prefix = ''): Turn {
     if (!d.due) return { draft: d, awaiting: 'due', text: prefix + say(pal, 'askDue') }

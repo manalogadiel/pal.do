@@ -80,7 +80,24 @@ function timeOfDay(text: string): [number, number] | null {
   return null
 }
 
+const N = String.raw`(\d+(?:\.\d+)?|an?|one|isang|half an?)`
+const UNIT = String.raw`(h|hr|hrs|hour|hours|oras|m|min|mins|minutes|minuto)`
+const REL_BEFORE = new RegExp(String.raw`\b(?:in|after|within|pagkatapos ng)\s+${N}\s*${UNIT}\b`, 'i')
+const REL_AFTER = new RegExp(String.raw`\b${N}\s*${UNIT}\s+(?:after|later|from now|mamaya)\b`, 'i')
+
+/** "in 1 hour", "1 hour after", "30 mins from now", "after 2 hrs" → now + offset (rounded up to 5 min) */
+function relative(text: string, now: number): number | null {
+  const m = text.match(REL_BEFORE) ?? text.match(REL_AFTER)
+  if (!m) return null
+  const n = /^half/i.test(m[1]) ? 0.5 : /^(an?|one|isang)$/i.test(m[1]) ? 1 : +m[1]
+  const mins = /^(m|min|mins|minutes|minuto)$/i.test(m[2]) ? n : n * 60
+  const step = 5 * 60 * 1000
+  return Math.ceil((now + mins * 60 * 1000) / step) * step
+}
+
 export function parseWhen(text: string, now: number): When | null {
+  const rel = relative(text, now)
+  if (rel != null) return { t: rel, hadTime: true }
   const base = dayBase(text, now)
   const tod = timeOfDay(text)
   if (base == null && !tod) return null
@@ -185,7 +202,8 @@ export function eventKind(text: string): Kind | null {
 }
 
 const STRIP = [
-  RANGE, CLOCK, NEXT_WEEK,
+  RANGE, CLOCK, NEXT_WEEK, REL_BEFORE, REL_AFTER,
+  /^\s*(hey|hi|hello|yo|uy|bosing|boss)\b/gi,
   /\bat \d{1,2}:\d{2}\b/gi,
   /(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|oras|m|min|mins|minutes)\b/gi,
   /\bin \d+ days?\b/gi,

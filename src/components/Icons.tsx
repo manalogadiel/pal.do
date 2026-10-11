@@ -63,3 +63,5 @@ export function SyllabusArt({ className = '' }: P) {
 }
 export const Sun = (p: P) => <S {...p}><circle cx="8" cy="8" r="2.75" /><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.05 1.05M11.75 11.75l1.05 1.05M3.2 12.8l1.05-1.05M11.75 4.25l1.05-1.05" /></S>
 export const Moon = (p: P) => <S {...p}><path d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1Z" /></S>
+export const Trash = (p: P) => <S {...p}><path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4 4.5l.6 8.5a1 1 0 0 0 1 .9h4.8a1 1 0 0 0 1-.9l.6-8.5M6.75 7v4M9.25 7v4" /></S>
+export const TimerIcon = (p: P) => <S {...p}><circle cx="8" cy="9" r="5.25" /><path d="M8 9V6.5M6.5 1.75h3M8 1.75v2" /></S>

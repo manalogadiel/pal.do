@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeDraft, type Card } from '../lib/agent'
 import { fmtDay, fmtHours, fmtTime, type CalEvent, type PalId, type PalState } from '../lib/core'
 import { Pal } from '../pals/Pal'
@@ -78,31 +78,78 @@ function useSpeech(bubble: MascotBubble | null) {
 
 export function Chat(p: Props) {
   const [text, setText] = useState('')
+  const [voiceMode, setVoiceMode] = useState(false)
+  const feedRef = useRef<HTMLDivElement>(null)
   const end = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const speech = useSpeech(p.bubble)
+
+  useEffect(() => {
+    if (p.open) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [p.open])
+
+  useEffect(() => {
+    if (p.micOn) setVoiceMode(true)
+  }, [p.micOn])
   // The pal row floats over the feed while the log is showing; the feed pads itself to clear it
   const overlay = !p.compact || !!p.open
   const rowRef = useRef<HTMLDivElement>(null)
-  const [rowH, setRowH] = useState(0)
+  // Default to full pal height so spacer is correctly sized on frame 0 during page reload
+  const defaultRowH = p.compact ? 80 : 120
+  const [rowH, setRowH] = useState(defaultRowH)
   useEffect(() => {
     const el = rowRef.current
     if (!el) return
-    const ro = new ResizeObserver(([e]) => setRowH(e.contentRect.height))
+    const ro = new ResizeObserver(([e]) => {
+      const h = e.contentRect.height
+      if (h > 0) setRowH(h)
+    })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
   const shownState: PalState = speech.typing && (p.palState === 'idle' || p.palState === 'sleeping') ? 'talking' : p.palState
   const logOpen = !p.compact || p.open
 
-  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open])
+  const scrollToBottom = useCallback((instant = false) => {
+    if (feedRef.current) {
+      feedRef.current.scrollTo({
+        top: feedRef.current.scrollHeight,
+        behavior: instant ? 'auto' : 'smooth',
+      })
+    }
+    end.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'end' })
+  }, [])
+
+  // Auto-scroll when messages update, card resolves, log opens, or pal height settles
+  useEffect(() => {
+    scrollToBottom(false)
+  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, scrollToBottom])
+
+  // On page mount / reload, ensure feed immediately scrolls to bottom so the last bubble is on top of the mascot
+  useEffect(() => {
+    scrollToBottom(true)
+    const t1 = setTimeout(() => scrollToBottom(true), 50)
+    const t2 = setTimeout(() => scrollToBottom(true), 150)
+    const t3 = setTimeout(() => scrollToBottom(false), 300)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+    }
+  }, [scrollToBottom])
 
   const send = () => {
     if (!text.trim()) return
     p.onSend(text)
     setText('')
   }
-  const speechBubble = (row: boolean) =>
-    p.bubble ? (
+  const speechBubble = (row: boolean) => {
+    // When the chat log is open and has messages, keep the message in the chat feed (on top)
+    // and don't duplicate it in the floating mascot bubble.
+    const isDuplicate = logOpen && (p.msgs.length > 0 || p.msgs.some((m) => m.from === 'pal' && m.text === p.bubble?.text))
+    return p.bubble && !isDuplicate ? (
       <button
         key={p.bubble.id}
         onClick={() => speech.typing && speech.skip()}
@@ -119,6 +166,7 @@ export function Chat(p: Props) {
         <span>· {STATE_LABEL[shownState]}</span>
       </div>
     )
+  }
   const firstRun = !p.msgs.length
 
   return (
@@ -148,7 +196,7 @@ export function Chat(p: Props) {
 
       {/* Log */}
       <div className={`grid min-h-0 overflow-hidden ${p.compact ? 'drawer' : 'flex-1 grid-rows-[minmax(0,1fr)]'}`} style={p.compact ? { gridTemplateRows: p.open ? '1fr' : '0fr', flex: p.open ? '1 1 0%' : '0 0 auto' } : undefined}>
-        <div className={`fade-top min-h-0 overflow-y-auto overscroll-contain px-6 ${logOpen ? 'pt-4 pb-2' : 'invisible'}`} role="log" aria-live="polite">
+        <div ref={feedRef} className={`fade-top min-h-0 overflow-y-auto overscroll-contain px-6 ${logOpen ? 'pt-4 pb-2' : 'invisible'}`} role="log" aria-live="polite">
           {firstRun ? (
             <div className="land pt-[6vh] pb-6">
               <div className="text-[13px] font-medium text-ink-3">{greetingTime()}</div>
@@ -171,12 +219,16 @@ export function Chat(p: Props) {
                   {m.from === 'me' ? (
                     <div className="max-w-[82%] rounded-[22px] rounded-br-[8px] bg-ink/[0.06] px-4 py-2.5 text-[14.5px] leading-snug">{m.text}</div>
                   ) : (
-                    <div className="max-w-[94%] min-w-0">
+                    <div className="max-w-[90%] min-w-0 space-y-2">
+                      {m.text && (
+                        <div className="rounded-[22px] rounded-bl-[8px] bg-paper px-4 py-2.5 text-[14.5px] leading-relaxed shadow-[0_2px_10px_-2px_rgba(0,0,0,0.06)] border border-ink/[0.06] text-ink">
+                          {m.text}
+                        </div>
+                      )}
                       {m.card && <CardView m={m} {...p} />}
-                      {!m.card && m.chips && <div className="h-1" />}
-                      {m.rule && <div className="mt-1.5 font-pixel text-[9px] tracking-wide text-ink-3 uppercase">{m.rule}</div>}
+                      {m.rule && <div className="mt-1 font-pixel text-[9px] tracking-wide text-ink-3 uppercase">{m.rule}</div>}
                       {m.chips && !m.resolved && (
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="mt-2 flex flex-wrap gap-2">
                           {m.chips.map((c, i) => (
                             <Chip key={c} i={i} onClick={() => { p.onCard(m.id, 'chip'); p.onSend(c) }}>{c}</Chip>
                           ))}
@@ -189,7 +241,7 @@ export function Chat(p: Props) {
             </div>
           )}
           {/* Spacer = pal row height, so scrolling to the end lifts the newest message above the pal */}
-          <div ref={end} aria-hidden style={overlay ? { height: rowH + 8 } : undefined} />
+          <div ref={end} aria-hidden style={overlay ? { height: rowH + 20 } : undefined} />
         </div>
       </div>
 
@@ -206,31 +258,59 @@ export function Chat(p: Props) {
 
         {/* Glow sits behind the input + mic only */}
         <div className="input-glow relative z-20" data-time={timeOfDay()}>
-        <div className={`relative flex items-end gap-1.5 rounded-[28px] p-1.5 pl-5 transition-[background-color,box-shadow] duration-200 ${p.micOn ? 'bg-tangerine-soft' : 'bg-ink/[0.05] focus-within:bg-ink/[0.07]'}`}>
-          <textarea
-            value={p.micOn && p.interim ? p.interim : text}
-            readOnly={p.micOn}
-            rows={1}
-            onChange={(e) => setText(e.target.value)}
-            onFocus={() => { p.onTyping(true); if (p.compact) p.setOpen?.(true) }}
-            onBlur={() => p.onTyping(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              }
-            }}
-            placeholder={p.micOn ? 'Listening…' : `Tell ${p.palName} your plan…`}
-            className="max-h-28 min-h-[44px] flex-1 resize-none bg-transparent py-[11px] text-[16px] leading-snug outline-none placeholder:text-ink-3"
-            aria-label="Message"
-          />
-          {text.trim() && !p.micOn && (
-            <button onClick={send} className="pop press grid size-11 shrink-0 place-items-center rounded-full bg-ink text-paper" aria-label="Send">
-              <Send />
-            </button>
+          {!voiceMode ? (
+            <div className="relative flex items-end gap-1.5 rounded-[28px] bg-ink/[0.05] p-1.5 pl-5 transition-[background-color,box-shadow] duration-200 focus-within:bg-ink/[0.07]">
+              <textarea
+                ref={inputRef}
+                value={text}
+                rows={1}
+                onChange={(e) => setText(e.target.value)}
+                onFocus={() => { p.onTyping(true); if (p.compact) p.setOpen?.(true) }}
+                onBlur={() => p.onTyping(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    send()
+                  }
+                }}
+                placeholder={`Tell ${p.palName} your plan…`}
+                className="max-h-28 min-h-[44px] flex-1 resize-none bg-transparent py-[11px] text-[16px] leading-snug outline-none placeholder:text-ink-3"
+                aria-label="Message"
+              />
+              {text.trim() ? (
+                <button onClick={send} className="pop press grid size-11 shrink-0 place-items-center rounded-full bg-ink text-paper" aria-label="Send">
+                  <Send />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVoiceMode(true)
+                    if (p.compact) p.setOpen?.(true)
+                  }}
+                  className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover-lift hover:text-ink"
+                  aria-label="Switch to voice mode"
+                  title="Voice mode"
+                >
+                  <Mic className="size-5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="py-1">
+              <MicOrb
+                on={p.micOn}
+                supported={p.micSupported}
+                toggle={p.toggleMic}
+                size={p.compact ? 64 : 84}
+                interim={p.interim}
+                onBack={() => {
+                  setVoiceMode(false)
+                  if (p.micOn) p.toggleMic()
+                }}
+              />
+            </div>
           )}
-        </div>
-        <MicOrb on={p.micOn} supported={p.micSupported} toggle={p.toggleMic} size={p.compact ? 64 : 84} />
         </div>
       </div>
     </div>
@@ -238,7 +318,21 @@ export function Chat(p: Props) {
 }
 
 /** Big mic: tap to toggle, or press and hold to talk and release to send. */
-function MicOrb({ on, supported, toggle, size }: { on: boolean; supported: boolean; toggle: () => void; size: number }) {
+function MicOrb({
+  on,
+  supported,
+  toggle,
+  size,
+  interim,
+  onBack,
+}: {
+  on: boolean
+  supported: boolean
+  toggle: () => void
+  size: number
+  interim?: string
+  onBack?: () => void
+}) {
   const press = useRef<{ t: number; wasOn: boolean } | null>(null)
   const [held, setHeld] = useState(false)
   const holdTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -257,29 +351,56 @@ function MicOrb({ on, supported, toggle, size }: { on: boolean; supported: boole
     if (!pr) return
     if (pr.wasOn || Date.now() - pr.t > 350) toggle()
   }
-  const label = !supported ? 'Voice needs Chrome or Edge' : held ? 'Release to send' : on ? 'Listening… tap to stop' : 'Tap or hold to talk'
+  const label = !supported
+    ? 'Voice needs Chrome or Edge'
+    : held
+    ? 'Release to send'
+    : on
+    ? interim || 'Listening… tap to stop'
+    : 'Tap or hold to talk'
+
   return (
-    <div className="mt-3 flex flex-col items-center gap-1.5">
-      <button
-        onPointerDown={down}
-        onPointerUp={up}
-        onPointerCancel={up}
-        onContextMenu={(e) => e.preventDefault()}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}
-        style={{ width: size, height: size }}
-        className={`relative grid touch-none place-items-center rounded-full text-white transition-transform duration-200 [transition-timing-function:var(--ease-out)] select-none [-webkit-touch-callout:none] ${supported ? 'bg-tangerine shadow-[0_14px_30px_-10px_var(--tangerine)]' : 'bg-ink/25'} ${held ? 'scale-110' : 'active:scale-95'}`}
-        aria-label={label}
-        aria-pressed={on}
-      >
-        {on && (
-          <>
-            <span className="ring absolute inset-0 rounded-full bg-tangerine" />
-            <span className="ring ring-2 absolute inset-0 rounded-full bg-tangerine" />
-          </>
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative flex w-full items-center justify-center">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="press absolute left-1 grid size-11 place-items-center rounded-full bg-ink/[0.05] text-ink-2 hover-lift hover:text-ink"
+            aria-label="Back to text mode"
+            title="Back to text mode"
+          >
+            <ChevronL />
+          </button>
         )}
-        <Mic className={`relative ${size > 70 ? "size-8" : "size-6"}`} />
-      </button>
-      <span className={`text-[12px] font-medium ${on ? 'text-tangerine' : 'text-ink-3'}`}>{label}</span>
+        <button
+          onPointerDown={down}
+          onPointerUp={up}
+          onPointerCancel={up}
+          onContextMenu={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              toggle()
+            }
+          }}
+          style={{ width: size, height: size }}
+          className={`relative grid touch-none place-items-center rounded-full text-white transition-transform duration-200 [transition-timing-function:var(--ease-out)] select-none [-webkit-touch-callout:none] ${supported ? 'bg-tangerine shadow-[0_14px_30px_-10px_var(--tangerine)]' : 'bg-ink/25'} ${held ? 'scale-110' : 'active:scale-95'}`}
+          aria-label={label}
+          aria-pressed={on}
+        >
+          {on && (
+            <>
+              <span className="ring absolute inset-0 rounded-full bg-tangerine" />
+              <span className="ring ring-2 absolute inset-0 rounded-full bg-tangerine" />
+            </>
+          )}
+          <Mic className={`relative ${size > 70 ? 'size-8' : 'size-6'}`} />
+        </button>
+      </div>
+      <span className={`max-w-[280px] truncate text-center text-[12px] font-medium ${on ? 'text-tangerine' : 'text-ink-3'}`}>
+        {label}
+      </span>
     </div>
   )
 }

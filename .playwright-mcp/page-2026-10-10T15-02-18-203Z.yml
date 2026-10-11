@@ -1,0 +1,40 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - generic "Pal.Do" [ref=f1e5]:
+      - generic [ref=f1e6]: Pal
+      - generic [ref=f1e8]: Do
+    - radiogroup "Switch pal" [ref=f1e9]:
+      - radio [ref=f1e10] [cursor=pointer]:
+        - img "Rei, idle" [ref=f1e12]
+      - radio [ref=f1e96] [cursor=pointer]:
+        - img "Diel, idle" [ref=f1e98]
+      - radio "Jhyvie, sleeping Jhyvie" [checked] [ref=f1e184] [cursor=pointer]:
+        - img "Jhyvie, sleeping" [ref=f1e186]
+        - generic [ref=f1e269]: Jhyvie
+      - radio [ref=f1e270] [cursor=pointer]:
+        - img "Jaypee, idle" [ref=f1e272]
+    - button "Switch to light mode" [ref=f1e351] [cursor=pointer]
+    - button "Pal and preferences" [ref=f1e356] [cursor=pointer]
+  - main [ref=f1e361]:
+    - generic [ref=f1e363]:
+      - generic [ref=f1e364]: Ready when you are
+      - timer [ref=f1e365]: 25:00
+      - generic "Round 1 of 4" [ref=f1e366]
+      - button "Start" [ref=f1e372] [cursor=pointer]
+      - button "Turn on alarms so you hear when a round ends" [ref=f1e373] [cursor=pointer]
+      - img "Jhyvie, idle" [ref=f1e375]
+      - generic [ref=f1e516]: "Today: 0 min focused"
+  - generic [ref=f1e519]:
+    - button "Jhyvie says" [ref=f1e522] [cursor=pointer]:
+      - generic [ref=f1e523]: Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.
+    - generic [ref=f1e525]:
+      - textbox "Message" [ref=f1e526]:
+        - /placeholder: Tell Jhyvie your plan…
+      - button "Switch to voice mode" [ref=f1e527] [cursor=pointer]
+  - navigation "Views" [ref=f1e532]:
+    - button "Today" [ref=f1e534] [cursor=pointer]
+    - button "Week" [ref=f1e538] [cursor=pointer]
+    - button "Tasks 1" [ref=f1e542] [cursor=pointer]:
+      - text: Tasks
+      - generic [ref=f1e545]: "1"
+    - button "Study" [ref=f1e546] [cursor=pointer]
