@@ -5,9 +5,9 @@
 import { greetLine, turn, type Card, type LastEvent } from './agent'
 import { buildContext, type OpenCard } from './context'
 import { at, fmtTime, seedWeek, uid, type CalEvent, type PalId } from './core'
-import { aiFailure, askGroq, cloudTokensUsed, generateSystemPrompt, isGroundedEvent, normalizeOllamaUrl, parseRateLimit, readHint, recoverEvent, sanitizeAi, useLocalAiForEval, type AiAction, type ChatTurn } from './groq'
-import { eventKind, parseWhen } from './parse'
-import { occurrences, propose } from './schedule'
+import { aiFailure, alignToMessage, askGroq, cloudTokensUsed, generateSystemPrompt, isGroundedEvent, normalizeOllamaUrl, parrots, parseRateLimit, readHint, recoverEvent, sanitizeAi, useLocalAiForEval, type AiAction, type ChatTurn } from './groq'
+import { eventKind, extractTitle, parseWhen } from './parse'
+import { clashes, nearestFree, occurrences, propose } from './schedule'
 
 type Check = { action?: string | string[]; notAction?: string; includes?: string[]; excludes?: string[]; anyOf?: string[]; has?: (keyof AiAction)[] }
 export interface Case {
@@ -86,6 +86,17 @@ const T9 = new Date(2026, 9, 11, 9, 0).getTime()
 // The transcript's clock: Sun Oct 11 2026, 2:45pm
 const SUN = new Date(2026, 9, 11, 14, 45).getTime()
 const iso = (t: number) => { const d = new Date(t), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00` }
+// The overlap and local-model screenshots: Mon Oct 12 and Tue Oct 13
+const MON = new Date(2026, 9, 12).getTime()
+const TUE = new Date(2026, 9, 13).getTime()
+const TRAVEL: CalEvent = { id: 'tr', title: 'Travel to school', kind: 'commute', start: at(MON, 4), end: at(MON, 5), status: 'planned' }
+const STUDY_BLOCK: CalEvent = { id: 'sb', title: 'Review: Prelims', kind: 'work', start: at(MON, 9), end: at(MON, 10), status: 'planned', taskId: 't' }
+/** The card the local model kept putting on tomorrow: Meeting Tue 10am–1pm */
+const MEET: LastEvent = { title: 'Meeting', kind: 'work', start: at(TUE, 10), end: at(TUE, 13) }
+const fixCard = (text: string, card: Partial<LastEvent> = {}) => {
+  const a = turn(text, { pal: 'jhyvie', now: at(MON, 9), draft: null, awaiting: null, lastEvent: { ...MEET, ...card }, waiting: 'event' }).action
+  return a?.type === 'reviseEvent' ? a : null
+}
 
 /** sanitizeAi and the parsers behind it: the guard between the model and the calendar. Must pass 100%. */
 export const SANITIZE_CASES: { name: string; ok: () => boolean }[] = [
@@ -142,8 +153,8 @@ export const SANITIZE_CASES: { name: string; ok: () => boolean }[] = [
   { name: '"Nag-add na ako?" is a question, not a claim', ok: () => !sanitizeAi({ text: 'Bukas 4am yung biyahe. Nag-add na ba ako?', action: { type: 'none' } }, 'hi', SUN, false)?.claimed },
   { name: '"Ayan, na-confirm na!" with a real yes is not a claim', ok: () => !sanitizeAi({ text: 'Ayan, na-confirm na!', action: { type: 'confirmEvent' } }, 'oo', SUN, true)?.claimed },
   { name: '"tomorow 4am" (typo) is tomorrow 4am', ok: () => parseWhen('add mo schedule ko tomorow ng 4am', SUN)?.t === new Date(2026, 9, 12, 4).getTime() },
-  { name: 'their name is in the facts and the prompt guard still holds', ok: () => { const f = buildContext(SUN, [], [], null, {}, { user: 'Gadiel' }); return f.full.includes("User's name: Gadiel") && f.short.includes('Gadiel') && generateSystemPrompt('jhyvie', SUN, f.full).length < 5000 } },
-  { name: 'no name set → no name line', ok: () => !buildContext(SUN, [], [], null).full.includes("User's name") },
+  { name: 'their name is in the facts and the prompt guard still holds', ok: () => { const f = buildContext(SUN, [], [], null, {}, { user: 'Gadiel' }); return f.full.includes('The user is Gadiel') && generateSystemPrompt('jhyvie', SUN, f.full).length < 5000 } },
+  { name: 'no name set → no name line', ok: () => !buildContext(SUN, [], [], null).full.includes('The user is') },
   { name: 'greeting uses their name, never a raw {user}', ok: () => greetLine('jhyvie', 'Gadiel').includes('Gadiel') && !greetLine('jhyvie').includes('{user}') && !greetLine('rei', '  ').includes('{user}') },
   { name: 'rules "hi" greets them by name', ok: () => turn('hi', { pal: 'jhyvie', now: SUN, draft: null, awaiting: null, facts: { next: 'your week', user: 'Gadiel' } }).text.includes('Gadiel') },
   { name: '"Tinatanggal ko na" with no write is a remove claim', ok: () => sanitizeAi({ text: 'Got it! Tinatanggal ko na yung date with Iska.', action: { type: 'none' } }, 'delete mo pala yan', SUN, false)?.claimed === 'remove' },
@@ -204,10 +215,47 @@ export const SANITIZE_CASES: { name: string; ok: () => boolean }[] = [
     name: 'repeats stop on their until day, not 8 weeks out',
     ok: () => { const mon9 = new Date(2026, 9, 12, 9).getTime(); return occurrences(mon9, mon9 + 3 * 3_600_000, [1, 2, 3, 4, 5, 6], SUN, new Date(2026, 9, 17).getTime()).length === 6 },
   },
+  // Overlaps: "pede ba ako mag meeting ng 4:30 am mamaya?" with Travel to school 4–5am already there
+  { name: '"4:30 am mamaya" is 4:30am, not "a m(inute) later"', ok: () => parseWhen('pede ba ako mag meeting ng 4:30 am mamaya?', at(MON, 1))?.t === at(MON, 4, 30) },
+  { name: '"in an hour" is still an hour from now', ok: () => parseWhen('gym in an hour', at(MON, 9))?.t === at(MON, 10) },
+  { name: '"pede ba ako mag meeting" is titled Meeting', ok: () => extractTitle('pede ba ako mag meeting ng 4:30 am mamaya?', 'Event') === 'Meeting' && extractTitle('mag-review bukas 3pm', 'X') === 'Mag-review' },
+  {
+    name: 'a 4:30am meeting clashes with a 4–5am commute',
+    ok: () => { const hit = clashes([{ start: at(MON, 4, 30), end: at(MON, 5, 30) }], [TRAVEL, STUDY_BLOCK]); return hit.length === 1 && hit[0].id === 'tr' },
+  },
+  { name: 'nearest free time: 5:15am (15 min after the commute)', ok: () => nearestFree([{ start: at(MON, 4, 30), end: at(MON, 5, 30) }], [TRAVEL], at(MON, 1))?.start === at(MON, 5, 15) },
+  { name: 'nearest free time is never before 5am', ok: () => nearestFree([{ start: at(MON, 5), end: at(MON, 6) }], [{ ...TRAVEL, kind: 'class', start: at(MON, 5), end: at(MON, 7) }], at(MON, 1))?.start === at(MON, 7) },
+  { name: 'nearest free time is never in the past', ok: () => nearestFree([{ start: at(MON, 15, 30), end: at(MON, 16, 30) }], [{ ...TRAVEL, kind: 'class', start: at(MON, 15), end: at(MON, 17) }], at(MON, 15))?.start === at(MON, 17) },
+  { name: 'deadlines and a task\'s study blocks are not clashes', ok: () => clashes([{ start: at(MON, 9), end: at(MON, 10) }], [STUDY_BLOCK, { ...TRAVEL, id: 'dl', kind: 'deadline', start: at(MON, 9, 30), end: at(MON, 9, 30) }]).length === 0 },
+  // Day corrections to the waiting card are the rules' (a 4B model kept saying "bukas")
+  { name: '"mamaya hindi bukas" moves the card to today, same time and length', ok: () => { const a = fixCard('mamaya hindi bukas'); return a?.start === at(MON, 10) && a.end === at(MON, 13) } },
+  { name: '"today" moves the card to today', ok: () => fixCard('today')?.start === at(MON, 10) },
+  { name: '"mamaya ngaaaa" moves the card to today', ok: () => fixCard('mamaya ngaaaa')?.start === at(MON, 10) },
+  { name: '"sabing mamayang 10 am" is today 10am', ok: () => { const a = fixCard('sabing mamayang 10 am', { start: at(TUE, 9), end: at(TUE, 12) }); return a?.start === at(MON, 10) && a.end === at(MON, 13) } },
+  { name: '"oo lagay mo para mamaya" is today', ok: () => fixCard('oo lagay mo para mamaya')?.start === at(MON, 10) },
+  { name: '"bukas hindi mamaya" stays tomorrow', ok: () => fixCard('bukas hindi mamaya', { start: at(MON, 10), end: at(MON, 13) })?.start === at(TUE, 10) },
+  { name: '"gym bukas 6pm" with a card waiting is a new event, not a fix', ok: () => turn('gym bukas 6pm', { pal: 'jhyvie', now: at(MON, 9), draft: null, awaiting: null, lastEvent: MEET, waiting: 'event' }).action?.type === 'addEvent' },
+  // The app's reading of the message wins over the model's dates
+  {
+    name: 'model says tomorrow for "10am hanggang 1pm mamaya" → today 10am–1pm',
+    ok: () => { const a = alignToMessage({ type: 'addEvent', title: 'Meeting', start: iso(at(TUE, 10)), end: iso(at(TUE, 11)) }, 'meeting 10am hanggang 1pm mamaya', at(MON, 9)); return a.start === iso(at(MON, 10)) && a.end === iso(at(MON, 13)) },
+  },
+  { name: '"6pm" answering a Saturday question keeps Saturday', ok: () => { const sat = at(new Date(2026, 9, 17).getTime(), 18); return alignToMessage({ type: 'addEvent', title: 'Gym', start: iso(sat), end: iso(sat + 3_600_000) }, '6pm', at(MON, 9)).start === iso(sat) } },
+  { name: 'a bare "bukas" moves the model\'s time onto tomorrow', ok: () => alignToMessage({ type: 'addEvent', title: 'Gym', start: iso(at(MON, 15)), end: iso(at(MON, 16)) }, 'gym bukas', at(MON, 9)).start === iso(at(TUE, 15)) },
+  { name: 'two days in one message: the model decides', ok: () => alignToMessage({ type: 'createTask', title: 'Prelims', due: iso(at(new Date(2026, 9, 17).getTime(), 23, 59)) }, 'prelims sabado, review bukas', at(MON, 9)).due === iso(at(new Date(2026, 9, 17).getTime(), 23, 59)) },
+  // Claims and echoes from the local model chats
+  { name: '"Gabi! Adding tomorrow\'s coffee date." is a claim', ok: () => sanitizeAi({ text: "Gabi! Adding tomorrow's coffee date.", action: { type: 'none' } }, 'coffee date bukas', SUN, false)?.claimed === 'add' },
+  { name: '"Adding it to Monday?" is a question, not a claim', ok: () => !sanitizeAi({ text: 'Adding it to Monday?', action: { type: 'none' } }, 'hi', SUN, false)?.claimed },
+  { name: '"tap addEvent" names the button, not the action', ok: () => sanitizeAi({ text: 'Sige, tap addEvent para organized!', action: { type: 'none' } }, 'hi', SUN, false)?.text === 'Sige, tap Add it para organized!' },
+  { name: '"Wats your name, Jhy?" back to "wats your name" is dropped', ok: () => sanitizeAi({ text: 'Wats your name, Jhy?', action: { type: 'none' } }, 'wats your name', SUN, false) === null },
+  { name: '"Hi Gadiel!" to "hi jv" is a real answer', ok: () => !parrots('Hi Gadiel! Kamusta?', 'hi jv') && parrots('Hi jv!', 'hi jv') },
+  { name: 'the prompt says JV and Jhy are Jhyvie\'s names, not the user\'s', ok: () => /JV, Jhy/.test(generateSystemPrompt('jhyvie', SUN, '')) && /never the user's/.test(generateSystemPrompt('jhyvie', SUN, '')) },
 ]
 
 /** Model behaviour: scored, not required to be perfect. Same calendar as the rules cases. */
 export const LLM_CASES: Case[] = [
+  // The local model called Gadiel "Jhy" (Jhyvie's own nickname)
+  { input: 'kamusta ka jhy?', user: 'Gadiel', expect: { excludes: ['ka jhy', 'jhy!', 'jhy?', 'jhy,'] }, note: 'never calls the user Jhy' },
   { input: 'who won the nba finals?', expect: { action: 'redirect', excludes: NO_DODGE } },
   { input: 'can you explain photosynthesis', expect: { action: 'redirect', excludes: NO_DODGE } },
   { input: "what's 17 times 23", expect: { action: 'redirect', excludes: NO_DODGE } },

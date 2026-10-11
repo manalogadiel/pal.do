@@ -14,7 +14,6 @@
     "@capacitor/core": "^8.5.3",
     "@capacitor/local-notifications": "^8.3.1",
     "@huggingface/transformers": "3.8.1",
-    "@mlc-ai/web-llm": "^0.2.85",
     "@ricky0123/vad-web": "0.0.31",
     "kokoro-js": "^1.2.1",
     "react": "^19.0.0",

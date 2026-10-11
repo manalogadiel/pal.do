@@ -2,11 +2,13 @@
 // "hi/hey + the pal's name". Nothing leaves the device unless that wake phrase was heard.
 //
 //   mic → Silero voice detector (one clip per utterance, ends after ~0.8s of silence)
-//       → Whisper tiny on this device → matchWake(): not for Pal? dropped, never sent anywhere
+//       → Whisper base on this device → matchWake(): not for Pal? dropped, never sent anywhere
 //       → the command: Groq's Whisper re-hears just that clip when allowed (better Taglish), else the device's text
+// While Pal talks it keeps listening, but only "Hi {pal}" counts (it interrupts), and Pal's own words heard back
+// through the speaker are ignored.
 import type { MicVAD } from '@ricky0123/vad-web'
 import type { PalId } from './core'
-import { matchWake } from './wake'
+import { isEcho, matchWake } from './wake'
 
 export type HandsFreeState = 'off' | 'loading' | 'listening' | 'awake' | 'thinking' | 'paused' | 'error'
 
@@ -24,6 +26,8 @@ export interface HandsFreeOptions {
   onCommand: (text: string) => void
   /** Turned itself off: no wake for 30 minutes */
   onIdle?: () => void
+  /** "Hi Jhyvie" while Pal was talking: stop talking now; the command (if any) follows through onWake / onCommand */
+  onBargeIn?: () => void
   /** Dev/tests only: run the loop without a microphone, fed by simulateHeard() */
   noMic?: boolean
 }
@@ -38,7 +42,11 @@ let worker: Worker | null = null
 let ready: Promise<void> | null = null
 let opts: HandsFreeOptions | null = null
 let state: HandsFreeState = 'off'
-let paused = false
+/** Pal is talking out loud, and the line it's saying (kept after, for a clip of it that ends late) */
+let speaking = false
+let line = ''
+/** The clip being recorded began while Pal was talking */
+let startedSpeaking = false
 let followUntil = 0
 let lastWake = 0
 let idleCheck: ReturnType<typeof setInterval> | null = null
@@ -121,16 +129,26 @@ async function bestText(audio: Float32Array, local: string): Promise<string> {
   return (await opts.transcribeCloud(encodeWav(audio))) ?? local
 }
 
-/** One utterance, in order: a second sentence never overtakes the first */
-async function handle(audio: Float32Array) {
+/** One utterance, in order: a second sentence never overtakes the first. overPal: it began while Pal was talking. */
+async function handle(audio: Float32Array, overPal: boolean) {
   const o = opts
-  if (!o || paused) return
+  if (!o) return
   const clip = audio.length > RATE * MAX_SECONDS ? audio.slice(0, RATE * MAX_SECONDS) : audio
-  const followUp = o.oneShot || Date.now() < followUntil
-  set('thinking')
+  const followUp = !overPal && (o.oneShot || Date.now() < followUntil)
+  if (!overPal) set('thinking')
   const local = await hear(clip.slice())
-  if (opts !== o || paused) return
+  if (opts !== o) return
+  if (overPal) return interrupt(o, local, clip)
   await route(o, local, clip, followUp)
+}
+
+/** Heard while Pal was talking: only "Hi {pal}" that isn't Pal's own voice coming back stops it */
+async function interrupt(o: HandsFreeOptions, local: string, clip: Float32Array | null) {
+  if (!matchWake(local, o.pal, o.userName) || isEcho(local, line, o.pal)) return
+  speaking = false
+  line = ''
+  o.onBargeIn?.()
+  await route(o, local, clip, false)
 }
 
 /** What the device heard → wake, follow-up, or dropped. `clip` null: text only (tests), no cloud re-hearing. */
@@ -173,10 +191,10 @@ const onVisible = () => { if (document.visibilityState === 'visible' && vad && !
 export async function startHandsFree(o: HandsFreeOptions) {
   if (vad) {
     opts = o
-    return set(paused ? 'paused' : 'listening')
+    return set(speaking ? 'paused' : 'listening')
   }
   opts = o
-  paused = false
+  speaking = false
   followUntil = o.oneShot ? Date.now() + 60_000 : 0
   set('loading', { progress: 0 })
   try {
@@ -204,8 +222,15 @@ export async function startHandsFree(o: HandsFreeOptions) {
       preSpeechPadMs: 300,
       minSpeechMs: 250,
       getStream: () => navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
-      onSpeechStart: () => { if (!paused && opts) set(Date.now() < followUntil || opts.oneShot ? 'awake' : 'listening') },
-      onSpeechEnd: (audio: Float32Array) => { queue = queue.then(() => handle(audio)).catch(() => {}) },
+      onSpeechStart: () => {
+        startedSpeaking = speaking
+        if (!speaking && opts) set(Date.now() < followUntil || opts.oneShot ? 'awake' : 'listening')
+      },
+      onSpeechEnd: (audio: Float32Array) => {
+        // A clip that began while Pal talked is judged as heard over Pal, even if it ends after
+        const overPal = startedSpeaking || speaking
+        queue = queue.then(() => handle(audio, overPal)).catch(() => {})
+      },
     })
     if (opts !== o) return // stopped while loading
     await vad.start()
@@ -240,20 +265,22 @@ export async function stopHandsFree(report = true) {
   opts = null
 }
 
-/** While Pal is talking: don't listen, so it never hears itself */
-export function pauseListening(p: boolean) {
-  if (!vad || paused === p) return
-  paused = p
-  if (p) vad.pause().catch(() => {})
-  else vad.start().catch(() => {})
-  set(p ? 'paused' : Date.now() < followUntil ? 'awake' : 'listening')
+/**
+ * Pal started or stopped talking out loud (`text`: what it's saying). Listening goes on, but only "Hi {pal}"
+ * counts while it talks, and its own words heard back are ignored.
+ */
+export function setPalSpeaking(on: boolean, text = '') {
+  if (on) line = text
+  if (!vad || speaking === on) return
+  speaking = on
+  set(on ? 'paused' : Date.now() < followUntil ? 'awake' : 'listening')
 }
 
 /** Pal just asked something ("Add this?"): take the next sentence without the wake word */
 export function expectFollowUp(ms = FOLLOW_UP_MS) {
   if (!vad) return
   followUntil = Date.now() + ms
-  if (!paused) set('awake')
+  if (!speaking) set('awake')
 }
 
 export const isHandsFreeOn = () => vad != null
@@ -261,13 +288,8 @@ export const isHandsFreeOn = () => vad != null
 /** Dev/tests: as if the device just heard this sentence (skips the audio stage) */
 export function simulateHeard(text: string) {
   const o = opts
-  if (!o || paused) return Promise.resolve()
+  if (!o) return Promise.resolve()
+  if (speaking) return (queue = queue.then(() => interrupt(o, text, null)).catch(() => {}))
   const followUp = !!o.oneShot || Date.now() < followUntil
   return (queue = queue.then(() => route(o, text, null, followUp)).catch(() => {}))
-}
-
-/** Dev/tests: the on-device Whisper on a 16 kHz clip */
-export async function transcribeOnDevice(audio: Float32Array) {
-  await loadWhisper(() => {})
-  return hear(audio)
 }

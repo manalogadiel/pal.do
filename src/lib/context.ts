@@ -4,10 +4,8 @@ import { freeGaps, type Prefs } from './schedule'
 import { weatherLine, type Weather } from './weather'
 
 export interface Snapshot {
-  /** Full block for big models (Groq / Ollama) */
+  /** The facts block for the models (Groq / Ollama) */
   full: string
-  /** A few lines for the in-browser model's small context */
-  short: string
   /** "your Bio quiz on Fri" — for offline redirect lines */
   next: string
   /** "2.5h" free for the rest of today */
@@ -30,7 +28,7 @@ const TAGALOG = ['Linggo', 'Lunes', 'Martes', 'Miyerkules', 'Huwebes', 'Biyernes
 
 /** The card a typed yes/no would answer, as the model should see it */
 export type OpenCard =
-  | { type: 'event'; title: string; start: number; end: number; days?: number[]; until?: number }
+  | { type: 'event'; title: string; start: number; end: number; days?: number[]; until?: number; clash?: string[]; alt?: { start: number; end: number } }
   | { type: 'plan'; title: string; blocks: { start: number; end: number }[] }
   | { type: 'task'; title: string; kind: string; due: number; hours: number }
   | { type: 'change'; mode: 'remove' | 'move'; title: string; start: number; end: number; to?: { start: number; end: number } }
@@ -48,7 +46,9 @@ export interface Open {
 function describeCard(c: OpenCard) {
   if (c.type === 'event') {
     const days = c.days?.length ? ` every ${c.days.map((d) => DAYN[d]).join(', ')}${c.until ? ` until ${fmtDay(c.until)}` : ''}` : ''
-    return `add "${c.title}" ${span(c.start, c.end)}${days}`
+    // An overlap: the app already asked about it, so the model knows a yes means the offered time
+    const clash = c.clash?.length ? ` (overlaps ${c.clash.join(' and ')}${c.alt ? `; you offered ${fmtTime(c.alt.start)}–${fmtTime(c.alt.end)} instead, which a plain yes takes` : ''})` : ''
+    return `add "${c.title}" ${span(c.start, c.end)}${days}${clash}`
   }
   if (c.type === 'plan') return `study plan for ${c.title}: ${c.blocks.length ? c.blocks.map((b) => span(b.start, b.end)).join(', ') : 'no times fit'}`
   if (c.type === 'task') return `${c.kind} "${c.title}" ${c.kind === 'exam' ? 'on' : 'due'} ${fmtDay(c.due)}, ${fmtDur(c.hours)} of ${c.kind === 'exam' ? 'review' : 'work'}`
@@ -125,7 +125,8 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
     ? `Task being set up (no card yet): ${d.title} (${d.kind}), ${d.due ? `${d.kind === 'exam' ? 'on' : 'due'} ${fmtDay(d.due)}` : 'date not given'}, ${d.hours ? fmtDur(d.hours) : 'hours not given'}. Once you know all three, send createTask.`
     : ''
   const user = open.user?.trim()
-  const userLine = user ? `\n- User's name: ${user} (use it now and then; any other name in a greeting is them calling you)` : ''
+  // Small models took "they may call you jv" as the user's name: say whose name is whose
+  const userLine = user ? `\n- The user is ${user}: call them ${user} now and then. Your own names and nicknames are never theirs.` : ''
   const full = `APP FACTS (computed by the app; use these, never invent times, dates, free slots or weather):${userLine}
 - Now: ${clock}
 - Still today: ${leftLine}
@@ -139,13 +140,8 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
 - ${wait}` : ''}${draftLine ? `
 - ${draftLine}` : ''}`
 
-  const shortBlock = `${user ? `User's name: ${user}. ` : ''}Now: ${clock}. Still today: ${leftLine}. Free today: ${fmtDur(freeH)}.
-Calendar: ${upcoming.slice(0, 5).join('; ') || 'nothing'}.
-Next deadline: ${nextTask ? taskLine(nextTask) : 'none'}. Weather: ${wx}.${wait ? `\n${wait}` : ''}${draftLine ? `\n${draftLine}` : ''}`
-
   return {
     full,
-    short: shortBlock,
     next: nextTask ? `your ${nextTask.title} on ${short(nextTask.due)}` : 'your week',
     freeToday: fmtHours(freeH),
     insight,

@@ -133,7 +133,7 @@ function HandsFreeRow({ palName, on, toggle, deviceOnly, setDeviceOnly }: { palN
           <div className="text-[11.5px] text-ink-3">
             {on
               ? `Listening on this device. Only what you say after "Hi ${palName}" leaves it, to be written out${deviceOnly ? ': with device-only on, nothing does' : ''}.`
-              : `Say "Hi ${palName}" and talk, no tapping. Sets up a ~45 MB listener on this device the first time.`}
+              : `Say "Hi ${palName}" and talk, no tapping. Sets up an ~80 MB listener on this device the first time.`}
           </div>
         </div>
         <button
@@ -157,8 +157,7 @@ export function Onboarding({
   initial,
   onDone,
   onClose,
-  brain,
-  onBrain,
+  onUserName,
   prefsLabel,
   onClearPrefs,
   handsFree,
@@ -166,9 +165,8 @@ export function Onboarding({
   initial?: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean; userName?: string }
   onDone: (v: { pal: PalId; name: string; energy: Energy; advancedMode: boolean; userName?: string }) => void
   onClose?: () => void
-  /** null = not downloaded, -1 = no WebGPU, 0..1 = progress */
-  brain?: number | null
-  onBrain?: () => void
+  /** Saves the name as it's typed (when editing), like the key and Ollama rows: closing with ✕ keeps it */
+  onUserName?: (name: string | undefined) => void
   /** "Nothing after 9pm · Sun free", or empty when nothing is remembered */
   prefsLabel?: string
   onClearPrefs?: () => void
@@ -188,6 +186,12 @@ export function Onboarding({
   const [groqOff, setGroqOff] = useState(() => isGroqDisabled())
   const [alarmTesting, setAlarmTesting] = useState(false)
   const hasEnvKey = Boolean(import.meta.env.DEV && import.meta.env.VITE_GROQ_API_KEY)
+  // Saved a moment after typing stops, so hands-free doesn't restart on every key
+  useEffect(() => {
+    if (!isEditing || !onUserName || userName.trim() === (initial?.userName ?? '')) return
+    const t = setTimeout(() => onUserName(userName.trim() || undefined), 500)
+    return () => clearTimeout(t)
+  }, [userName]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!hello) return
     const t = setTimeout(() => setHello(null), 1400)
@@ -299,35 +303,12 @@ export function Onboarding({
                   className="mt-1.5 w-full rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[13px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]"
                 />
                 <div className="mt-1 text-[11px] text-ink-3">
-                  Cloud: <span className="font-mono text-ink-2">qwen3.8-27b → gpt-oss-120b → gpt-oss-20b</span> · then your PC's AI · Offline: <span className="font-mono text-ink-2">Qwen2.5 1.5B</span>
+                  Cloud: <span className="font-mono text-ink-2">qwen3.8-27b → gpt-oss-120b → gpt-oss-20b</span> · then your PC's AI · then simple rules
                 </div>
               </div>
 
               <LocalAiRow />
               {handsFree && <HandsFreeRow palName={name || PALS[pal].name} {...handsFree} />}
-
-              {/* Offline brain: explicit opt-in, it's a ~1 GB download */}
-              <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
-                <div className="min-w-0">
-                  <div className="text-[13px] font-medium text-ink">Offline brain</div>
-                  <div className="text-[11.5px] text-ink-3">
-                    {brain == null ? 'Smarter replies with no internet. One-time ~1 GB download, best on Wi-Fi.'
-                      : brain < 0 ? "This browser doesn't support WebGPU, so offline replies use the rule engine."
-                      : brain >= 1 ? 'Ready. Works without internet.'
-                      : `Downloading… ${Math.round(brain * 100)}%`}
-                  </div>
-                  {brain != null && brain >= 0 && brain < 1 && (
-                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-ink/10">
-                      <div className="h-full rounded-full bg-tangerine transition-[width] duration-500" style={{ width: `${Math.round(brain * 100)}%` }} />
-                    </div>
-                  )}
-                </div>
-                {brain == null && onBrain && (
-                  <button type="button" onClick={onBrain} className="press h-8 shrink-0 rounded-full bg-paper px-3 text-[12px] font-medium text-ink shadow-sm hover:bg-paper-2">
-                    Download
-                  </button>
-                )}
-              </div>
 
               {prefsLabel && (
                 <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">

@@ -100,6 +100,39 @@ export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now
   return { blocks: out, shortfall: Math.max(0, Math.round(remaining * 4) / 4), freeHours: Math.round(freeHours * 2) / 2, why }
 }
 
+type Slot = { start: number; end: number }
+/** Earliest hour Pal suggests moving something to (a 4:30am meeting can still go to 5:15am) */
+const EARLIEST_ALT = 5
+
+/**
+ * What a new slot runs into: planned events of any kind, except deadlines and a task's study blocks
+ * (those get new times when it's added). skipId: the event being moved.
+ */
+export function clashes(slots: Slot[], events: CalEvent[], skipId?: string) {
+  return events
+    .filter((e) => e.status === 'planned' && e.kind !== 'deadline' && !(e.kind === 'work' && e.taskId) && e.id !== skipId && slots.some((s) => e.start < s.end && e.end > s.start))
+    .sort((a, b) => a.start - b.start)
+}
+
+/**
+ * The closest time, earlier or later the same day, where every slot fits clear of everything planned,
+ * with the 15-min buffer after a commute or shift (as in freeGaps). Never in the past, before 5am or after 11pm.
+ * Repeats move together. Null when nothing fits that day.
+ */
+export function nearestFree(slots: Slot[], events: CalEvent[], now: number, skipId?: string): Slot | null {
+  if (!slots.length) return null
+  const blocks = events
+    .filter((e) => e.status === 'planned' && e.kind !== 'deadline' && e.id !== skipId)
+    .map((e) => ({ s: e.start, e: e.end + (e.kind === 'commute' || e.kind === 'shift' ? 15 * MIN : 0) }))
+  const fits = (d: number) => slots.every(({ start, end }) => {
+    const s = start + d, e = end + d, day = startOfDay(start)
+    return s >= Math.max(now, at(day, EARLIEST_ALT)) && e <= Math.max(at(day, DAY_END), end) && !blocks.some((b) => b.s < e && b.e > s)
+  })
+  // 15-min steps out from the asked time; a tie goes to the later one
+  for (let k = 1; k <= 24 * 4; k++) for (const d of [k * 15 * MIN, -k * 15 * MIN]) if (fits(d)) return { start: slots[0].start + d, end: slots[0].end + d }
+  return null
+}
+
 /** Weekly repeats of a time slot, from this week forward: 8 weeks, or through the `until` day. days: 0=Sun…6=Sat. */
 export function occurrences(start: number, end: number, days: number[], now: number, until?: number, weeks = 8) {
   const s = new Date(start), dur = end - start

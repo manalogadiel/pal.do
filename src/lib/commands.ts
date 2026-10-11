@@ -8,6 +8,7 @@ export type Command =
   | { type: 'timer'; op: 'left' | 'add' | 'pause' | 'resume' | 'cancel'; seconds?: number }
   | { type: 'study'; op: 'start' | 'pause' | 'resume' | 'skip' | 'stop' | 'left' }
   | { type: 'next' }
+  | { type: 'whoami' }
 
 const WORDS: Record<string, number> = {
   a: 1, an: 1, one: 1, isa: 1, isang: 1, two: 2, dalawa: 2, dalawang: 2, three: 3, tatlo: 3, tatlong: 3, four: 4, apat: 4,
@@ -103,6 +104,9 @@ export function parseCommand(text: string, now: number, ctx: { timers?: boolean;
 
   // "What's next?", "how's my day?", "ano meron ako ngayon?"
   if (/\b(what'?s next|what is next|ano(ng)? (ang )?(next|susunod)|sunod ko|how'?s my day|my day today|ano(ng)? (ang )?(meron|gagawin) (ako |ko )?(ngayon|today))\b/i.test(t)) return { type: 'next' }
+
+  // "What's my name?", "ano pangalan ko", "sino ako": from Settings, never the model's guess (a small one said "Jhy")
+  if (/\b(wh?at'?s? my name|what is my name|do you (know|remember) my name|who am i|sino ako|ano(ng)? (ang |yung |'?yung )?pangalan ko|alam mo (ba )?(ang |yung )?pangalan ko|kilala mo (ba )?ako)\b/i.test(t)) return { type: 'whoami' }
 
   return null
 }

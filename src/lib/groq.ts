@@ -1,7 +1,7 @@
-import { DAY, fmtDay, fmtDur, fmtTime, startOfDay, type PalId } from './core'
+import { at, DAY, fmtDay, fmtDur, fmtTime, startOfDay, type PalId } from './core'
 import { BLOCKED_OUTPUT } from './agent'
 import { relativeDays } from './context'
-import { eventKind, isRelative, parseDays, parseHours, parseRange, parseWhen, taskKind } from './parse'
+import { clockTime, eventKind, isRelative, namedDay, parseDays, parseHours, parseRange, parseWhen, taskKind } from './parse'
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 // Groq retired the llama-3.x models (Oct 2026). Re-check `GET /openai/v1/models` if cloud replies ever stop.
@@ -173,8 +173,8 @@ export const PAL_NAME: Record<PalId, string> = { rei: 'Rei', diel: 'Diel', jhyvi
 const PAL_PROMPTS: Record<PalId, string> = {
   rei: `You are Rei, a calm, gentle student companion in the pal.do app. Soothing and patient, never rushing; one manageable step at a time.`,
   diel: `You are Diel, a precise, organized productivity companion in the pal.do app. Direct, structured, slightly nerdy; all about time blocks and priorities.`,
-  jhyvie: `You are Jhyvie (they may call you "jv" or "jhy"), a playful, warm companion in the pal.do app. Bouncy and affectionate; speak natural Taglish ("Kaya mo 'yan!", "Tara", "Kamusta!"); celebrate small wins.`,
-  jaypee: `You are Jaypee (they may call you "jp"), the user's hype friend in the pal.do app. High-energy coach vibe: punchy, short, actionable.`,
+  jhyvie: `You are Jhyvie (your own nicknames, never the user's: JV, Jhy), a playful, warm companion in the pal.do app. Bouncy and affectionate; speak natural Taglish ("Kaya mo 'yan!", "Tara", "Kamusta!"); celebrate small wins.`,
+  jaypee: `You are Jaypee (your own nickname, never the user's: JP), the user's hype friend in the pal.do app. High-energy coach vibe: punchy, short, actionable.`,
 }
 
 export const AI_ACTIONS = ['addEvent', 'removeEvent', 'moveEvent', 'confirmEvent', 'skipEvent', 'createTask', 'findTime', 'analyzeWeek', 'setTimer', 'setReminder', 'timer', 'study', 'redirect', 'none'] as const
@@ -216,6 +216,8 @@ const TEMPLATE_ECHO = /spoken reply|in character|YYYY|1-3 sentences/i
 // "Done! Added…", "I've locked in your simba", "Adding Simba now", "let me lock it in again", "nasa calendar mo na", "naka-lock na".
 // Not "when you're done studying"
 const CLAIMS_ADD = /^\W*(done|added)\b|\b(i'?ve|i have|i)\s+(just\s+)?(added|put|set|locked|scheduled|booked)\b|\badded (it|your|the|that)\b|\block(ed)? (it )?in\b|\badding\b.*\bnow\b|\bi'?ll (add|put|lock) (it|this|that)( in)? now\b|\bnaka-?(add|lagay|lock|sched(ule)?)\b|\bi-?(lock|add|lagay|block) ko na\b|\b(i)?lalagay ko na\b|\b(nalista|nilista|inilista|nilagay|inilagay|nailagay)( ko)? na\b|\bnag-?(add|dagdag|lagay|sched(ule)?|book)\s+(na\s+)?(ako|ko)\b|\bna-?add (ko )?na\b|\b(idinagdag|dinagdag|naidagdag)( ko)? na\b|\bna-?confirm na\b|\bnasa calendar (mo )?na\b|\b(is|it'?s) (now )?on your calendar\b/i
+// "Gabi! Adding tomorrow's coffee date.", "Sige, ilalagay ko": a sentence that opens with adding it
+const CLAIMS_ADD_LEAD = /^\W*(?:(?:ok(?:ay)?|sige|got it|alright|sure|g)\W+)?(?:adding|ilalagay|idadagdag|ia-?add|ila-?lock)\b/i
 // "Sige, tinanggal ko na 'yan", "I've deleted it", "removed your gym"
 const CLAIMS_REMOVE = /\b(i'?ve|i have|i)\s+(just\s+)?(deleted|removed|cancell?ed|cleared)\b|\b(i'?m|i am)\s+(now\s+)?(removing|deleting|cancell?ing|clearing)\b|^\W*(got it\W*)?(removing|deleting|cancell?ing)\b|\b(deleted|removed) (it|that|this|your|the)\b|\b(tinanggal|binura|inalis|dinelete|kinansel|natanggal|na-?(delete|remove|cancel))\b|\b(tinatanggal|binubura|inaalis|dinedelete) ko na\b|\bwala na (yung|'?yung|ang|si)\b|\b(i-?(delete|remove|tanggal)|tatanggalin|buburahin) ko na\b/i
 // "Inilipat ko na", "I moved it to 3pm"
@@ -225,6 +227,45 @@ const claims = (re: RegExp, text: string) => text.split(/(?<=[.!?])\s+/).some((s
 const ISO_IN_TEXT =/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?\b/g
 // Words that make a message about the user's own plans, so it's never "off-topic"
 const PLANNING = /\b(delete|remove|tanggal\w*|bura\w*|cancel|move|lipat\w*|resched\w*|sched\w*|plan\w*|study|review|aral\w*|subjects?|class(es)?|klase|pasok|deadline|calendar|kalendaryo)\b/i
+
+const words = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
+/** The reply is their own message back, plus a word or two ("hi jv" → "Hi jv!") */
+export function parrots(reply: string, prompt: string) {
+  const r = words(reply), p = words(prompt)
+  if (p.length < 2 || r.length > p.length + 2) return false
+  return ` ${r.join(' ')} `.includes(` ${p.join(' ')} `)
+}
+
+/**
+ * The app's reading of the message wins over the model's dates: a 4B model turned "10am hanggang 1pm mamaya"
+ * into tomorrow even with the App note. A named day moves the model's time onto it, a clock time sets the start
+ * (keeping the model's length), a range sets both ends. Whatever the message doesn't say stays the model's,
+ * so "6pm" answering "what time on Saturday?" keeps Saturday.
+ */
+export function alignToMessage(a: AiAction, text: string, now: number): AiAction {
+  if (a.type !== 'addEvent' && a.type !== 'createTask') return a
+  const s = parseIsoToLocalMs(a.type === 'addEvent' ? a.start : a.due)
+  if (s == null) return a
+  const tod = (t: number) => t - startOfDay(t)
+  const day = namedDay(text, now)
+  if (a.type === 'createTask') return day != null && day !== startOfDay(s) ? { ...a, due: toLocalIso(day + tod(s)) } : a
+  const e = parseIsoToLocalMs(a.end)
+  const len = e != null && e > s ? e - s : null
+  let start: number
+  let end: number | null
+  if (isRelative(text)) {
+    start = parseWhen(text, now)!.t
+    end = len ? start + len : null
+  } else {
+    const base = day ?? startOfDay(s)
+    const r = parseRange(text, now)
+    const clock = r ? null : clockTime(text)
+    start = r ? base + tod(r.start) : clock ? at(base, clock[0], clock[1]) : base + tod(s)
+    end = r ? base + tod(r.end) : len ? start + len : null
+  }
+  if (start === s && (end == null || end === e)) return a
+  return { ...a, start: toLocalIso(start), ...(end != null ? { end: toLocalIso(end) } : {}) }
+}
 
 /** Local ISO without a zone, the shape the model reads and writes ("2026-10-11T09:00:00") */
 export function toLocalIso(t: number) {
@@ -248,9 +289,14 @@ export function sanitizeAi(p: AiResponse | null, prompt: string, now: number, ca
     .replace(/\s*(\\n|\n)\s*/g, ' ')
     .replace(ISO_IN_TEXT, (iso) => { const t = parseIsoToLocalMs(iso); return t == null ? iso : `${fmtDay(t)} ${fmtTime(t)}` })
     .replace(/\s*\(?\be\d{1,2}\b\)?/g, '')
+    // "tap addEvent": the button's real name, never the action's
+    .replace(/\b(addEvent|confirmEvent)\b/g, 'Add it').replace(/\bremoveEvent\b/g, 'Remove').replace(/\bmoveEvent\b/g, 'Move it').replace(/\bskipEvent\b/g, 'Never mind')
+    .replace(/\b(createTask|findTime|analyzeWeek|setTimer|setReminder)\b/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
   if (!p.text || TEMPLATE_ECHO.test(JSON.stringify(p))) return null
+  // "Wats your name, Jhy?" back to "wats your name": an echo isn't an answer, so the next model or the rules reply
+  if (parrots(p.text, prompt) && (!p.action || p.action.type === 'none')) return null
   // A clock time the user actually said, now or in their last few messages (never the model's own words).
   // A bare day ("sabado") isn't enough: the model would make up the hour.
   const grounded = `${prompt} ${recent}`
@@ -268,7 +314,7 @@ export function sanitizeAi(p: AiResponse | null, prompt: string, now: number, ca
   p.claimed =
     a?.type === 'confirmEvent' && act === 'none' ? 'add'
     : a?.type === 'skipEvent' && act === 'none' ? 'remove'
-    : act !== 'confirmEvent' && claims(CLAIMS_ADD, p.text) ? 'add'
+    : act !== 'confirmEvent' && (claims(CLAIMS_ADD, p.text) || claims(CLAIMS_ADD_LEAD, p.text)) ? 'add'
     : act !== 'confirmEvent' && act !== 'skipEvent' && claims(CLAIMS_REMOVE, p.text) ? 'remove'
     : act !== 'confirmEvent' && claims(CLAIMS_MOVE, p.text) ? 'move'
     : false
@@ -458,7 +504,7 @@ function parseReply(content: string | undefined, modelName: string): AiResponse 
 
 /**
  * Ask the best AI that can answer right now: Groq's cloud models (skipping any that are out of quota),
- * then the user's own PC via Ollama (unlimited, slower), then the in-browser model.
+ * then the user's own PC via Ollama (unlimited, slower). Null means the rules answer.
  */
 export async function askGroq(
   prompt: string,
@@ -466,7 +512,7 @@ export async function askGroq(
   apiKey = getGroqApiKey(),
   now = Date.now(),
   history: ChatTurn[] = [],
-  facts: { full: string; short: string; refs?: Record<string, string> } = { full: '', short: '' },
+  facts: { full: string; refs?: Record<string, string> } = { full: '' },
   cardOpen = false,
   /** voice: they said it out loud (hands-free), so one short spoken sentence back */
   opts: { voice?: boolean } = {},
@@ -526,13 +572,14 @@ export async function askGroq(
     }
   }
 
-  // Ollama's own API: thinking off (it's what made 4b slow), JSON out, and the model kept loaded for 30 min
+  // Ollama's own API: thinking off (on, qwen3.5:4b took 244s and never answered), JSON out, the model kept loaded
+  // for 30 min, and a calmer temperature than the cloud so a small model sticks to the facts
   const callOllama = async (base: string, model: string): Promise<AiResponse | null> => {
     try {
       const res = await fetch(`${base}/api/chat`, {
         method: 'POST',
         signal: AbortSignal.timeout(45_000),
-        body: JSON.stringify({ model, messages, stream: false, think: false, format: 'json', keep_alive: '30m', options: { temperature: 0.7, num_predict: 300 } }),
+        body: JSON.stringify({ model, messages, stream: false, think: false, format: 'json', keep_alive: '30m', options: { temperature: 0.4, num_predict: 300 } }),
       })
       if (!res.ok) return null
       return parseReply((await res.json()).message?.content, model)
@@ -570,13 +617,6 @@ export async function askGroq(
     const local = clean(await callOllama(localUrl, getLocalAiModel()))
     if (local) return local
   }
-
-  // 3. In-browser model (WebGPU), when it's been downloaded
-  if (typeof window !== 'undefined') try {
-    const { askWebLlm } = await import('./webllm')
-    const web = clean(await askWebLlm(asked, pal, turns, facts.short, now))
-    if (web) return web
-  } catch {}
 
   // Offline with no model ready, or the cloud failed. No cloud set up at all is the user's choice, not a failure.
   failure = !isOnline ? 'offline' : cloud ? (reason ?? issue?.kind ?? 'error') : null

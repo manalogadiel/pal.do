@@ -6,8 +6,6 @@ export interface StatusBadgeProps {
   hasGroqKey: boolean
   activeModel: string
   latency?: number | null
-  /** In-browser model: null = not loaded, -1 = no WebGPU, 0..1 = loading, 1 = ready */
-  brain?: number | null
   /** What the last reply did: redirect, findTime, addEvent, chat… */
   lastIntent?: string
   compact?: boolean
@@ -17,7 +15,6 @@ export interface StatusBadgeProps {
 export function formatModelDisplayName(model: string): string {
   const m = model.toLowerCase()
   if (!m || m.includes('rule')) return 'Local Rules'
-  if (m.includes('in-browser')) return 'Offline brain'
   if (m.includes(':')) return `Your PC · ${model}` // Ollama tags look like qwen3.5:4b
   if (m.includes('qwen3.8')) return 'Groq · Qwen3.8 27B'
   if (m.includes('gpt-oss-120b')) return 'Groq · GPT-OSS 120B'
@@ -25,15 +22,11 @@ export function formatModelDisplayName(model: string): string {
   return model.split('/').pop() || model
 }
 
-const brainLabel = (b: number | null | undefined) =>
-  b == null ? 'Not downloaded' : b < 0 ? 'Needs WebGPU (not supported here)' : b >= 1 ? 'Ready, works offline' : `Loading ${Math.round(b * 100)}%`
-
 export function StatusBadge({
   isOnline,
   hasGroqKey,
   activeModel,
   latency,
-  brain,
   lastIntent,
   compact = false,
   onOpenSettings,
@@ -109,10 +102,6 @@ export function StatusBadge({
           </>
         )}
 
-        {brain != null && brain >= 0 && brain < 1 && (
-          <span className="tnum font-mono text-[9.5px] text-ink-3">brain {Math.round(brain * 100)}%</span>
-        )}
-
         {latency != null && latency > 0 && !compact && (
           <span className="tnum font-mono text-[9.5px] text-ink-3">{latency}ms</span>
         )}
@@ -161,11 +150,6 @@ export function StatusBadge({
             </div>
 
             <div className="flex justify-between items-start gap-2">
-              <span className="text-ink-3 shrink-0">Offline brain</span>
-              <span className="text-[11px] text-right text-ink-2">{brainLabel(brain)}</span>
-            </div>
-
-            <div className="flex justify-between items-start gap-2">
               <span className="text-ink-3 shrink-0">Active Model</span>
               <span className="font-mono text-[11px] text-right font-medium text-ink truncate max-w-[160px]" title={activeModel}>
                 {activeModel || 'Local Rules'}
@@ -176,7 +160,7 @@ export function StatusBadge({
               <div className="flex justify-between items-start gap-2">
                 <span className="text-ink-3 shrink-0">Fallback Chain</span>
                 <span className="font-mono text-[10.5px] text-right text-ink-2">
-                  {[hasGroqKey && 'GPT-OSS 120B → GPT-OSS 20B', pcModel && `Your PC (${pcModel})`, 'Offline brain → Rules'].filter(Boolean).join(' → ')}
+                  {[hasGroqKey && 'Qwen3.8 27B → GPT-OSS 120B → GPT-OSS 20B', pcModel && `Your PC (${pcModel})`, 'Rules'].filter(Boolean).join(' → ')}
                 </span>
               </div>
             )}

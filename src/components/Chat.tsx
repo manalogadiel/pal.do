@@ -57,6 +57,8 @@ interface Props {
   onCollapse?: () => void
   /** Hands-free "Hi {pal}": its state for the status chip, and the on/off switch */
   handsFree?: { on: boolean; state: HandsFreeState; progress?: number; toggle: () => void }
+  /** The AI is working on a reply: "• • •" in the log, so nobody types the same thing twice */
+  thinking?: boolean
 }
 
 /** What the hands-free chip says, and its dot */
@@ -64,7 +66,7 @@ function handsFreeChip(h: NonNullable<Props['handsFree']>, palName: string): { l
   if (h.state === 'loading') return { label: `Getting ready… ${Math.round((h.progress ?? 0) * 100)}%`, dot: 'bg-ink-3' }
   if (h.state === 'awake') return { label: 'Listening…', dot: 'bg-tangerine animate-pulse' }
   if (h.state === 'thinking') return { label: 'Got it…', dot: 'bg-tangerine' }
-  if (h.state === 'paused') return { label: `${palName} is talking…`, dot: 'bg-ink-3' }
+  if (h.state === 'paused') return { label: `${palName} is talking… say "Hi ${palName}" to interrupt`, dot: 'bg-ink-3' }
   if (h.state === 'error') return { label: "Hands-free couldn't start", dot: 'bg-rose-500' }
   if (h.state === 'off') return { label: 'Tap anywhere to resume hands-free', dot: 'bg-ink-3' }
   return { label: `Say "Hi ${palName}"`, dot: 'bg-emerald-500' }
@@ -140,7 +142,7 @@ export function Chat(p: Props) {
   // appears/goes (it makes the composer taller, which would tuck the newest message under the pal row)
   useEffect(() => {
     scrollToBottom(false)
-  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, p.handsFree?.on, scrollToBottom])
+  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, p.handsFree?.on, p.thinking, scrollToBottom])
 
   // On page mount / reload, ensure feed immediately scrolls to bottom so the last bubble is on top of the mascot
   useEffect(() => {
@@ -178,7 +180,7 @@ export function Chat(p: Props) {
       <div className={`pointer-events-auto flex items-center gap-1.5 pb-1 text-[12px] text-ink-3 ${row ? 'mb-1 min-w-0 flex-1' : ''}`}>
         <span className={`size-1.5 rounded-[2px] ${shownState === 'sleeping' ? 'bg-ink-3' : 'pulse-dot bg-tangerine'}`} />
         <span className="font-medium text-ink-2">{p.palName}</span>
-        <span>· {STATE_LABEL[shownState]}</span>
+        <span>· {p.thinking ? 'thinking…' : STATE_LABEL[shownState]}</span>
       </div>
     )
   }
@@ -253,6 +255,15 @@ export function Chat(p: Props) {
                   )}
                 </div>
               ))}
+              {p.thinking && (
+                <div className="land flex justify-start" role="status" aria-label={`${p.palName} is thinking`}>
+                  <div className="flex h-[42px] items-center gap-1.5 rounded-[22px] rounded-bl-[8px] border border-ink/[0.06] bg-paper px-4 shadow-[0_2px_10px_-2px_rgba(0,0,0,0.06)]">
+                    {[0, 160, 320].map((d) => (
+                      <span key={d} className="size-1.5 rounded-full bg-ink-3 motion-safe:animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {/* Spacer = pal row height, so scrolling to the end lifts the newest message above the pal */}
@@ -599,14 +610,19 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
             {c.days?.length && c.until ? ` · until ${fmtDay(c.until).replace(/^\w+, /, '')}` : ''}
           </span>
         </div>
-        {c.conflicts > 0 && (
+        {c.clash?.length ? (
+          <p className="mt-2.5 text-[13.5px] leading-snug text-amber">
+            Overlaps {c.clash.join(' and ')}.{c.alt ? ` ${fmtTime(c.alt.start)}–${fmtTime(c.alt.end)} is free.` : ''}
+          </p>
+        ) : c.conflicts > 0 && (
           <p className="mt-2.5 text-[13.5px] leading-snug text-amber">
             This overlaps {c.conflicts} planned block{c.conflicts > 1 ? 's' : ''}. I can suggest new times for them if you add it.
           </p>
         )}
         {done ? <Done t={done} /> : (
-          <div className="mt-2.5 -ml-1 flex gap-1">
-            <Btn primary onClick={() => onCard(m.id, 'addEvent')}>{c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
+          <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
+            {c.alt && <Btn primary onClick={() => onCard(m.id, 'useAlt')}>Use {fmtTime(c.alt.start)}</Btn>}
+            <Btn primary={!c.alt} onClick={() => onCard(m.id, 'addEvent')}>{c.clash?.length ? 'Add anyway' : c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
             <Btn onClick={() => onCard(m.id, 'skipEvent')}>Never mind</Btn>
           </div>
         )}
@@ -626,6 +642,7 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
           <span className={`tnum text-ink-2 ${c.to ? 'line-through decoration-ink-3/60' : ''}`}>{when(c.start, c.end)}</span>
           {c.to && <span className="tnum font-medium">→ {when(c.to.start, c.to.end)}</span>}
         </div>
+        {c.clash?.length ? <p className="mt-2.5 text-[13.5px] leading-snug text-amber">The new time overlaps {c.clash.join(' and ')}.</p> : null}
         {done ? <Done t={done} /> : (
           <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
             <Btn primary onClick={() => onCard(m.id, 'apply')}>{removing ? (c.seriesIds ? 'Remove this one' : 'Remove') : 'Move it'}</Btn>

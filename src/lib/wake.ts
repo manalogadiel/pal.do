@@ -46,6 +46,20 @@ function distance(a: string, b: string) {
 const soundsLike = (key: string, keys: string[]) => keys.some((k) => (k.length <= 3 || key.length <= 3 ? key === k : distance(key, k) <= 1))
 
 /**
+ * Pal's own line coming back through the mic while it talks ("Hiii, Jhyvie here!" has the wake phrase in it).
+ * What came after the wake phrase is mostly Pal's words → echo. A bare "Hi Jhyvie" is an echo only when Pal's
+ * line itself says it. "Hi Jhyvie stop" over any line is never an echo.
+ */
+export function isEcho(heard: string, line: string, pal: PalId) {
+  if (!line.trim()) return false
+  const words = (s: string) => norm(s).split(' ').filter(Boolean)
+  const said = new Set(words(line))
+  const rest = words(matchWake(heard, pal)?.command ?? heard)
+  if (!rest.length) return matchWake(line, pal) != null
+  return rest.filter((w) => said.has(w)).length / rest.length >= 0.6
+}
+
+/**
  * The command after "Hi {pal}" ('' when they only said the greeting), or null when this isn't a wake phrase.
  * `userName`: never wake on the user's own name ("hi Gadiel" from a friend).
  */
