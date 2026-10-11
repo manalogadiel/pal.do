@@ -16,11 +16,17 @@ export interface LastEvent { title: string; kind: string; start: number; end: nu
 
 export type Card =
   | { type: 'readback'; draft: Draft }
-  | { type: 'proposal'; taskId: string; blockIds: string[]; why: string; shortfall: number; freeHours: number; commute?: boolean }
+  /** replaces: planned blocks this plan takes over, removed only when it's accepted */
+  | { type: 'proposal'; taskId: string; blockIds: string[]; why: string; shortfall: number; freeHours: number; commute?: boolean; replaces?: string[] }
   | { type: 'checkin'; eventIds: string[] }
-  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; whatIf?: boolean; days?: number[] }
+  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; whatIf?: boolean; days?: number[]; until?: number }
+  /** Remove or move something already on the calendar. seriesIds: the same slot on other days, for "remove all". */
+  | { type: 'change'; mode: 'remove' | 'move'; eventId: string; title: string; kind: string; start: number; end: number; to?: { start: number; end: number }; seriesIds?: string[] }
   | { type: 'notify' }
   | { type: 'boundary' }
+
+/** Cards a typed yes/no can answer */
+export const ANSWERABLE: Card['type'][] = ['event', 'proposal', 'readback', 'change']
 
 export type Action =
   | { type: 'confirmDraft'; draft: Draft }
@@ -61,6 +67,7 @@ export const BLOCKED_OUTPUT = /\b(you will (pass|fail)|your grade will|you (are|
 type Lines = Record<string, string[]>
 const BASE: Lines = {
   greet: ["Hey! So what's your week looking like?", "Hi hi. What've you got going on this week?"],
+  greetNamed: ["Hey {user}! So what's your week looking like?", 'Hi {user}! What have you got going on this week?'],
   askDue: ["Ooh okay. When's it due?", 'Got it. When do you need it done by?', 'Okay, and the deadline is…?'],
   dueRetry: ['Wait, which day was that? Like "Friday 5pm" or "Oct 18" works.', 'Sorry, missed the day. "Next Tuesday"? "Bukas"?'],
   askHours: ["How long do you think it'll take you?", 'Gut feeling, how many hours?'],
@@ -77,6 +84,7 @@ const BASE: Lines = {
   checkinMany: ['A few of these went by. How did they go?'],
   doneOk: ['Nice!! Checked off.', 'Yesss, done.'],
   reflow: ["That's okay, happens. I moved the {h} left around, does this work?", 'No stress. Redid the last {h}, want this instead?'],
+  conflictReflow: ['{what} overlaps some study time, so here are new spots for it. Nothing moves until you accept.', 'That bumps a study block. Want it at these times instead? Your old ones stay until you say yes.'],
   revised: ['Ahh got it. Like this?', 'Oops, fixed it. This one?'],
   reflowNone: ["Nothing left to move. You're good on this one."],
   graded: ["I can't write it for you, but I can save you some focus time for it. How long do you think you need?"],
@@ -114,6 +122,52 @@ const BASE: Lines = {
   eventSkipped: ["Okay, I left it off.", 'Sure, not adding it.'],
   nothingWaiting: ["Hmm, I don't have anything ready to add yet. What should I put in, and when?"],
   confirmHint: ["Tap Add it on the card, or just tell me to go ahead, and it's on your calendar.", 'Say the word or tap Add it, and I\'ll put it in.'],
+  planHint: ["Tap Accept or just say go, and these are on your calendar.", 'Say yes or tap Accept and they\'re in.'],
+  readbackHint: ['Tap Looks right, or just say yes, and I\'ll find the time for it.'],
+  changeHint: ["Nothing's changed yet. Tap the button on the card, or say yes, and it's done."],
+  nothingRemoved: ["I haven't removed anything yet. Which one should go? I'll show it so you can confirm."],
+  nothingMoved: ["I haven't moved anything yet. Which one, and to when? I'll show it first."],
+  removeAsk: ['Take this off your calendar?', 'Remove this one?'],
+  whereIs: ["It's right here: {what}. I highlighted it on your calendar."],
+  timerSet: ['Timer set for {len}.', 'Okay, {len}, starting now.'],
+  timerWarnNote: [" I'll tell you at the last {w}."],
+  timerWarn: ['{w} left!', 'Heads up, {w} to go!'],
+  timerDone: ["Time's up!", "Ding! Time's up."],
+  timerStopped: ['Okay, alarm off.'],
+  timerLeft: ['{left} left on your timer.'],
+  timerAdded: ['Added {len}. {left} to go now.'],
+  timerPaused: ['Timer paused with {left} left.'],
+  timerResumed: ['Timer back on, {left} to go.'],
+  timerCancelled: ['Timer cancelled.'],
+  noTimer: ["There's no timer running. Want me to start one?"],
+  reminderSet: ["Okay, I'll remind you at {time}: {what}."],
+  reminderNow: ['Reminder: {what}!'],
+  studyLeft: ['{phase}: {left} left.'],
+  noStudy: ['No focus session running. Say "start focus" to begin one.'],
+  studyPaused: ['Paused. Say "resume" when you\'re back.'],
+  hfOn: ['I\'m listening. Just say "Hi {name}" whenever you need me.'],
+  hfOff: ['Hands-free off. Tap the mic whenever you want to talk.'],
+  hfYes: ['Yes?', "I'm here, go ahead."],
+  hfIdle: ['I stopped listening after 30 quiet minutes. Turn hands-free back on whenever.'],
+  hfQuiet: ["It's quiet hours, so I've stopped listening. Good night!"],
+  hfMicBlocked: ['I need the microphone for hands-free. Allow it in your browser or phone settings, then try again.'],
+  hfError: ["Hands-free couldn't start on this device. You can still tap the mic or type."],
+  studySkipped: ['Skipped. On to the next one.'],
+  nextUp: ['Next up: {what}.{more}', 'Coming up: {what}.{more}'],
+  nowOn: ['Right now: {what}.{more}'],
+  nothingNext: ['Nothing else on your calendar today. Want to plan something?'],
+  moveAsk: ['Move it here?', 'Like this?'],
+  removed: ['Okay, {what} is off your calendar.', 'Done, {what} is gone.'],
+  moved: ['Moved! {what} is at the new time.'],
+  kept: ['Okay, left it as is.', 'Sure, keeping it.'],
+  confirmWhich: ['Wait, para sure: add this one?', 'Just checking, this one?'],
+  slowNet: ["My connection's being slow, so simpler answers from me for a bit."],
+  quotaLocal: ["My free cloud AI ran out for now, so I'm thinking on your PC instead. A bit slower, same me."],
+  quotaOut: ['My free AI limit ran out, so simple answers from me until about {time}.'],
+  busy: ["We've been chatting a lot! Simpler answers for a minute while my AI catches its breath."],
+  offlineBrain: ["You're offline, so I can only do simple stuff right now. The offline brain (in Settings) lets me think properly without internet."],
+  offlineNoBrain: ["You're offline, so I can only do simple stuff until you're back."],
+  brainLoading: ['Loading my offline brain. It downloads once (about 1GB), then works without internet.'],
   whatIf: ['It would look like this:'],
   notify: ['Want a little heads-up before each block starts?'],
   voiceOn: ["Okay, I'll talk out loud now.", 'Voice on! You can just talk to me too.'],
@@ -134,7 +188,34 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     offtopic: ['Outside my parameters, unfortunately. Within them: {next}. Want me to plan it?'],
   },
   jhyvie: {
-    greet: ['Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.'],
+    greet: ['Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.', 'Uy hello! Anong meron sa week mo?', 'Hi hi! May plano ka ba today?'],
+    greetNamed: ['Hiii {user}! Kwento mo naman your week, classes, deadlines, raket, lahat.', 'Uy {user}! Anong meron sa week mo?', 'Hi hi {user}! May plano ka ba today?'],
+    slowNet: ['Medyo mabagal connection ko ngayon, simpler replies muna ha.'],
+    quotaLocal: ['Naubos yung free cloud AI ko, kaya yung AI sa PC mo muna gamit ko. Medyo mabagal, pero ako pa rin!'],
+    quotaOut: ['Naubos yung free AI limit ko, kaya simple replies muna hanggang mga {time}.'],
+    busy: ['Ang dami nating napag-usapan! Simple replies muna for a minute ha.'],
+    offlineBrain: ['Offline ka ngayon kaya simple lang muna kaya ko. I-load mo yung offline brain sa Settings para makapag-isip ako kahit walang internet.'],
+    confirmWhich: ['Teka, para sure: ito ba idadagdag ko?', 'Ito ba yung sinasabi mo?'],
+    conflictReflow: ['Sumabay yung {what} sa study time mo, kaya eto bagong oras. Walang gagalaw hangga\'t di mo ina-accept.'],
+    kept: ['Sige, di ko gagalawin.'],
+    whereIs: ['Nandito siya: {what}. Naka-highlight na sa calendar mo.'],
+    timerSet: ['Sige! {len} na timer, simula na.', 'G! {len}, go na.'],
+    timerWarnNote: [' Sasabihan kita sa huling {w}.'],
+    timerWarn: ['{w} na lang!', 'Bilis, {w} na lang!'],
+    timerDone: ["Time's up! Tapos na yung timer mo."],
+    timerStopped: ['Okay, tahimik na.'],
+    timerLeft: ['{left} pa sa timer mo.'],
+    reminderSet: ['Sige, ipapaalala ko sa {time}: {what}.'],
+    reminderNow: ['Paalala: {what}!'],
+    nextUp: ['Sunod mo: {what}.{more}'],
+    nowOn: ['Ngayon: {what}.{more}'],
+    nothingNext: ['Wala ka nang naka-sched ngayon. Gusto mo mag-plan?'],
+    studyPaused: ['Pause muna. Sabihin mo lang "resume" pag ready ka na.'],
+    hfOn: ['Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.'],
+    hfOff: ['Sige, off na ang hands-free. Tap mo lang yung mic pag gusto mo mag-usap.'],
+    hfYes: ['Yes? Ano yun?', 'Nandito ako, go!'],
+    hfQuiet: ['Quiet hours na, kaya tumigil muna ako sa pakikinig. Good night!'],
+    studySkipped: ['Sige, skip! Tuloy tayo.'],
     askDue: ['Sige! Kailan deadline?', 'Okay! When is it due?'],
     askHours: ['Mga ilang oras kaya yan?', 'How many hours you think?'],
     accepted: ["G! Nasa calendar na. Kamustahin kita after each block ha."],
@@ -156,17 +237,28 @@ const VOICE: Record<PalId, Partial<Lines>> = {
 }
 
 let rot = 0
+const lastLine: Record<string, string> = {}
 export function say(pal: PalId, key: string, vars: Record<string, string | number> = {}) {
   const pool = VOICE[pal][key] ?? BASE[key] ?? [key]
   let s = pool[rot++ % pool.length]
+  // Never the exact same line twice in a row ("hi" then "hello")
+  if (pool.length > 1 && s === lastLine[key]) s = pool[rot++ % pool.length]
+  lastLine[key] = s
   for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v))
   return BLOCKED_OUTPUT.test(s) ? BASE.inject[0] : s
 }
 
+/** Hello, with the user's name when they've told us it (never a raw "{user}") */
+export const greetLine = (pal: PalId, user?: string) => (user?.trim() ? say(pal, 'greetNamed', { user: user.trim() }) : say(pal, 'greet'))
+
 export const defaultHours = (k: TaskKind) => (k === 'exam' ? 6 : 4)
 
 /* ---------- One dialog turn ---------- */
-export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft | null; awaiting: Awaiting; pending?: PendingEvent | null; lastEvent?: LastEvent | null; facts?: { next: string } }): Turn {
+/**
+ * `waiting`: the card a typed yes/no answers (newest unanswered one).
+ * `waitingIsLatest`: false when Pal said something after that card, so a bare "oo" may answer that line instead.
+ */
+export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft | null; awaiting: Awaiting; pending?: PendingEvent | null; lastEvent?: LastEvent | null; waiting?: Card['type'] | null; waitingIsLatest?: boolean; facts?: { next: string; user?: string } }): Turn {
   const { pal, now } = ctx
   const text = input.trim()
   const keep = { draft: ctx.draft, awaiting: ctx.awaiting }
@@ -205,13 +297,23 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
     return { ...r, pending: r.pending === undefined ? null : r.pending }
   }
 
-  // Offline safety net for answering the waiting card. Online, the model reads intent in any wording.
+  // Safety net for answering the waiting card (event, plan, task or change) when no model answers.
   // Short and time-free only: "yes but make it 3pm" is a change, handled below
-  if (ctx.lastEvent && text.split(/\s+/).length <= 4 && !parseRange(text, now) && !parseWhen(text, now)) {
+  const waiting = ctx.waiting ?? (ctx.lastEvent ? 'event' : null)
+  if (waiting && text.split(/\s+/).length <= 4 && !parseRange(text, now) && !parseWhen(text, now)) {
     const le = ctx.lastEvent
-    if (isNo(text) || /^\s*(ayaw|ayoko)\b/i.test(text)) return out('eventSkipped', { action: { type: 'skipEvent' } })
-    if (isYes(text) || /^\s*(ok+(ay+)?|oki+|sige+|oo+|ye+s+|tama+|g+o*|push|ilagay|lagay|add (it|na)|lock it|put it)\b/i.test(text))
-      return out('eventAdded', { action: { type: 'confirmEvent' } }, { what: `${le.title}, ${fmtDay(le.start)} ${fmtTime(le.start)}` })
+    const no = isNo(text) || /^\s*(ayaw|ayoko)\b/i.test(text)
+    const yes = !no && (isYes(text) || /^\s*(ok+(ay+)?|oki+|sige+|sge+|oo+|ye+s+|tama+|g+o*|push|ilagay|lagay|add (it|na)|lock it|put it|accept)\b/i.test(text))
+    if ((yes || no) && ctx.waitingIsLatest === false) {
+      // "oo ikaw na bahala" after Pal asked something else: don't guess, show the card again and ask
+      if (waiting === 'event' && le) return { ...keep, text: say(pal, 'confirmWhich'), action: { type: 'addEvent', title: le.title, kind: le.kind, start: le.start, end: le.end, whatIf: false, days: le.days } }
+    } else if (no) {
+      return waiting === 'event' ? out('eventSkipped', { action: { type: 'skipEvent' } }) : { ...keep, text: '', action: { type: 'skipEvent' } }
+    } else if (yes) {
+      return waiting === 'event' && le
+        ? out('eventAdded', { action: { type: 'confirmEvent' } }, { what: `${le.title}, ${fmtDay(le.start)} ${fmtTime(le.start)}` })
+        : { ...keep, text: '', action: { type: 'confirmEvent' } }
+    }
   }
 
   // Correcting the event card still waiting: "no, it's a lunch date", "make it 3pm", "call it Gym"
@@ -270,7 +372,7 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
 
   // Single time event (e.g. "gym at 5pm", "lagay mo bukas 3pm study", "review tomorrow 2pm")
   const singleWhen = parseWhen(text, now)
-  if (singleWhen?.hadTime && (ek || /\b(gym|workout|study|review|shift|class|duty|meeting|org|training|practice|lagay|schedule|add|put|set)\b/i.test(text))) {
+  if (singleWhen?.hadTime && (ek || /\b(gym|workout|study|review|shift|class|klase|pasok|duty|meeting|org|training|practice|lagay|schedule|sched|add|put|set)\b/i.test(text))) {
     const kind = ek ?? (/\b(gym|workout|run|training)\b/i.test(text) ? 'protected' : 'work')
     const title = extractTitle(text.replace(/\b(lagay( mo)?|schedule|add|put|set)\b/gi, ''), kind === 'protected' ? 'Gym' : kind === 'class' ? 'Class' : kind === 'shift' ? 'Shift' : 'Study Session')
     const start = singleWhen.t
@@ -298,7 +400,7 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
     if (w || h) return next(d)
   }
 
-  if (/^\s*(hi|hello|hey|yo|kumusta|musta|good (morning|afternoon|evening))\b/i.test(text) && text.split(/\s+/).length <= 3) return out('greet') // "hey add plan at 5" falls through
+  if (/^\s*(hi|hello|hey|yo|kumusta|musta|good (morning|afternoon|evening))\b/i.test(text) && text.split(/\s+/).length <= 3) return { ...keep, text: greetLine(pal, ctx.facts?.user) } // "hey add plan at 5" falls through
   if (/^\s*(thanks|thank you|ty|salamat|tnx)\b/i.test(text)) return out('thanks')
   if (/\b(how are you|how r u|how'?s it going|kumusta ka|musta ka|kamusta ka)\b/i.test(text)) return out('chatHow')
   if (/\b(who are you|what are you|what can you do|sino ka|anong kaya mo)\b/i.test(text)) return out('chatWho')

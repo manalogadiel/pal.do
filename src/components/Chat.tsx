@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeDraft, type Card } from '../lib/agent'
 import { fmtDay, fmtHours, fmtTime, type CalEvent, type PalId, type PalState } from '../lib/core'
 import { Pal } from '../pals/Pal'
-import { ChevronL, Glyph, Mic, Send, Speaker, SpeakerOff } from './Icons'
+import { ChevronL, Glyph, Mic, Send, Speaker, SpeakerOff, Waves, X } from './Icons'
+import type { HandsFreeState } from '../lib/handsfree'
 
 /** The pal's current line: greeting or latest reply. Lives only in the speech bubble. */
 export interface MascotBubble {
@@ -54,6 +55,19 @@ interface Props {
   open?: boolean
   setOpen?: (v: boolean) => void
   onCollapse?: () => void
+  /** Hands-free "Hi {pal}": its state for the status chip, and the on/off switch */
+  handsFree?: { on: boolean; state: HandsFreeState; progress?: number; toggle: () => void }
+}
+
+/** What the hands-free chip says, and its dot */
+function handsFreeChip(h: NonNullable<Props['handsFree']>, palName: string): { label: string; dot: string } {
+  if (h.state === 'loading') return { label: `Getting ready… ${Math.round((h.progress ?? 0) * 100)}%`, dot: 'bg-ink-3' }
+  if (h.state === 'awake') return { label: 'Listening…', dot: 'bg-tangerine animate-pulse' }
+  if (h.state === 'thinking') return { label: 'Got it…', dot: 'bg-tangerine' }
+  if (h.state === 'paused') return { label: `${palName} is talking…`, dot: 'bg-ink-3' }
+  if (h.state === 'error') return { label: "Hands-free couldn't start", dot: 'bg-rose-500' }
+  if (h.state === 'off') return { label: 'Tap anywhere to resume hands-free', dot: 'bg-ink-3' }
+  return { label: `Say "Hi ${palName}"`, dot: 'bg-emerald-500' }
 }
 
 /* Typewriter for the pal's bubble. It stays until it's replaced; no dismiss timer. */
@@ -258,6 +272,23 @@ export function Chat(p: Props) {
 
         {/* Glow sits behind the input + mic only */}
         <div className="input-glow relative z-20" data-time={timeOfDay()}>
+          {p.handsFree?.on && (() => {
+            const chip = handsFreeChip(p.handsFree, p.palName)
+            return (
+              <div className="mb-2 flex justify-center">
+                <button
+                  type="button"
+                  onClick={p.handsFree.toggle}
+                  className="press inline-flex h-8 max-w-full items-center gap-2 rounded-full bg-ink/[0.05] px-3 text-[12.5px] font-medium text-ink-2 hover:text-ink"
+                  aria-label={`${chip.label}. Turn off hands-free`}
+                >
+                  <span className={`size-2 shrink-0 rounded-full ${chip.dot}`} aria-hidden />
+                  <span className="truncate" aria-live="polite">{chip.label}</span>
+                  <X className="size-3 shrink-0 opacity-60" />
+                </button>
+              </div>
+            )
+          })()}
           {!voiceMode ? (
             <div className="relative flex items-end gap-1.5 rounded-[28px] bg-ink/[0.05] p-1.5 pl-5 transition-[background-color,box-shadow] duration-200 focus-within:bg-ink/[0.07]">
               <textarea
@@ -308,6 +339,7 @@ export function Chat(p: Props) {
                   setVoiceMode(false)
                   if (p.micOn) p.toggleMic()
                 }}
+                handsFree={p.handsFree && { on: p.handsFree.on, toggle: p.handsFree.toggle, palName: p.palName }}
               />
             </div>
           )}
@@ -325,6 +357,7 @@ function MicOrb({
   size,
   interim,
   onBack,
+  handsFree,
 }: {
   on: boolean
   supported: boolean
@@ -332,6 +365,8 @@ function MicOrb({
   size: number
   interim?: string
   onBack?: () => void
+  /** Right of the orb: turn hands-free "Hi {pal}" on or off */
+  handsFree?: { on: boolean; toggle: () => void; palName: string }
 }) {
   const press = useRef<{ t: number; wasOn: boolean } | null>(null)
   const [held, setHeld] = useState(false)
@@ -352,11 +387,13 @@ function MicOrb({
     if (pr.wasOn || Date.now() - pr.t > 350) toggle()
   }
   const label = !supported
-    ? 'Voice needs Chrome or Edge'
+    ? 'Voice needs a microphone'
     : held
     ? 'Release to send'
     : on
     ? interim || 'Listening… tap to stop'
+    : handsFree?.on
+    ? `Hands-free: just say "Hi ${handsFree.palName}"`
     : 'Tap or hold to talk'
 
   return (
@@ -397,6 +434,18 @@ function MicOrb({
           )}
           <Mic className={`relative ${size > 70 ? 'size-8' : 'size-6'}`} />
         </button>
+        {handsFree && (
+          <button
+            type="button"
+            onClick={handsFree.toggle}
+            className={`press absolute right-1 grid size-11 place-items-center rounded-full hover-lift ${handsFree.on ? 'bg-tangerine/15 text-tangerine' : 'bg-ink/[0.05] text-ink-2 hover:text-ink'}`}
+            aria-label={handsFree.on ? 'Turn off hands-free' : `Hands-free: wake me with "Hi ${handsFree.palName}"`}
+            aria-pressed={handsFree.on}
+            title={handsFree.on ? 'Hands-free is on' : `Hands-free ("Hi ${handsFree.palName}")`}
+          >
+            <Waves className="size-5" />
+          </button>
+        )}
       </div>
       <span className={`max-w-[280px] truncate text-center text-[12px] font-medium ${on ? 'text-tangerine' : 'text-ink-3'}`}>
         {label}
@@ -483,7 +532,7 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
               <span className="tnum ml-auto text-[12px] text-ink-3">{fmtHours((b.end - b.start) / 3_600_000)}</span>
             </li>
           ))}
-          {!blocks.length && <li className="text-[13.5px] text-ink-3">No blocks fit before the deadline.</li>}
+          {!blocks.length && <li className="text-[13.5px] text-ink-3">{c.blockIds.length ? 'These times were replaced by a newer plan.' : 'No blocks fit before the deadline.'}</li>}
         </ol>
         {c.shortfall > 0 && (
           <p className="mt-3 text-[13.5px] leading-snug text-amber">
@@ -494,6 +543,9 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
           {why ? 'Hide reasoning' : 'Why these times?'}
         </button>
         {why && <p className="pop mt-1 text-[13px] leading-snug text-ink-2">{c.why}</p>}
+        {!done && c.replaces?.length ? (
+          <p className="mt-2 text-[13px] leading-snug text-ink-2">Your current {c.replaces.length > 1 ? `${c.replaces.length} blocks stay` : 'block stays'} until you accept.</p>
+        ) : null}
         {done ? <Done t={done} /> : (
           <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
             <Btn primary onClick={() => onCard(m.id, 'accept')}>Accept</Btn>
@@ -543,6 +595,7 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
             {c.days?.length
               ? c.days.length === 7 ? 'Every day' : [...c.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')
               : fmtDay(c.start).replace(/,.*/, '')} · {fmtTime(c.start)} – {fmtTime(c.end)}
+            {c.days?.length && c.until ? ` · until ${fmtDay(c.until).replace(/^\w+, /, '')}` : ''}
           </span>
         </div>
         {c.conflicts > 0 && (
@@ -554,6 +607,29 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
           <div className="mt-2.5 -ml-1 flex gap-1">
             <Btn primary onClick={() => onCard(m.id, 'addEvent')}>{c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
             <Btn onClick={() => onCard(m.id, 'skipEvent')}>Never mind</Btn>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (c.type === 'change') {
+    const G = Glyph[(c.kind as keyof typeof Glyph) ?? 'shift'] ?? Glyph.shift
+    const when = (s: number, e: number) => `${fmtDay(s).replace(/,.*/, '')} · ${fmtTime(s)} – ${fmtTime(e)}`
+    const removing = c.mode === 'remove'
+    return (
+      <div className={wrap}>
+        <div className="inline-flex min-h-10 flex-wrap items-center gap-2.5 rounded-full bg-ink/[0.04] pr-4 pl-3 text-[13.5px]">
+          <G className="size-4 text-ink-2" />
+          <span className={`font-semibold ${removing ? 'text-ink-2 line-through decoration-ink-3/60' : ''}`}>{c.title}</span>
+          <span className={`tnum text-ink-2 ${c.to ? 'line-through decoration-ink-3/60' : ''}`}>{when(c.start, c.end)}</span>
+          {c.to && <span className="tnum font-medium">→ {when(c.to.start, c.to.end)}</span>}
+        </div>
+        {done ? <Done t={done} /> : (
+          <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
+            <Btn primary onClick={() => onCard(m.id, 'apply')}>{removing ? (c.seriesIds ? 'Remove this one' : 'Remove') : 'Move it'}</Btn>
+            {removing && c.seriesIds && <Btn onClick={() => onCard(m.id, 'removeAll')}>Remove all {c.seriesIds.length}</Btn>}
+            <Btn onClick={() => onCard(m.id, 'keep')}>Keep it</Btn>
           </div>
         )}
       </div>

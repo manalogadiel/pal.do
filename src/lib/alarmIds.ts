@@ -9,6 +9,9 @@ export const SESSION_ALARM_ID = 900001
 /** One id per phase end in a set (4 focus ends + 4 break ends), with room to spare. */
 export const SESSION_ALARM_IDS: readonly number[] = Array.from({ length: 10 }, (_, i) => SESSION_ALARM_ID + i)
 
+/** Voice timers and reminders: warnings, ends and reminders. Their own block, after the Study tab's. */
+export const TIMER_ALARM_IDS: readonly number[] = Array.from({ length: 20 }, (_, i) => 910_001 + i)
+
 export const isReservedAlarmId = (id: number) => id >= RESERVED_FROM
 
 /** Stable id for a calendar event's alarm, always in 1..899999 (below the reserved range). */

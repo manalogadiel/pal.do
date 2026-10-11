@@ -26,11 +26,14 @@ react(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
     ],
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
+      alias: [
+        { find: '@', replacement: path.resolve(__dirname, './src') },
         // self-contained browser build (the package's default entry imports node's fs/path)
-        'kokoro-web': path.resolve(__dirname, './node_modules/kokoro-js/dist/kokoro.web.js'),
-      },
+        { find: 'kokoro-web', replacement: path.resolve(__dirname, './node_modules/kokoro-js/dist/kokoro.web.js') },
+        // Hands-free voice detection asks for ONNX's plain-wasm build; give it the full one Kokoro and Whisper already
+        // ship in /public/kokoro/ort, so the app carries one runtime instead of two (saves ~11MB)
+        { find: /^onnxruntime-web\/wasm$/, replacement: 'onnxruntime-web' },
+      ],
     },
     worker: { format: 'es' },
     optimizeDeps: { exclude: ['kokoro-js', 'kokoro-web'] },
