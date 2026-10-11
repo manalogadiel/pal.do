@@ -467,13 +467,15 @@ export async function askGroq(
   now = Date.now(),
   history: ChatTurn[] = [],
   facts: { full: string; short: string; refs?: Record<string, string> } = { full: '', short: '' },
-  cardOpen = false
+  cardOpen = false,
+  /** voice: they said it out loud (hands-free), so one short spoken sentence back */
+  opts: { voice?: boolean } = {},
 ): Promise<AiResponse | null> {
   failure = null
   let reason: AiFailure = null
   // The app's reading of the dates goes right under the user's words, where the model can't miss it
   // ("sabado na prelims ko" on a Sunday kept coming back as "bukas")
-  const hint = readHint(prompt, now)
+  const hint = [readHint(prompt, now), opts.voice ? 'App note: they said this out loud; answer in one short spoken sentence.' : ''].filter(Boolean).join(' ')
   const asked = hint ? `${prompt}\n\n[${hint}]` : prompt
   const systemPrompt = generateSystemPrompt(pal, now, facts.full)
 

@@ -101,6 +101,20 @@ export function encodeWav(samples: Float32Array, rate = RATE): Blob {
   return new Blob([buf], { type: 'audio/wav' })
 }
 
+/**
+ * Where the voice detector's ONNX runtime lives: the copy Kokoro already ships in /public/kokoro/ort. The glue
+ * script is loaded through a blob URL because Vite's dev server refuses to import public files as modules, and with
+ * one thread it needs no helper workers. Same path in dev, the web build and the Android app.
+ */
+let ortPaths: Promise<{ mjs: string; wasm: string }> | null = null
+export function vadOrtConfig() {
+  const dir = import.meta.env.BASE_URL + 'kokoro/ort/'
+  ortPaths ??= fetch(dir + 'ort-wasm-simd-threaded.jsep.mjs')
+    .then((r) => r.text())
+    .then((src) => ({ mjs: URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), wasm: dir + 'ort-wasm-simd-threaded.jsep.wasm' }))
+  return ortPaths
+}
+
 /** The best text for a clip that's meant for Pal: the cloud's when allowed, else what the device heard */
 async function bestText(audio: Float32Array, local: string): Promise<string> {
   if (!opts?.transcribeCloud || opts.deviceOnly) return local
@@ -175,10 +189,15 @@ export async function startHandsFree(o: HandsFreeOptions) {
     await loadWhisper((p) => opts === o && set('loading', { progress: p }))
     const { MicVAD } = await import('@ricky0123/vad-web')
     const base = import.meta.env.BASE_URL
+    const paths = await vadOrtConfig()
     vad = await MicVAD.new({
       model: 'v5',
       baseAssetPath: base + 'vad/',
       onnxWASMBasePath: base + 'kokoro/ort/',
+      ortConfig: (ort) => {
+        ort.env.wasm.wasmPaths = paths
+        ort.env.wasm.numThreads = 1
+      },
       positiveSpeechThreshold: 0.5,
       negativeSpeechThreshold: 0.35,
       redemptionMs: 800, // ~0.8s of silence = you've finished the sentence

@@ -45,7 +45,7 @@ const WARN = new RegExp(
 )
 
 const TIMER = /\b(timer|countdown|orasan|i-?timer|time me)\b/i
-const REMIND = /\b(remind me|paalal(a|ahanan)( mo)?( ako| sa akin)?|ipaalala( mo)?( sa akin)?|i-?remind mo ako)\b/i
+const REMIND = /\b(remind me|paalal(a|ahanan)( mo)?( ako| sa akin)?|ipaalala( mo)?( sa akin)?|i-?remind mo ako|(paki)?sabihan( mo)? ako|pakisabi( mo)? sa akin)\b/i
 const STUDY_WORD = /\b(focus|pomodoro|study|aral|session|break)\b/i
 const LEFT = /\b(how (much|long)( time)?( is)? left|time left|how long (until|till)|ilang (minuto|segundo|oras)( pa| na lang)|gaano (pa )?katagal( pa)?|remaining)\b/i
 
@@ -69,7 +69,8 @@ export function parseCommand(text: string, now: number, ctx: { timers?: boolean;
   if (REMIND.test(t) && !TIMER.test(t)) {
     const when = parseWhen(t, now)
     if (when?.hadTime && when.t > now) {
-      const what = extractTitle(t.replace(REMIND, ' ').replace(/\b(to|na|para|mag)\b/gi, ' '), 'Reminder')
+      // "na mag-review" → "Review": drop the linker and the verb prefix (with its hyphen)
+      const what = extractTitle(t.replace(REMIND, ' ').replace(/\b(to|na|para|mag)\b-?/gi, ' '), 'Reminder')
       return { type: 'setReminder', at: when.t, text: what }
     }
   }

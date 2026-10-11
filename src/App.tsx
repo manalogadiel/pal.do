@@ -418,14 +418,18 @@ export default function App() {
     }
 
     let keep = 0
+    let safety = 0
     u.onstart = () => {
-      // Hands-free: don't listen while Pal talks, so it never hears itself
+      // Hands-free: don't listen while Pal talks, so it never hears itself.
+      // Browsers sometimes never send "end": resume anyway after about as long as the line takes to say.
       pauseListening(true)
+      safety = window.setTimeout(stop, Math.min(30_000, 2000 + clean.length * 90))
       feel('talking', 60_000)
       keep = window.setInterval(() => window.speechSynthesis.speaking && window.speechSynthesis.resume(), 8_000)
     }
     const stop = () => {
       clearInterval(keep)
+      clearTimeout(safety)
       setMood((m) => (m?.state === 'talking' ? null : m))
       pauseListening(false)
       // Pal asked something ("Add this?"): the answer doesn't need "Hi Jhyvie" again
@@ -477,6 +481,8 @@ export default function App() {
   /* ---------- hands-free "Hi {pal}" ---------- */
   const [hf, setHf] = useState<{ state: HandsFreeState; progress?: number; error?: string }>({ state: 'off' })
   const hfPrev = useRef<HandsFreeState>('off')
+  /** When they last talked to Pal hands-free (or turned it on), so quiet hours never cut off someone who's awake */
+  const lastVoice = useRef(0)
   const hfOptions = (oneShot = false) => ({
     pal,
     userName: settings.userName,
@@ -494,10 +500,14 @@ export default function App() {
     },
     // "Hi Jhyvie" … (pause): a chime and "Yes?" on screen, then the next sentence is the command
     onWake: () => {
+      lastVoice.current = Date.now()
       playChime()
       setBubble({ id: uid(), mascotId: palRef.current, text: say(palRef.current, 'hfYes'), kind: 'response' })
     },
-    onCommand: (text: string) => sendRef.current(text),
+    onCommand: (text: string) => {
+      lastVoice.current = Date.now()
+      sendRef.current(text, true)
+    },
     onIdle: () => palSay(say(palRef.current, 'hfIdle', { name: PALS[palRef.current].name })),
   })
   async function setHandsFree(on: boolean) {
@@ -508,6 +518,7 @@ export default function App() {
       return palSay(say(pal, 'hfOff'))
     }
     voiceOnRef.current = true
+    lastVoice.current = Date.now()
     unlockChime()
     await startHandsFree(hfOptions())
   }
@@ -522,6 +533,7 @@ export default function App() {
     if (import.meta.env.DEV) {
       const w = window as unknown as Record<string, unknown>
       w.__palHandsFreeNoMic = () => {
+        lastVoice.current = Date.now()
         setSettings((s) => ({ ...s, handsFree: true, voiceOn: true }))
         return startHandsFree({ ...hfOptions(), noMic: true })
       }
@@ -529,9 +541,11 @@ export default function App() {
       w.__palVoiceTest = () => import('./lib/voice.selftest').then((m) => m.runVoiceSelfTest())
     }
   })
-  // Quiet hours (11pm–7am): stop listening, unless a timer still needs a "stop"
+  // Quiet hours (11pm–7am): stop listening once they've gone quiet for 10 minutes (they may be up late studying),
+  // and never while a timer still needs a "stop"
   useEffect(() => {
     if (!isHandsFreeOn() || micOn || !isQuiet(now)) return
+    if (Date.now() - lastVoice.current < 10 * MIN) return
     if (alarmsRef.current.timers.some((t) => !t.done) || ringingRef.current) return
     stopHandsFree()
     palSay(say(pal, 'hfQuiet'))
@@ -539,7 +553,10 @@ export default function App() {
   // After a reload, browsers only allow the mic and audio after a tap: resume on the first one
   useEffect(() => {
     if (!settings.handsFree || hf.state !== 'off') return
-    const resume = () => { if (!isQuiet(Date.now())) startHandsFree(hfOptions()) }
+    const resume = () => {
+      lastVoice.current = Date.now()
+      startHandsFree(hfOptions())
+    }
     window.addEventListener('pointerdown', resume, { once: true })
     return () => window.removeEventListener('pointerdown', resume)
   }, [settings.handsFree, hf.state]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -558,7 +575,11 @@ export default function App() {
     playChime()
     if (document.hidden) notifyWeb(PALS[p].name, line)
     if (viewRef.current !== 'home') toast({ text: line })
-    if (al.kind === 'done') setRinging(al.timer.id)
+    if (al.kind === 'done') {
+      setRinging(al.timer.id)
+      // Hands-free: "stop" / "okay" turns it off without "Hi Jhyvie" first
+      if (isHandsFreeOn()) expectFollowUp(60_000)
+    }
   }
   const onAlarmRef = useRef(onAlarm)
   onAlarmRef.current = onAlarm
@@ -779,7 +800,9 @@ export default function App() {
     const conflicts = ev.current.filter((x) => x.kind === 'work' && (x.status === 'planned' || x.status === 'proposed') && slots.some((s) => x.start < s.end && x.end > s.start)).length
     const first = slots[0] ?? { start: e.start, end: e.end }
     setMsgs((ms) => ms.map((m) => (m.card?.type === 'event' && !m.resolved ? { ...m, resolved: 'Changed' } : m)))
-    palSay(text, { card: { type: 'event', title: e.title, kind: e.kind, start: first.start, end: first.end, conflicts, whatIf: true, days: e.days, until: e.until } }, conflicts ? 'alarmed' : 'talking')
+    // Hands-free: they may not be looking, so the card is asked out loud as a yes/no question
+    const line = isHandsFreeOn() ? say(pal, 'voiceAddAsk', { what: `${e.title}, ${fmtDay(first.start).replace(/,.*/, '')} ${fmtTime(first.start)}` }) : text
+    palSay(line, { card: { type: 'event', title: e.title, kind: e.kind, start: first.start, end: first.end, conflicts, whatIf: true, days: e.days, until: e.until } }, conflicts ? 'alarmed' : 'talking')
     showWeekOf(first.start)
   }
 
@@ -790,7 +813,9 @@ export default function App() {
     const series = mode === 'remove'
       ? [...new Set([e.id, ...ev.current.filter((x) => x.title === e.title && x.kind === e.kind && x.status === 'planned' && x.start >= nowRef.current && tod(x.start) === tod(e.start)).map((x) => x.id)])]
       : []
-    palSay(text, { card: { type: 'change', mode, eventId: e.id, title: e.title, kind: e.kind, start: e.start, end: e.end, to, seriesIds: series.length > 1 ? series : undefined } })
+    const what = `${e.title}, ${fmtDay(e.start).replace(/,.*/, '')} ${fmtTime(e.start)}`
+    const line = isHandsFreeOn() ? say(pal, mode === 'remove' ? 'voiceRemoveAsk' : 'voiceMoveAsk', { what }) : text
+    palSay(line, { card: { type: 'change', mode, eventId: e.id, title: e.title, kind: e.kind, start: e.start, end: e.end, to, seriesIds: series.length > 1 ? series : undefined } })
     showWeekOf(to?.start ?? e.start)
     flash([e.id])
   }
@@ -863,7 +888,8 @@ export default function App() {
 
   const sendRef = useRef(send)
   sendRef.current = send
-  async function send(text: string) {
+  /** voice: said out loud (hands-free), so Pal answers in one short spoken sentence */
+  async function send(text: string, voice = false) {
     const recent = msgs.slice(-8)
     const lastPal = [...recent].reverse().find((m) => m.from === 'pal')
     // The card a typed yes/no answers: the newest one still waiting
@@ -928,7 +954,7 @@ export default function App() {
       const t0 = performance.now()
       try {
         const groqKey = getGroqApiKey()
-        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!waitMsg)
+        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!waitMsg, { voice })
         if (ai?.text) {
           // A reply claiming it already changed something it can't: point at the real way instead
           // "Nasa calendar mo na" about something this chat really added is true, not a claim: keep the model's words

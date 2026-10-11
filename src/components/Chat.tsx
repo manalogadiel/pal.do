@@ -136,10 +136,11 @@ export function Chat(p: Props) {
     end.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'end' })
   }, [])
 
-  // Auto-scroll when messages update, card resolves, log opens, or pal height settles
+  // Auto-scroll when messages update, card resolves, log opens, pal height settles, or the hands-free chip
+  // appears/goes (it makes the composer taller, which would tuck the newest message under the pal row)
   useEffect(() => {
     scrollToBottom(false)
-  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, scrollToBottom])
+  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, p.handsFree?.on, scrollToBottom])
 
   // On page mount / reload, ensure feed immediately scrolls to bottom so the last bubble is on top of the mascot
   useEffect(() => {

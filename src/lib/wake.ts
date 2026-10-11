@@ -16,18 +16,34 @@ const NAMES: Record<PalId, string[]> = {
 // Apostrophes vanish ("what's" → "whats", which the command rules expect); other punctuation becomes a space
 const norm = (s: string) => s.toLowerCase().replace(/['’]/g, '').replace(/[.,!?;:"()]/g, ' ').replace(/\s+/g, ' ').trim()
 
-function oneOff(a: string, b: string) {
-  if (Math.abs(a.length - b.length) > 1 || a === b) return a === b
-  let i = 0, j = 0, edits = 0
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) { i++; j++; continue }
-    if (++edits > 1) return false
-    if (a.length > b.length) i++
-    else if (b.length > a.length) j++
-    else { i++; j++ }
-  }
-  return edits + (a.length - i) + (b.length - j) <= 1
+/**
+ * How a name sounds, roughly: speech-to-text writes "Jhyvie" as "Jay Hivey", "Jay Highby", "Jayvee", "JV".
+ * h drops out, y/ee/ie/ey all become i, b becomes v, jh/ch/g become j, doubles collapse.
+ * "jay hivey" → "jaivi", "jayvee" → "jaivi", "jhyvie" → "jivi".
+ */
+export function soundKey(s: string) {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z]/g, '')
+    .replace(/^g(?=[iey])|jh|ch/g, 'j')
+    .replace(/ph/g, 'f')
+    .replace(/h/g, '')
+    .replace(/(ee|ie|ei|ea|ey)/g, 'i')
+    .replace(/y/g, 'i')
+    .replace(/b/g, 'v')
+    .replace(/(.)\1+/g, '$1')
 }
+
+function distance(a: string, b: string) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)])
+  for (let j = 1; j <= b.length; j++) d[0][j] = j
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+  return d[a.length][b.length]
+}
+
+/** Sounds like one of the pal's names: exact for short keys ("rai", "jp"), one sound off for longer ones */
+const soundsLike = (key: string, keys: string[]) => keys.some((k) => (k.length <= 3 || key.length <= 3 ? key === k : distance(key, k) <= 1))
 
 /**
  * The command after "Hi {pal}" ('' when they only said the greeting), or null when this isn't a wake phrase.
@@ -45,8 +61,13 @@ export function matchWake(heard: string, pal: PalId, userName?: string): { comma
     const m = new RegExp(String.raw`^${n.replace(/ /g, String.raw`\s*`)}(?:\s+|$)(.*)$`).exec(rest)
     if (m) return { command: m[1].trim() }
   }
-  // One letter off a spelling of 4+ letters ("jyvie", "jaypi"), but never the user's own name
-  const [word, ...more] = rest.split(' ')
-  if (word && word !== user && names.some((n) => n.length >= 4 && !n.includes(' ') && oneOff(word, n))) return { command: more.join(' ').trim() }
+  // Sounds like the name over the next 1–3 words ("jay hivey", "jay highby"), but never the user's own name
+  const keys = names.map(soundKey)
+  const userKey = user ? soundKey(user) : ''
+  const words = rest.split(' ')
+  for (let k = 1; k <= Math.min(3, words.length); k++) {
+    const key = soundKey(words.slice(0, k).join(''))
+    if (key && key !== userKey && soundsLike(key, keys)) return { command: words.slice(k).join(' ').trim() }
+  }
   return null
 }

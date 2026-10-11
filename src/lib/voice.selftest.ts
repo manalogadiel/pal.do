@@ -3,7 +3,7 @@
 // Run from the browser console or Playwright: await window.__palVoiceTest()
 import { parseCommand } from './commands'
 import type { PalId } from './core'
-import { transcribeOnDevice } from './handsfree'
+import { transcribeOnDevice, vadOrtConfig } from './handsfree'
 import { matchWake } from './wake'
 
 const RATE = 16_000
@@ -73,9 +73,13 @@ export async function runVoiceSelfTest(
   const base = import.meta.env.BASE_URL
   // The offline detector runs Silero's legacy model (dev server serves it from node_modules); the end-of-speech
   // logic (redemptionMs) is the same one the live listener uses
+  const paths = await vadOrtConfig()
   const vad = await NonRealTimeVAD.new({
     modelURL: base + 'node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx',
-    ortConfig: (ort) => { ort.env.wasm.wasmPaths = base + 'kokoro/ort/' },
+    ortConfig: (ort) => {
+      ort.env.wasm.wasmPaths = paths
+      ort.env.wasm.numThreads = 1
+    },
     redemptionMs: 800,
   })
   const results: VoiceTestResult[] = []

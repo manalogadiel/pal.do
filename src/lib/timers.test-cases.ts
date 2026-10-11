@@ -1,7 +1,7 @@
 // Voice timers, device commands and the wake phrase. Run by `pnpm eval:chat` (scripts/eval-chat.mjs).
 import { parseCommand, parseDuration } from './commands'
 import { addReminder, addTime, cancelTimer, fmtLeft, NO_ALARMS, pauseTimer, resumeTimer, sayLength, startTimer, tickAlarms, timeLeft, upcomingAlarms } from './timers'
-import { matchWake } from './wake'
+import { matchWake, soundKey } from './wake'
 
 const S = 1000
 const MIN = 60 * S
@@ -37,6 +37,8 @@ export function runVoiceTests(): string[] {
   const r3 = parseCommand('remind me at 3pm to call mom', NOW)
   eq('reminder at 3pm', r3 && r3.type === 'setReminder' ? [new Date(r3.at).getHours(), r3.text] : r3, [15, 'Call mom'])
   eq('reminder with no time → chat handles it', parseCommand('remind me to study', NOW), null)
+  const rt = parseCommand('pakisabihan mo ako mamayang 3pm na mag-review', NOW)
+  eq('Taglish reminder', rt && rt.type === 'setReminder' ? [new Date(rt.at).getHours(), rt.text] : rt, [15, 'Review'])
   eq('start focus', parseCommand('start focus', NOW), { type: 'study', op: 'start' })
   eq('"start studying friday 3pm" is planning', parseCommand('start studying friday 3pm', NOW), null)
   eq('time left on a timer', parseCommand('how much time left?', NOW, { timers: true }), { type: 'timer', op: 'left' })
@@ -88,6 +90,12 @@ export function runVoiceTests(): string[] {
   eq('uh hi Jayvee', matchWake('Uh, hi Jayvee', 'jhyvie'), { command: '' })
   eq('hi jay vee (two words)', matchWake('hi jay vee start focus', 'jhyvie'), { command: 'start focus' })
   eq('one letter off', matchWake('hi jyvie start focus', 'jhyvie'), { command: 'start focus' })
+  // What Whisper actually wrote when Kokoro said "Hi Jhyvie" (the audio self-test)
+  eq('heard as "Jay Highby"', matchWake('Hi Jay Highby. Set me a timer for five minutes and remind me the last 30 seconds.', 'jhyvie'), { command: 'set me a timer for five minutes and remind me the last 30 seconds' })
+  eq('heard as "Jay Hivey"', matchWake("Hi Jay Hivey, what's next?", 'jhyvie'), { command: 'whats next' })
+  eq('heard as "Hi, Jay Hivey."', matchWake('Hi, Jay Hivey. Set me a timer', 'jhyvie'), { command: 'set me a timer' })
+  eq('"hi jay" alone is not Jhyvie', matchWake('hi jay how you doing', 'jhyvie'), null)
+  eq('sound keys', ['Jay Hivey', 'Jayvee', 'Jhyvie', 'JV'].map(soundKey), ['jaivi', 'jaivi', 'jivi', 'jv'])
   eq('Jaypee as jp', matchWake('hey jp timer 5 mins', 'jaypee'), { command: 'timer 5 mins' })
   eq('Rei as Ray', matchWake('hi ray', 'rei'), { command: '' })
   eq('no greeting → no wake', matchWake('jv set a timer', 'jhyvie'), null)

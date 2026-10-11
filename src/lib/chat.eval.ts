@@ -223,6 +223,9 @@ export const LLM_CASES: Case[] = [
   { input: 'math exam next tuesday', expect: { action: ['createTask', 'addEvent', 'none'] } },
   { input: 'what time is it?', expect: { action: 'none', includes: ['{now}'] } },
   { input: 'hi', expect: { action: 'none' } },
+  // Timer/reminder wording the rules don't catch: the model is the backup
+  { input: 'can you count down ten minutes for my break', expect: { action: 'setTimer', has: ['seconds'] } },
+  { input: 'pakisabihan mo ako mamayang 3pm na mag-review', expect: { action: 'setReminder', has: ['note'] } },
   { input: 'hi jv', user: 'Gadiel', expect: { action: 'none', excludes: ['hi jv', 'hi, jv', 'hey jv', 'uy jv', 'jv!'] }, note: 'jv is Jhyvie; the user is Gadiel' },
   // A card is waiting: the model reads intent in any wording, the app does the write
   { input: 'tama', lastEvent: SIMBA, history: ASKED, expect: { action: 'confirmEvent' } },
