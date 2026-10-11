@@ -90,6 +90,7 @@ export function Onboarding({
   const [groqKey, setGroqKey] = useState(getSavedGroqKey)
   const [groqOff, setGroqOff] = useState(() => isGroqDisabled())
   const [alarmTesting, setAlarmTesting] = useState(false)
+  const hasEnvKey = Boolean(import.meta.env.DEV && import.meta.env.VITE_GROQ_API_KEY)
   useEffect(() => {
     if (!hello) return
     const t = setTimeout(() => setHello(null), 1400)
@@ -158,14 +159,24 @@ export function Onboarding({
 
               <div className="mt-5">
                 <div className="flex items-center justify-between text-[12px] font-medium text-ink-3">
-                  <span>AI Brain (Groq API)</span>
-                  <button
-                    onClick={() => { setGroqOff(!groqOff); setGroqDisabled(!groqOff) }}
-                    className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-tangerine/15 text-tangerine'}`}
-                  >
-                    {groqOff ? 'Off (local only)' : 'On'}
-                  </button>
-                  <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-tangerine hover:underline">Free API key ↗</a>
+                  <div className="flex items-center gap-1.5">
+                    <span>AI Brain (Groq API)</span>
+                    {hasEnvKey && !groqKey && (
+                      <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        Active from .env
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setGroqOff(!groqOff); setGroqDisabled(!groqOff) }}
+                      className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-tangerine/15 text-tangerine'}`}
+                    >
+                      {groqOff ? 'Off (local only)' : 'On'}
+                    </button>
+                    <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-tangerine hover:underline">Free API key ↗</a>
+                  </div>
                 </div>
                 <input
                   type="password"
@@ -175,7 +186,7 @@ export function Onboarding({
                     setGroqKey(k)
                     setGroqApiKey(k)
                   }}
-                  placeholder="gsk_... (optional, blank = offline rules)"
+                  placeholder={hasEnvKey ? "Using key from .env (paste here to override)" : "gsk_... (optional, blank = offline rules)"}
                   className="mt-1.5 w-full rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[13px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]"
                 />
                 <div className="mt-1 text-[11px] text-ink-3">
