@@ -64,6 +64,11 @@ export function fmtHours(h: number) {
   const r = Math.round(h * 4) / 4
   return r < 1 ? `${Math.round(r * 60)}m` : `${r}h`
 }
+/** "8h 15m": durations for prompts, so the model never says "8.25 hours" */
+export function fmtDur(h: number) {
+  const m = Math.round(h * 4) * 15
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`
+}
 export const hoursOf = (e: CalEvent) => (e.end - e.start) / HOUR
 
 /** Demo week: classes, shifts, commute, a protected lunch, and one ongoing paper. */

@@ -2,3 +2,5 @@ allowBuilds:
   onnxruntime-node: true
   protobufjs: true
   sharp: true
+overrides:
+  onnxruntime-web: 1.22.0-dev.20250409-89f8206ba4

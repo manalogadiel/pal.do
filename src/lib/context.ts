@@ -1,12 +1,12 @@
 // Facts the app computes so the model only has to phrase them. Small models hallucinate times and numbers.
-import { addDays, DAY, fmtDay, fmtHours, fmtTime, hoursOf, startOfDay, type CalEvent, type Task } from './core'
+import { addDays, DAY, fmtDay, fmtDur, fmtHours, fmtTime, hoursOf, startOfDay, type CalEvent, type Task } from './core'
 import { freeGaps, type Prefs } from './schedule'
 import { weatherLine, type Weather } from './weather'
 
 export interface Snapshot {
   /** Full block for big models (Groq / Ollama) */
   full: string
-  /** 3–4 lines for the in-browser model's small context */
+  /** A few lines for the in-browser model's small context */
   short: string
   /** "your Bio quiz on Fri" — for offline redirect lines */
   next: string
@@ -18,15 +18,55 @@ export interface Snapshot {
   today: string
   /** Weather sentence fragment, or '' when unknown */
   weather: string
+  /** Short ids the model may use ("e3") → real event ids. Anything not in here doesn't exist. */
+  refs: Record<string, string>
 }
 
 const BOOKED = new Set(['class', 'shift', 'work', 'exam', 'protected'])
 const short = (t: number) => new Date(t).toLocaleDateString('en-US', { weekday: 'short' })
+const span = (s: number, e: number) => `${fmtDay(s)} ${fmtTime(s)}–${fmtTime(e)}`
+const DAYN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const TAGALOG = ['Linggo', 'Lunes', 'Martes', 'Miyerkules', 'Huwebes', 'Biyernes', 'Sabado']
 
-/** The event card still waiting for the user's answer in chat */
-export type Waiting = { title: string; start: number; end: number } | null | undefined
+/** The card a typed yes/no would answer, as the model should see it */
+export type OpenCard =
+  | { type: 'event'; title: string; start: number; end: number; days?: number[]; until?: number }
+  | { type: 'plan'; title: string; blocks: { start: number; end: number }[] }
+  | { type: 'task'; title: string; kind: string; due: number; hours: number }
+  | { type: 'change'; mode: 'remove' | 'move'; title: string; start: number; end: number; to?: { start: number; end: number } }
 
-export function buildContext(now: number, events: CalEvent[], tasks: Task[], weather: Weather | null, prefs: Prefs = {}, waiting?: Waiting): Snapshot {
+export interface Open {
+  card?: OpenCard | null
+  /** false: Pal said something else after the card, so a bare "oo" may answer that instead */
+  cardIsLatest?: boolean
+  /** A task still being filled in, with no card yet */
+  draft?: { title: string; kind: string; due?: number; hours?: number } | null
+  /** What the user asked to be called (Settings) */
+  user?: string
+}
+
+function describeCard(c: OpenCard) {
+  if (c.type === 'event') {
+    const days = c.days?.length ? ` every ${c.days.map((d) => DAYN[d]).join(', ')}${c.until ? ` until ${fmtDay(c.until)}` : ''}` : ''
+    return `add "${c.title}" ${span(c.start, c.end)}${days}`
+  }
+  if (c.type === 'plan') return `study plan for ${c.title}: ${c.blocks.length ? c.blocks.map((b) => span(b.start, b.end)).join(', ') : 'no times fit'}`
+  if (c.type === 'task') return `${c.kind} "${c.title}" ${c.kind === 'exam' ? 'on' : 'due'} ${fmtDay(c.due)}, ${fmtDur(c.hours)} of ${c.kind === 'exam' ? 'review' : 'work'}`
+  return c.mode === 'remove' ? `remove "${c.title}" (${span(c.start, c.end)})` : `move "${c.title}" from ${span(c.start, c.end)} to ${c.to ? span(c.to.start, c.to.end) : '?'}`
+}
+
+/** "Sat=2026-10-17 (Sabado, in 6 days)": the model reads relative days from here, never from its own math */
+export function relativeDays(now: number, n = 7) {
+  const pad = (x: number) => String(x).padStart(2, '0')
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(addDays(startOfDay(now), i))
+    const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    const rel = i === 0 ? 'today/ngayon' : i === 1 ? 'tomorrow/bukas' : `in ${i} days`
+    return `${DAYN[d.getDay()]}=${iso} (${TAGALOG[d.getDay()]}, ${rel})`
+  }).join(', ')
+}
+
+export function buildContext(now: number, events: CalEvent[], tasks: Task[], weather: Weather | null, prefs: Prefs = {}, open: Open = {}): Snapshot {
   const busy = events.filter((e) => e.status !== 'done' && e.status !== 'missed')
   const today = startOfDay(now)
   const clock = `${new Date(now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}, ${fmtTime(now)}`
@@ -48,11 +88,22 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
   })
   const busiest = [...week].sort((a, b) => b.booked - a.booked)[0]
 
-  const upcoming = tasks.filter((t) => t.due > now).sort((a, b) => a.due - b.due)
+  // What's actually on the calendar, with short ids the model uses to remove or move one
+  const refs: Record<string, string> = {}
+  const upcoming = busy
+    .filter((e) => e.status === 'planned' && e.kind !== 'commute' && e.kind !== 'deadline' && e.end > now && e.start < today + 7 * DAY)
+    .sort((a, b) => a.start - b.start)
+    .slice(0, 10)
+    .map((e, i) => {
+      refs[`e${i + 1}`] = e.id
+      return `e${i + 1} ${span(e.start, e.end)} ${e.title} (${e.kind})`
+    })
+
+  const upcomingTasks = tasks.filter((t) => t.due > now).sort((a, b) => a.due - b.due)
   const plannedFor = (t: Task) => busy.filter((e) => e.taskId === t.id && e.kind === 'work' && e.status === 'planned' && e.start >= now).reduce((a, e) => a + hoursOf(e), 0)
-  const nextTask = upcoming[0]
-  const nextLine = nextTask ? `${nextTask.title}, ${fmtDay(nextTask.due)} (needs ${fmtHours(nextTask.hours - nextTask.doneHours)}, ${fmtHours(plannedFor(nextTask))} planned)` : 'none'
-  const atRisk = upcoming.filter((t) => t.due - now < 3 * DAY && t.doneHours + plannedFor(t) < t.hours)
+  const taskLine = (t: Task) => `${t.title} (${t.kind}), ${fmtDay(t.due)} (needs ${fmtDur(Math.max(0, t.hours - t.doneHours))}, ${fmtDur(plannedFor(t))} planned)`
+  const nextTask = upcomingTasks[0]
+  const atRisk = upcomingTasks.filter((t) => t.due - now < 3 * DAY && t.doneHours + plannedFor(t) < t.hours)
 
   const insight = [
     busiest && busiest.booked > 0 ? `${short(busiest.d)} is your heaviest day (${fmtHours(busiest.booked)} booked).` : 'Your week is pretty open.',
@@ -61,29 +112,36 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
       : nextTask ? `Next up: ${nextTask.title}, ${fmtDay(nextTask.due)}.` : '',
   ].filter(Boolean).join(' ')
 
-  const DAYN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const prefLine = [
     prefs.latestHour != null ? `nothing after ${fmtTime(new Date(now).setHours(prefs.latestHour, 0, 0, 0))}` : '',
     prefs.blockedDays?.length ? `keep ${prefs.blockedDays.map((d) => DAYN[d]).join(', ')} free` : '',
   ].filter(Boolean).join('; ')
   const wx = weather ? weatherLine(weather) : 'unknown (offline or not fetched yet)'
-  const wait = waiting
-    ? `WAITING FOR CONFIRM: ${waiting.title}, ${fmtDay(waiting.start)} ${fmtTime(waiting.start)}–${fmtTime(waiting.end)}. Not on the calendar yet; only the user can add it (Add it button, or telling you to go ahead → confirmEvent).`
+  const wait = open.card
+    ? `WAITING FOR THE USER'S ANSWER: ${describeCard(open.card)}. Not done yet. If their message is a yes/okay/go to this, send confirmEvent (not a new card); "no/drop it/not now" → skipEvent.${open.cardIsLatest === false ? ' You said something else after this card, so a bare "oo" might answer your last question instead: if unsure, ask which.' : ''}`
     : ''
-  const full = `APP FACTS (computed by the app; use these, never invent times, dates, free slots or weather):
+  const d = open.draft
+  const draftLine = d
+    ? `Task being set up (no card yet): ${d.title} (${d.kind}), ${d.due ? `${d.kind === 'exam' ? 'on' : 'due'} ${fmtDay(d.due)}` : 'date not given'}, ${d.hours ? fmtDur(d.hours) : 'hours not given'}. Once you know all three, send createTask.`
+    : ''
+  const user = open.user?.trim()
+  const userLine = user ? `\n- User's name: ${user} (use it now and then; any other name in a greeting is them calling you)` : ''
+  const full = `APP FACTS (computed by the app; use these, never invent times, dates, free slots or weather):${userLine}
 - Now: ${clock}
 - Still today: ${leftLine}
-- Free today: ${fmtHours(freeH)}${gapLine ? ` (${gapLine})` : ''}
-- Free hours next 7 days: ${week.map((w) => `${short(w.d)} ${fmtHours(w.free)}`).join(', ')}
-- Busiest day: ${busiest && busiest.booked > 0 ? `${short(busiest.d)} (${fmtHours(busiest.booked)} booked)` : 'none'}
-- Next deadline: ${nextLine}
+- Free today: ${fmtDur(freeH)}${gapLine ? ` (${gapLine})` : ''}
+- Free next 7 days: ${week.map((w) => `${short(w.d)} ${fmtDur(w.free)}`).join(', ')}${busiest && busiest.booked > 0 ? ` (busiest: ${short(busiest.d)}, ${fmtDur(busiest.booked)} booked)` : ''}
+- On the calendar, next 7 days (id, when, title, kind): ${upcoming.length ? `\n  ${upcoming.join('\n  ')}` : 'nothing'}
+- Deadlines: ${upcomingTasks.length ? upcomingTasks.slice(0, 4).map(taskLine).join('; ') : 'none'}
 - Needs attention: ${atRisk.length ? atRisk.map((t) => `${t.title} due ${fmtDay(t.due)}`).join('; ') : 'nothing'}
 - Weather: ${wx}${prefLine ? `
 - User preferences (always respect): ${prefLine}` : ''}${wait ? `
-- ${wait}` : ''}`
+- ${wait}` : ''}${draftLine ? `
+- ${draftLine}` : ''}`
 
-  const shortBlock = `Now: ${clock}. Still today: ${leftLine}. Free today: ${fmtHours(freeH)}.
-Next deadline: ${nextLine}. Weather: ${wx}.${wait ? ` ${wait}` : ''}`
+  const shortBlock = `${user ? `User's name: ${user}. ` : ''}Now: ${clock}. Still today: ${leftLine}. Free today: ${fmtDur(freeH)}.
+Calendar: ${upcoming.slice(0, 5).join('; ') || 'nothing'}.
+Next deadline: ${nextTask ? taskLine(nextTask) : 'none'}. Weather: ${wx}.${wait ? `\n${wait}` : ''}${draftLine ? `\n${draftLine}` : ''}`
 
   return {
     full,
@@ -93,5 +151,6 @@ Next deadline: ${nextLine}. Weather: ${wx}.${wait ? ` ${wait}` : ''}`
     insight,
     today: leftLine,
     weather: weather ? weatherLine(weather) : '',
+    refs,
   }
 }

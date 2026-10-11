@@ -3,7 +3,8 @@ import { addDays, at, fmtTime, HOUR, hoursOf, startOfDay, type CalEvent, type Ki
 import { Pal } from '../pals/Pal'
 import { Check, Glyph } from './Icons'
 
-const H0 = 6
+/** Grid starts at 6am, or earlier when something starts before then (a 4am ride to school) */
+const EARLIEST = 6
 const H1 = 24
 const PX = 56
 
@@ -54,9 +55,10 @@ interface Props {
 
 export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
+  const h0 = Math.min(EARLIEST, ...events.filter((e) => e.kind !== 'deadline' && days.includes(startOfDay(e.start))).map((e) => new Date(e.start).getHours()))
   useEffect(() => {
     const h = new Date(now).getHours()
-    scroller.current?.scrollTo({ top: Math.max(0, (h - H0 - 1.5) * PX) })
+    scroller.current?.scrollTo({ top: Math.max(0, (h - h0 - 1.5) * PX) })
     // only on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -64,11 +66,11 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
   useEffect(() => {
     if (!first || !scroller.current) return
     const h = new Date(first.start).getHours()
-    scroller.current.scrollTo({ top: Math.max(0, (h - H0 - 1) * PX), behavior: 'smooth' })
+    scroller.current.scrollTo({ top: Math.max(0, (h - h0 - 1) * PX), behavior: 'smooth' })
   }, [first?.id])
 
   const today = startOfDay(now)
-  const hours = Array.from({ length: H1 - H0 }, (_, i) => H0 + i)
+  const hours = Array.from({ length: H1 - h0 }, (_, i) => h0 + i)
 
   return (
     <div ref={scroller} className="relative h-full overflow-y-auto overscroll-contain">
@@ -91,34 +93,34 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
         <div className="pointer-events-none absolute inset-x-0 -bottom-4 h-4 bg-gradient-to-b from-[var(--paper)]/70 to-transparent" />
       </div>
 
-      <div className="relative grid" style={{ gridTemplateColumns: `52px repeat(${days.length}, minmax(0,1fr))`, height: (H1 - H0) * PX }}>
+      <div className="relative grid" style={{ gridTemplateColumns: `52px repeat(${days.length}, minmax(0,1fr))`, height: (H1 - h0) * PX }}>
         <div className="relative">
           {hours.map((h) => (
-            <div key={h} className="tnum absolute right-2.5 -translate-y-1/2 text-[11px] text-ink-3" style={{ top: (h - H0) * PX }}>
-              {h === H0 ? '' : `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`}
+            <div key={h} className="tnum absolute right-2.5 -translate-y-1/2 text-[11px] text-ink-3" style={{ top: (h - h0) * PX }}>
+              {h === h0 ? '' : `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`}
             </div>
           ))}
         </div>
 
         {days.map((d) => {
-          const dayEvents = events.filter((e) => e.kind !== 'deadline' && e.start < at(d, H1) && e.end > at(d, H0) && startOfDay(e.start) === d)
+          const dayEvents = events.filter((e) => e.kind !== 'deadline' && e.start < at(d, H1) && e.end > at(d, h0) && startOfDay(e.start) === d)
           const deadlines = events.filter((e) => e.kind === 'deadline' && startOfDay(e.start) === d)
           const pos = layoutDay(dayEvents)
           const isToday = d === today
           return (
             <div key={d} className={`relative border-l border-hair ${d < today ? 'bg-paper-2/40' : ''}`}>
               {hours.map((h) => (
-                <div key={h} className="absolute inset-x-0 border-t border-hair" style={{ top: (h - H0) * PX }}>
+                <div key={h} className="absolute inset-x-0 border-t border-hair" style={{ top: (h - h0) * PX }}>
                   <div className="absolute inset-x-0 border-t border-dotted border-hair opacity-60" style={{ top: PX / 2 }} />
                 </div>
               ))}
               {/* quiet hours */}
-              <div className="absolute inset-x-0 top-0 bg-paper-3/50" style={{ height: (quiet[1] - H0) * PX }} />
+              <div className="absolute inset-x-0 top-0 bg-paper-3/50" style={{ height: (quiet[1] - h0) * PX }} />
               <div className="absolute inset-x-0 bottom-0 bg-paper-3/50" style={{ height: (H1 - quiet[0]) * PX }} />
 
               {dayEvents.map((e) => {
                 const p = pos.get(e.id)!
-                const top = ((Math.max(e.start, at(d, H0)) - at(d, H0)) / HOUR) * PX
+                const top = ((Math.max(e.start, at(d, h0)) - at(d, h0)) / HOUR) * PX
                 const height = Math.max(20, (hoursOf(e) * PX) - 2)
                 const short = hoursOf(e) < 0.75
                 const G = Glyph[e.kind]
@@ -155,7 +157,7 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
                   key={e.id}
                   onClick={(ev) => onOpen(e, (ev.currentTarget as HTMLElement).getBoundingClientRect())}
                   className="absolute inset-x-0 z-10 flex -translate-y-1/2 items-center"
-                  style={{ top: Math.min(((e.start - at(d, H0)) / HOUR) * PX, (H1 - H0) * PX - 10) }}
+                  style={{ top: Math.min(((e.start - at(d, h0)) / HOUR) * PX, (H1 - h0) * PX - 10) }}
                   title={`Due: ${e.title}`}
                 >
                   <span className="h-[2px] flex-1 bg-ink" />
@@ -165,8 +167,8 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
                 </button>
               ))}
 
-              {isToday && now >= at(d, H0) && (
-                <div className="pointer-events-none absolute inset-x-0 z-10" style={{ top: ((now - at(d, H0)) / HOUR) * PX }}>
+              {isToday && now >= at(d, h0) && (
+                <div className="pointer-events-none absolute inset-x-0 z-10" style={{ top: ((now - at(d, h0)) / HOUR) * PX }}>
                   <div className="h-px bg-tangerine" />
                   <div className="absolute -top-[3px] -left-[4px] size-[7px] rounded-[2.5px] bg-tangerine" />
                 </div>

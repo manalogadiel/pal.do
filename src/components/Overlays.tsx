@@ -6,7 +6,7 @@ import type { Energy } from '../lib/schedule'
 import { Pal, PALS } from '../pals/Pal'
 import { Boundary } from './Chat'
 import { ChevronL, ChevronR, Glyph, SyllabusArt, Trash, Wordmark, X } from './Icons'
-import { getSavedGroqKey, isGroqDisabled, setGroqApiKey, setGroqDisabled } from '../lib/groq'
+import { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, getLocalAiModel, getLocalAiUrl, getSavedGroqKey, isGroqDisabled, listOllamaModels, preloadOllama, setGroqApiKey, setGroqDisabled, setLocalAiModel, setLocalAiUrl } from '../lib/groq'
 import { testAlarm } from '../lib/notifications'
 
 /* ---------- Pal stage: one character at a time, swipe or arrows ---------- */
@@ -60,6 +60,98 @@ export function PalStage({ pal, hello, onPick }: { pal: PalId; hello: PalId | nu
   )
 }
 
+/* ---------- Your PC's AI (Ollama): unlimited replies when the free cloud runs out ---------- */
+function LocalAiRow() {
+  const [on, setOn] = useState(() => Boolean(getLocalAiUrl()))
+  const [url, setUrl] = useState(() => getLocalAiUrl() || DEFAULT_OLLAMA_URL)
+  const [model, setModel] = useState(getLocalAiModel)
+  // undefined = checking, null = not reachable
+  const [models, setModels] = useState<string[] | null | undefined>(undefined)
+  useEffect(() => {
+    if (!on) return
+    setModels(undefined)
+    const id = setTimeout(async () => {
+      const list = await listOllamaModels(url)
+      setModels(list)
+      // Keep the saved pick if it's installed, else the one that works well on a laptop, else the first
+      if (list?.length && !list.includes(getLocalAiModel())) {
+        const pick = list.includes(DEFAULT_OLLAMA_MODEL) ? DEFAULT_OLLAMA_MODEL : list[0]
+        setModel(pick)
+        setLocalAiModel(pick)
+      }
+      if (list?.length) preloadOllama()
+    }, 400)
+    return () => clearTimeout(id)
+  }, [on, url])
+  const status = !on ? 'Unlimited replies from Ollama on this computer when the free cloud AI runs out.'
+    : models === undefined ? 'Checking…'
+    : models === null ? "Ollama isn't running at this address. Start it, then reopen settings."
+    : !models.length ? `Connected, but no models yet. Run: ollama pull ${DEFAULT_OLLAMA_MODEL}`
+    : `Connected · ${model}. Takes over when the cloud AI runs out.`
+  const field = 'rounded-[12px] bg-ink/[0.045] px-3 py-1.5 font-mono text-[13px] outline-none focus:bg-ink/[0.08]'
+  return (
+    <div className="mt-4 rounded-[16px] bg-ink/[0.035] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium text-ink">Your PC's AI <span className="font-normal text-ink-3">(Ollama)</span></div>
+          <div className="text-[11.5px] text-ink-3">{status}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => { setOn(!on); setLocalAiUrl(on ? '' : url) }}
+          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-tangerine' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
+        >
+          {on ? 'On' : 'Turn on'}
+        </button>
+      </div>
+      {on && (
+        <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
+          <input
+            value={url}
+            onChange={(e) => { setUrl(e.target.value); setLocalAiUrl(e.target.value || DEFAULT_OLLAMA_URL) }}
+            aria-label="Ollama address"
+            className={`min-w-0 flex-1 ${field}`}
+          />
+          {models?.length ? (
+            <select value={model} onChange={(e) => { setModel(e.target.value); setLocalAiModel(e.target.value); preloadOllama() }} aria-label="Model" className={field}>
+              {models.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          ) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Hands-free "Hi {pal}": privacy in plain words, and the device-only switch ---------- */
+function HandsFreeRow({ palName, on, toggle, deviceOnly, setDeviceOnly }: { palName: string; on: boolean; toggle: () => void; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }) {
+  return (
+    <div className="mt-4 rounded-[16px] bg-ink/[0.035] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium text-ink">Hands-free <span className="font-normal text-ink-3">("Hi {palName}")</span></div>
+          <div className="text-[11.5px] text-ink-3">
+            {on
+              ? `Listening on this device. Only what you say after "Hi ${palName}" leaves it, to be written out${deviceOnly ? ': with device-only on, nothing does' : ''}.`
+              : `Say "Hi ${palName}" and talk, no tapping. Sets up a ~45 MB listener on this device the first time.`}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-tangerine' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
+        >
+          {on ? 'On' : 'Turn on'}
+        </button>
+      </div>
+      <label className="mt-2.5 flex cursor-pointer items-start gap-2 text-[12px] text-ink-2">
+        <input type="checkbox" checked={deviceOnly} onChange={(e) => setDeviceOnly(e.target.checked)} className="mt-0.5 accent-[var(--tangerine)]" />
+        <span>Write out what I say on this device only <span className="text-ink-3">(most private, but weaker with Taglish)</span></span>
+      </label>
+    </div>
+  )
+}
+
 /* ---------- Onboarding ---------- */
 export function Onboarding({
   initial,
@@ -69,9 +161,10 @@ export function Onboarding({
   onBrain,
   prefsLabel,
   onClearPrefs,
+  handsFree,
 }: {
-  initial?: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean }
-  onDone: (v: { pal: PalId; name: string; energy: Energy; advancedMode: boolean }) => void
+  initial?: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean; userName?: string }
+  onDone: (v: { pal: PalId; name: string; energy: Energy; advancedMode: boolean; userName?: string }) => void
   onClose?: () => void
   /** null = not downloaded, -1 = no WebGPU, 0..1 = progress */
   brain?: number | null
@@ -79,6 +172,8 @@ export function Onboarding({
   /** "Nothing after 9pm · Sun free", or empty when nothing is remembered */
   prefsLabel?: string
   onClearPrefs?: () => void
+  /** Hands-free "Hi {pal}" switch and its device-only setting */
+  handsFree?: { on: boolean; toggle: () => void; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }
 }) {
   const isEditing = Boolean(initial)
   const [step, setStep] = useState(isEditing ? 1 : 0)
@@ -86,6 +181,8 @@ export function Onboarding({
   const [name, setName] = useState(PALS[initial?.pal ?? 'rei'].name)
   const [energy, setEnergy] = useState<Energy>(initial?.energy ?? 'afternoon')
   const [advancedMode, setAdvancedMode] = useState<boolean>(initial?.advancedMode ?? false)
+  // What the user wants to be called. Optional; it goes into the AI's facts so "hi jv" isn't mistaken for their name
+  const [userName, setUserName] = useState(initial?.userName ?? '')
   const [hello, setHello] = useState<PalId | null>(null)
   const [groqKey, setGroqKey] = useState(getSavedGroqKey)
   const [groqOff, setGroqOff] = useState(() => isGroqDisabled())
@@ -149,6 +246,18 @@ export function Onboarding({
               <p className="mt-2 text-[15px] text-ink-2">Your calendar stays on this device. When the AI Brain is on, {name || PALS[pal].name} sends a short summary of your schedule to answer you.</p>
               <div className="mt-5"><Boundary name={name || PALS[pal].name} /></div>
               <div className="mt-5">
+                <label htmlFor="user-name" className="text-[12px] font-medium text-ink-3">What should {name || PALS[pal].name} call you?</label>
+                <input
+                  id="user-name"
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value.slice(0, 30))}
+                  placeholder="Your name or nickname (optional)"
+                  autoComplete="given-name"
+                  className="mt-1.5 w-full max-w-[320px] rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[16px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08] sm:text-[14px]"
+                />
+                <div className="mt-1 text-[11px] text-ink-3">Kept on this device and sent with your messages so {name || PALS[pal].name} can use it.</div>
+              </div>
+              <div className="mt-5">
                 <div className="text-[12px] font-medium text-ink-3">When do you focus best?</div>
                 <div className="mt-1.5 inline-flex rounded-full bg-paper-3 p-1">
                   {(['morning', 'afternoon', 'evening'] as Energy[]).map((v) => (
@@ -190,9 +299,12 @@ export function Onboarding({
                   className="mt-1.5 w-full rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[13px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]"
                 />
                 <div className="mt-1 text-[11px] text-ink-3">
-                  Primary: <span className="font-mono text-ink-2">qwen3.8-27b</span> · Fallback: <span className="font-mono text-ink-2">gpt-oss-20b</span> · Offline: <span className="font-mono text-ink-2">Qwen2.5 1.5B</span>
+                  Cloud: <span className="font-mono text-ink-2">qwen3.8-27b → gpt-oss-120b → gpt-oss-20b</span> · then your PC's AI · Offline: <span className="font-mono text-ink-2">Qwen2.5 1.5B</span>
                 </div>
               </div>
+
+              <LocalAiRow />
+              {handsFree && <HandsFreeRow palName={name || PALS[pal].name} {...handsFree} />}
 
               {/* Offline brain: explicit opt-in, it's a ~1 GB download */}
               <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
@@ -277,7 +389,7 @@ export function Onboarding({
               <Pal id={pal} size={130} state="cheer" />
               <div className="flex w-full gap-2">
                 <button onClick={() => setStep(0)} className="press h-11 rounded-full px-4 text-[15px] text-ink-2 hover:bg-paper-3">Back</button>
-                <button onClick={() => onDone({ pal, name: name.trim() || PALS[pal].name, energy, advancedMode })} className="press h-11 flex-1 rounded-full bg-ink text-[15px] font-medium text-paper">{isEditing ? 'Save Changes' : 'Save & Start'}</button>
+                <button onClick={() => onDone({ pal, name: name.trim() || PALS[pal].name, energy, advancedMode, userName: userName.trim() || undefined })} className="press h-11 flex-1 rounded-full bg-ink text-[15px] font-medium text-paper">{isEditing ? 'Save Changes' : 'Save & Start'}</button>
               </div>
             </div>
           </div>

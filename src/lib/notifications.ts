@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
-import { alarmMode, eventAlarmId, isReservedAlarmId, makeSerial, SESSION_ALARM_IDS, type AlarmMode } from './alarmIds'
+import { alarmMode, eventAlarmId, isReservedAlarmId, makeSerial, SESSION_ALARM_IDS, TIMER_ALARM_IDS, type AlarmMode } from './alarmIds'
 import { makeChime } from './chime'
 import type { CalEvent } from './core'
 
@@ -200,6 +200,33 @@ async function armSessionAlarmsNow(alarms: { at: number; title: string; body: st
 export function cancelSessionAlarms() {
   if (!isNative) return Promise.resolve()
   return sessionOps(cancelSessionAlarmsNow)
+}
+
+// Voice timers and reminders: the same pattern as the Study alarms, in their own id block and queue
+const timerOps = makeSerial()
+
+/** Re-arm every timer warning/end and reminder still ahead, so they fire with the phone asleep */
+export function scheduleTimerAlarms(alarms: { at: number; title: string; body: string }[]) {
+  if (!isNative) return Promise.resolve()
+  return timerOps(async () => {
+    try {
+      await LocalNotifications.cancel({ notifications: TIMER_ALARM_IDS.map((id) => ({ id })) })
+      const mode = await nativeAlarmMode()
+      if (mode === 'off' || alarms.length === 0) return
+      await LocalNotifications.schedule({
+        notifications: alarms.slice(0, TIMER_ALARM_IDS.length).map((a, i) => ({
+          id: TIMER_ALARM_IDS[i],
+          title: a.title,
+          body: a.body,
+          schedule: { at: new Date(a.at), allowWhileIdle: true },
+          sound: 'beep.wav',
+          isExactNotification: mode === 'exact',
+        })),
+      })
+    } catch (err) {
+      console.warn('[notifications] Timer alarms failed:', err)
+    }
+  })
 }
 
 /** Browser notification if already permitted. Never prompts, never throws. */

@@ -1,5 +1,5 @@
 // Greedy, explainable slot finder. Never writes to the calendar — it only proposes.
-import { addDays, at, fmtTime, HOUR, MIN, startOfDay, uid, type CalEvent, type Task } from './core'
+import { addDays, at, fmtHours, fmtTime, HOUR, MIN, startOfDay, startOfWeek, uid, type CalEvent, type Task } from './core'
 
 export type Energy = 'morning' | 'afternoon' | 'evening'
 const DAY_START = 7
@@ -42,41 +42,50 @@ export interface Proposal {
   why: string
 }
 
-export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now: number, energy: Energy = 'afternoon', prefs: Prefs = {}): Proposal {
+/** perDay: "study every day before the 17th" fills each day up to that many hours instead of spreading thin. */
+export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now: number, energy: Energy = 'afternoon', prefs: Prefs = {}, perDay?: number): Proposal {
   const busy = events.filter((e) => e.status !== 'done' && e.status !== 'missed')
   const startAt = Math.ceil(now / (15 * MIN)) * (15 * MIN)
   const days: number[] = []
   for (let d = startOfDay(startAt); d <= task.due; d = addDays(d, 1)) days.push(d)
   // Exams: leave the night before for a light review, not a cram.
   const perBlock = task.kind === 'exam' ? 1.5 : 1.25
+  // "Review: Prelims", so a study block never looks like the exam itself moved
+  const title = task.kind === 'exam' ? `Review: ${task.title}` : task.title
   let remaining = Math.round(hoursNeeded * 4) / 4
   const out: CalEvent[] = []
   let freeHours = 0
+  const placedOn = (d: number) => out.filter((b) => startOfDay(b.start) === d)
 
-  for (const pass of [1, 2]) {
+  for (const pass of perDay ? [1] : [1, 2]) {
     for (const d of days) {
       if (remaining <= 0) break
-      const placedToday = out.filter((b) => startOfDay(b.start) === d).length
-      if (placedToday >= pass) continue
-      const gaps = freeGaps(d, startAt, task.due, [...busy, ...out], prefs)
-      if (pass === 1) freeHours += gaps.reduce((a, g) => a + (g.e - g.s) / HOUR, 0)
-      let slot: { s: number; e: number } | null = null
-      for (const h of SEARCH_FROM[energy]) {
-        const g = gaps.find((g) => g.e - Math.max(g.s, at(d, h)) >= 45 * MIN)
-        if (g) {
-          slot = { s: Math.max(g.s, at(d, h)), e: g.e }
-          break
+      if (!perDay && placedOn(d).length >= pass) continue
+      for (let first = true; ; first = false) {
+        const room = perDay ? perDay - placedOn(d).reduce((a, b) => a + (b.end - b.start) / HOUR, 0) : Infinity
+        // 15-min break after each placed block, so two blocks never run back to back
+        const gaps = freeGaps(d, startAt, task.due, [...busy, ...out.map((b) => ({ ...b, end: b.end + 15 * MIN }))], prefs)
+        if (pass === 1 && first) freeHours += gaps.reduce((a, g) => a + (g.e - g.s) / HOUR, 0)
+        let slot: { s: number; e: number } | null = null
+        for (const h of SEARCH_FROM[energy]) {
+          const g = gaps.find((g) => g.e - Math.max(g.s, at(d, h)) >= 45 * MIN)
+          if (g) {
+            slot = { s: Math.max(g.s, at(d, h)), e: g.e }
+            break
+          }
         }
+        if (!slot) break
+        const s = slot.s
+        // A last sliver under 30 min still gets a short block, instead of a "15m won't fit" warning on an open week
+        const len = Math.min(perBlock, Math.max(remaining, 0.5), room, (slot.e - s) / HOUR)
+        if (len < 0.5) break
+        out.push({
+          id: uid(), title, kind: 'work', start: s, end: s + Math.round(len * 4) * 15 * MIN,
+          status: 'proposed', taskId: task.id,
+        })
+        remaining -= Math.round(len * 4) / 4
+        if (!perDay || remaining <= 0) break
       }
-      if (!slot) continue
-      const s = slot.s
-      const len = Math.min(perBlock, remaining, (slot.e - s) / HOUR)
-      if (len < 0.5) continue
-      out.push({
-        id: uid(), title: task.title, kind: 'work', start: s, end: s + Math.round(len * 4) * 15 * MIN,
-        status: 'proposed', taskId: task.id,
-      })
-      remaining -= Math.round(len * 4) / 4
     }
   }
 
@@ -85,8 +94,24 @@ export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now
   const spread = new Set(out.map((b) => startOfDay(b.start))).size
   const hasShift = busy.some((e) => e.kind === 'shift' && e.start < task.due && e.end > now)
   const why = out.length
-    ? `Spread over ${spread} day${spread > 1 ? 's' : ''} so no session runs longer than ${perBlock}h, placed around your classes${hasShift ? ' and shifts' : ''}, with a 15-min buffer after commutes. Nothing after ${fmtTime(at(startOfDay(now), Math.min(DAY_END, prefs.latestHour ?? DAY_END)))}${prefs.blockedDays?.length ? ', and your rest days stay free' : ''}.`
+    ? `${perDay ? `Up to ${fmtHours(perDay)} a day until the deadline, in sessions of at most ${perBlock}h with a break between` : `Spread over ${spread} day${spread > 1 ? 's' : ''} so no session runs longer than ${perBlock}h`}, placed around your classes${hasShift ? ' and shifts' : ''}, with a 15-min buffer after commutes. Nothing after ${fmtTime(at(startOfDay(now), Math.min(DAY_END, prefs.latestHour ?? DAY_END)))}${prefs.blockedDays?.length ? ', and your rest days stay free' : ''}.`
     : 'There are no free 45-minute windows left before the deadline.'
   out.forEach((b) => (b.why = why))
   return { blocks: out, shortfall: Math.max(0, Math.round(remaining * 4) / 4), freeHours: Math.round(freeHours * 2) / 2, why }
+}
+
+/** Weekly repeats of a time slot, from this week forward: 8 weeks, or through the `until` day. days: 0=Sun…6=Sat. */
+export function occurrences(start: number, end: number, days: number[], now: number, until?: number, weeks = 8) {
+  const s = new Date(start), dur = end - start
+  const ws = startOfWeek(now), today = startOfDay(now)
+  const out: { start: number; end: number }[] = []
+  for (let w = 0; w < weeks; w++)
+    for (const d of [...days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))) {
+      const day = addDays(ws, w * 7 + ((d + 6) % 7))
+      if (day < today || (until != null && day > startOfDay(until))) continue
+      const t = new Date(day)
+      t.setHours(s.getHours(), s.getMinutes(), 0, 0)
+      out.push({ start: t.getTime(), end: t.getTime() + dur })
+    }
+  return out
 }

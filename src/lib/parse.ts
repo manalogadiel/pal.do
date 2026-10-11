@@ -35,7 +35,7 @@ function dayBase(text: string, now: number): number | null {
   const today = startOfDay(now)
   if (/\b(today|ngayon|tonight|mamaya|mamayang)\b/.test(s)) return today
   if (/\b(day after tomorrow|sa makalawa)\b/.test(s)) return addDays(today, 2)
-  if (/\b(tomorrow|tmrw|tmr|tom|bukas)\b/.test(s)) return addDays(today, 1)
+  if (/\b(tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|tom|bukas)\b/.test(s)) return addDays(today, 1)
   const inN = s.match(/\bin (\d+) days?\b/)
   if (inN) return addDays(today, +inN[1])
   const md = s.match(new RegExp(`\\b(${MONTHS.join('|')})[a-z]*\\.?\\s+(\\d{1,2})\\b`))
@@ -83,7 +83,7 @@ function timeOfDay(text: string): [number, number] | null {
 const N = String.raw`(\d+(?:\.\d+)?|an?|one|isang|half an?)`
 const UNIT = String.raw`(h|hr|hrs|hour|hours|oras|m|min|mins|minutes|minuto)`
 const REL_BEFORE = new RegExp(String.raw`\b(?:in|after|within|pagkatapos ng)\s+${N}\s*${UNIT}\b`, 'i')
-const REL_AFTER = new RegExp(String.raw`\b${N}\s*${UNIT}\s+(?:after|later|from now|mamaya)\b`, 'i')
+const REL_AFTER = new RegExp(String.raw`\b${N}\s*${UNIT}\s+(?:after|later|from now|mamaya|mula ngayon)\b`, 'i')
 
 /** "in 1 hour", "1 hour after", "30 mins from now", "after 2 hrs" → now + offset (rounded up to 5 min) */
 function relative(text: string, now: number): number | null {
@@ -94,6 +94,9 @@ function relative(text: string, now: number): number | null {
   const step = 5 * 60 * 1000
   return Math.ceil((now + mins * 60 * 1000) / step) * step
 }
+
+/** "in 2 hours" / "30 mins mula ngayon": the number is when it starts, not how long it lasts */
+export const isRelative = (text: string) => REL_BEFORE.test(text) || REL_AFTER.test(text)
 
 export function parseWhen(text: string, now: number): When | null {
   const rel = relative(text, now)
@@ -194,8 +197,9 @@ export function taskKind(text: string): TaskKind | null {
 }
 
 export function eventKind(text: string): Kind | null {
-  if (/\b(shift|duty|work at|part[- ]time|raket)\b/i.test(text)) return 'shift'
-  if (/\b(class(es)?|lecture|klase|lab|seminar|tutorial)\b/i.test(text)) return 'class'
+  if (/\b(shift|duty|work at|part[- ]time|raket|trabaho)\b/i.test(text)) return 'shift'
+  // "may pasok ako 7am": pasok is going to class
+  if (/\b(class(es)?|lecture|klase|lab|seminar|tutorial|pasok|school|eskwela|iskul)\b/i.test(text)) return 'class'
   if (/\b(commute|bus|jeep|train|biyahe)\b/i.test(text)) return 'commute'
   if (/\b(gym|family|church|simba|dinner|lunch|date|rest)\b/i.test(text)) return 'protected'
   return null
@@ -209,9 +213,9 @@ const STRIP = [
   /\bin \d+ days?\b/gi,
   new RegExp(`\\b(${MONTHS.join('|')})[a-z]*\\.?\\s+\\d{1,2}\\b`, 'gi'),
   /\b\d{1,2}\/\d{1,2}\b/g,
-  /\b(today|tonight|tomorrow|tmrw|tmr|bukas|ngayon|mamaya(ng)?|gabi|hapon|umaga|morning|afternoon|evening|noon|midnight|day after)\b/gi,
+  /\b(today|tonight|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas|ngayon|mamaya(ng)?|gabi|hapon|umaga|morning|afternoon|evening|noon|midnight|day after)\b/gi,
   ...DAYS.map(([re]) => new RegExp(re.source, 'gi')),
-  /\b(i have|i've got|i got|got|there's|there is|i need to|need to|have to|gotta|i need|kailangan ko|kailangan|may|meron|ako|ko|ung|yung|ang|sa|ng|para|na|pa|ba|deadline|due|until|before|by|on|at|this|next|my|a|an|the|i|is|it's|its|to|for|of|and|please|pls|po|add|put|schedule|plan|remind me|help me)\b/gi,
+  /\b(i have|i've got|i got|got|there's|there is|i need to|need to|have to|gotta|i need|kailangan ko|kailangan|may|meron|ako|ko|mo|ung|yung|ang|sa|ng|para|na|pa|ba|deadline|due|until|before|by|on|at|this|next|my|a|an|the|i|is|it's|its|to|for|of|and|please|pls|po|paki|add|put|schedule|sched|plan|lagyan|ilagay|lagay|remind me|help me)\b/gi,
   /\b(every|each|tuwing|daily|weekdays|weekends?|from|klase|class(es)?)\b/gi,
   /(?:^|\s)(?:M|T|W|Th|TH|F|S|Su)(?:\/?(?:M|T|W|Th|TH|F|S|Su)){1,5}(?=\s|$)/g,
   /[,.!?;:]/g,
@@ -227,7 +231,7 @@ export function extractTitle(text: string, fallback: string) {
 }
 
 export function isYes(t: string) {
-  return /^\s*(yes|yep|yeah|yup|sure|ok(ay)?|go|sige|oo|g|game|tama|correct|right|looks right|do it|sounds good)\b/i.test(t)
+  return /^\s*(yes|yep|yeah|yup|sure|ok(ay)?|oks|oki+e?|go|sige|sge+|oo|g|game|tama|correct|right|looks right|do it|sounds good)\b/i.test(t)
 }
 export function isNo(t: string) {
   return /^\s*(no|nope|nah|hindi|wag|huwag|not now|later|cancel|never ?mind)\b/i.test(t)
