@@ -26,7 +26,7 @@ import { addReminder, addTime, cancelTimer, fmtLeft, isPaused as isTimerPaused, 
 import { parseCommand, type Command } from './lib/commands'
 import { TimerPill } from './components/TimerPill'
 import { expectFollowUp, isHandsFreeOn, setPalSpeaking, startHandsFree, stopHandsFree, type HandsFreeState } from './lib/handsfree'
-import { Study } from './components/Study'
+import { Study, StudyTabs } from './components/Study'
 import { aiFailure, alignToMessage, askGroq, CLOUD_CHAIN, cloudIssue, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, preloadOllama, PRIMARY_MODEL, recoverEvent, toLocalIso, transcribeGroq, type AiAction, type AiFailure, type ChatTurn, type Claim } from './lib/groq'
 import { StatusBadge } from './components/StatusBadge'
 import { AI_MODE_EVENT, getAiMode, isPhoneAiPlatform } from './lib/ai-mode'
@@ -152,16 +152,6 @@ export default function App() {
   const [clearing, setClearing] = useState(false)
   const [collapsed, setCollapsed] = useState(false) // desktop bubble
   const [instant, setInstant] = useState(false) // keyboard toggles skip the morph
-  // Width of the floating badge + pal switch (desktop), so the Week header can keep clear of it
-  const clusterRef = useRef<HTMLDivElement>(null)
-  const [clusterW, setClusterW] = useState(0)
-  useEffect(() => {
-    const el = clusterRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setClusterW(Math.ceil(el.getBoundingClientRect().width)))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [mobile])
   const [view, setViewRaw] = useState<View>(() => (localStorage.getItem('paldo.view') as View) || 'home')
   const setView = (v: View) => {
     setViewRaw(v)
@@ -1942,6 +1932,7 @@ export default function App() {
         onLibraryTargetDone={() => setLibraryTarget(null)}
         onPlanFile={planFromFile}
         onToast={(text) => toast({ text })}
+        tabsInHeader={!mobile}
       />
     ) : view === 'tasks' ? (
       <Tasks now={now} tasks={tasks} events={events} onPlan={planTask} onAdd={(t) => { send(t); if (mobile) setChatOpen(true) }} />
@@ -1961,17 +1952,22 @@ export default function App() {
         </div>
       </div>
     ) : (
-      <div className="flex h-full flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-3 pb-1" style={{ paddingRight: clusterW ? clusterW + 24 : undefined }}>
-          {weekNav}
-          {simCluster}
-          <div className="hidden xl:block"><LoadStrip weekStart={weekStart} events={events} active={weekOff === 0 ? (new Date(now).getDay() + 6) % 7 : undefined} onPick={(i) => setDayIdx(i)} /></div>
-        </div>
-        <div className="min-h-0 flex-1">
-          <Calendar days={shownDays} now={now} events={events} pal={pal} highlight={hl} onOpen={openPop} quiet={QUIET} />
-        </div>
+      // Desktop: the week's nav and controls live in the panel's top bar (panelLeft below)
+      <div className="h-full">
+        <Calendar days={shownDays} now={now} events={events} pal={pal} highlight={hl} onOpen={openPop} quiet={QUIET} />
       </div>
     )
+
+  // Desktop panel top bar, left side: the view's own controls, so they share the row with the badge and pals
+  const panelLeft = view === 'week' ? (
+    <div className="flex min-w-0 items-center gap-x-4">
+      {weekNav}
+      {simCluster}
+      <div className="hidden xl:block"><LoadStrip weekStart={weekStart} events={events} active={weekOff === 0 ? (new Date(now).getDay() + 6) % 7 : undefined} onPick={(i) => setDayIdx(i)} /></div>
+    </div>
+  ) : view === 'study' ? (
+    <StudyTabs section={studySection} onSection={setStudySection} />
+  ) : null
 
   return (
     <div className={`grain relative isolate flex h-dvh overflow-hidden p-3 pt-[max(52px,env(safe-area-inset-top))] pr-[max(12px,env(safe-area-inset-right))] pl-[max(12px,env(safe-area-inset-left))] sm:p-4 sm:pt-[max(16px,env(safe-area-inset-top))] ${mobile ? 'flex-col gap-2' : 'gap-3 sm:gap-4'}`}>
@@ -2053,21 +2049,28 @@ export default function App() {
           >
             <div className="h-full w-[clamp(400px,34vw,520px)]">{chat}</div>
           </aside>
-          <section className="liquid relative min-h-0 flex-1 overflow-hidden rounded-[30px]">
-            <div ref={clusterRef} className="absolute top-3 right-3 z-30 flex items-center gap-2">
-              {settings.advancedMode && (
-                <StatusBadge
-                  isOnline={isOnline}
-                  hasGroqKey={hasCloudAi()}
-                  activeModel={activeModel}
-                  latency={lastLatency}
-                lastIntent={lastIntent}
-                  onOpenSettings={() => setEditing(true)}
-                />
-              )}
-              {palSwitch}
-            </div>
-            <div key={view} className="view-in h-full">{content}</div>
+          <section className="liquid relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[30px]">
+            {/* Its own row, not floating over the page: nothing in any view can slide under the badge or the pals */}
+            <header className="@container relative z-30 flex h-14 shrink-0 items-center gap-3 pr-3 pl-4">
+              <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">{panelLeft}</div>
+              <div className="flex shrink-0 items-center gap-2">
+                {settings.advancedMode && (
+                  <StatusBadge
+                    isOnline={isOnline}
+                    hasGroqKey={hasCloudAi()}
+                    activeModel={activeModel}
+                    latency={lastLatency}
+                    lastIntent={lastIntent}
+                    compact
+                    onOpenSettings={() => setEditing(true)}
+                  />
+                )}
+                {/* All four pals when the panel has room; the one-pal chip (as on a phone) when it doesn't */}
+                <div className="hidden @[620px]:block">{palSwitch}</div>
+                <div className="@[620px]:hidden">{palChip}</div>
+              </div>
+            </header>
+            <div key={view} className="view-in min-h-0 flex-1">{content}</div>
           </section>
           {collapsed && (
             <button

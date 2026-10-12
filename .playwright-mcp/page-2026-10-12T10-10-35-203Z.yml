@@ -1,0 +1,175 @@
+- generic [ref=f26e3]:
+  - navigation "Views" [ref=f26e4]:
+    - generic [ref=f26e7]:
+      - button "Today" [ref=f26e9] [cursor=pointer]
+      - button "Week" [ref=f26e13] [cursor=pointer]
+      - button "Tasks" [ref=f26e17] [cursor=pointer]
+      - button "Study" [ref=f26e20] [cursor=pointer]
+    - button "Paste a syllabus" [ref=f26e24] [cursor=pointer]
+    - button "Switch to light mode" [ref=f26e28] [cursor=pointer]
+    - button "Pal and preferences" [ref=f26e32] [cursor=pointer]
+  - complementary [ref=f26e37]:
+    - generic [ref=f26e39]:
+      - generic [ref=f26e40]:
+        - button "Hide chat (⌘/)" [ref=f26e41] [cursor=pointer]
+        - button "Mute spoken replies" [ref=f26e44] [cursor=pointer]
+      - log [ref=f26e49]:
+        - generic [ref=f26e50]:
+          - generic [ref=f26e51]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+          - generic [ref=f26e54]: how is my week
+          - generic [ref=f26e56]: Busy pero may maraming free slots, lalo na sa hapon at gabi ng Lunes hanggang Linggo!
+          - generic [ref=f26e59]: whats my name
+          - generic [ref=f26e61]: Ikaw si Gadiel, syempre!
+          - generic [ref=f26e65]:
+            - generic [ref=f26e66]: Hey, did you get to this?
+            - generic [ref=f26e68]:
+              - generic [ref=f26e69]:
+                - generic [ref=f26e72]: Meeting
+                - generic [ref=f26e73]: 10am–1pm
+              - generic [ref=f26e74]:
+                - button "Done" [ref=f26e75] [cursor=pointer]
+                - button "Partly" [ref=f26e76] [cursor=pointer]
+                - button "Not yet" [ref=f26e77] [cursor=pointer]
+          - generic [ref=f26e79]:
+            - generic [ref=f26e80]: So… how did this one go?
+            - generic [ref=f26e82]:
+              - generic [ref=f26e83]:
+                - generic [ref=f26e86]: Meeting
+                - generic [ref=f26e87]: 10am–1pm
+              - generic [ref=f26e88]:
+                - button "Done" [ref=f26e89] [cursor=pointer]
+                - button "Partly" [ref=f26e90] [cursor=pointer]
+                - button "Not yet" [ref=f26e91] [cursor=pointer]
+          - generic [ref=f26e92]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+          - generic [ref=f26e95]: May exam ako e
+          - generic [ref=f26e97]: Exam. When does it start?
+          - generic [ref=f26e100]: Bukas pa naman
+          - generic [ref=f26e102]: Exam on Tue, Oct 13. What time does it start?
+          - generic [ref=f26e105]: 4pm pa
+          - generic [ref=f26e107]: Exam starts Tue, Oct 13 at 4pm. What time does it end?
+          - generic [ref=f26e110]: 6pm
+          - generic [ref=f26e113]:
+            - generic [ref=f26e114]: Add Exam, Tue 4pm? Say yes or no.
+            - generic [ref=f26e115]:
+              - generic [ref=f26e116]:
+                - generic [ref=f26e119]: Exam
+                - generic [ref=f26e120]: Tue · 4pm – 6pm
+              - generic [ref=f26e121]: Not added
+          - generic [ref=f26e123]: Hi Jhyvie
+          - generic [ref=f26e125]: I'm not Jhyvie. I'm Rei 🙂
+          - generic [ref=f26e128]: "no"
+          - generic [ref=f26e130]: Sure, not adding it.
+          - generic [ref=f26e133]: bus home tomorrow 5-5:45pm
+          - generic [ref=f26e136]:
+            - generic [ref=f26e137]: Add Bus home, Tue 5pm? Say yes or no.
+            - generic [ref=f26e138]:
+              - generic [ref=f26e139]:
+                - generic [ref=f26e143]: Bus home
+                - generic [ref=f26e144]: Tue · 5pm – 5:45pm
+              - generic [ref=f26e145]: Added
+          - generic [ref=f26e147]: "yes"
+          - generic [ref=f26e149]: Added! Bus home, Tue, Oct 13 5pm is on your calendar.
+          - generic [ref=f26e152]: Exam tomorrow 4-6pm
+          - generic [ref=f26e155]:
+            - generic [ref=f26e156]: Your exam is 4pm–6pm. It overlaps Bus home, 5pm–5:45pm. I can move Bus home to 3:15pm–4pm instead. Add it anyway?
+            - generic [ref=f26e157]:
+              - generic [ref=f26e158]:
+                - generic [ref=f26e161]: Exam
+                - generic [ref=f26e162]: Tue · 4pm – 6pm
+              - paragraph [ref=f26e163]: Overlaps Bus home, 5pm–5:45pm.
+              - generic [ref=f26e164]: Not added
+          - generic [ref=f26e166]: "no"
+          - generic [ref=f26e168]: Sure, not adding it.
+          - generic [ref=f26e171]: Exam tomorrow 4-6pm
+          - generic [ref=f26e174]:
+            - generic [ref=f26e175]: Your exam is 4pm–6pm. It overlaps Bus home, 5pm–5:45pm. I can move Bus home to 7pm–7:45pm instead. Add it anyway?
+            - generic [ref=f26e176]:
+              - generic [ref=f26e177]:
+                - generic [ref=f26e180]: Exam
+                - generic [ref=f26e181]: Tue · 4pm – 6pm
+              - paragraph [ref=f26e182]: Overlaps Bus home, 5pm–5:45pm.
+              - generic [ref=f26e183]: Added, Bus home moved to 7pm
+          - generic [ref=f26e185]: I'm listening. Just say "Hi Rei" whenever you need me.
+          - generic [ref=f26e188]: I'm not Jhyvie. I'm Rei 🙂
+          - generic [ref=f26e191]: set a timer for 10 seconds
+          - generic [ref=f26e193]: Timer set for 10 seconds.
+          - generic [ref=f26e196]: Ding! Time's up.
+          - generic [ref=f26e199]: 📎 BIO101_Midterm-Reviewer.pdf
+          - generic [ref=f26e202]:
+            - generic [ref=f26e203]: Saved BIO101 Midterm Reviewer in your BIO101 folder. Want me to plan study time from it, make flashcards, or quiz you?
+            - generic [ref=f26e204]:
+              - generic [ref=f26e205]:
+                - generic [ref=f26e208]: BIO101 Midterm Reviewer
+                - generic [ref=f26e209]: BIO101
+              - generic [ref=f26e210]:
+                - button "Plan study" [ref=f26e211] [cursor=pointer]
+                - button "Flashcards" [ref=f26e216] [cursor=pointer]
+                - button "Quiz me" [ref=f26e221] [cursor=pointer]
+                - button "Read aloud" [ref=f26e226] [cursor=pointer]
+          - generic [ref=f26e231]: quiz me on osmosis
+          - generic [ref=f26e233]: I can't quiz you directly, but I can help you plan a focused study block for osmosis. When would you like to review?
+          - generic [ref=f26e236]: quiz me on osmosis
+          - generic [ref=f26e238]: I can't quiz you directly, but I can help you plan a focused study block for osmosis. When would you like to review?
+          - generic [ref=f26e241]: quiz me on osmosis
+          - generic [ref=f26e243]: Here's a practice quiz from BIO101 Midterm Reviewer. Good luck!
+          - generic [ref=f26e246]: I'm listening. Just say "Hi Rei" whenever you need me.
+          - generic [ref=f26e249]: BIO101 Midterm Reviewer is about 1h of studying. When is the BIO101 exam?
+          - generic [ref=f26e252]: friday 9am
+          - generic [ref=f26e254]: Quiz me osmosis starts Fri, Oct 16 at 9am. What time does it end?
+          - generic [ref=f26e257]: BIO101 Midterm Reviewer is about 1h of studying. When is the BIO101 exam?
+          - generic [ref=f26e260]: friday 9am
+          - generic [ref=f26e262]: Got it, Friday at 9am. I'll set the reminder for then.
+          - generic [ref=f26e265]: BIO101 Midterm Reviewer is about 1h of studying. When is the BIO101 exam?
+          - generic [ref=f26e268]: friday 9am
+          - generic [ref=f26e271]:
+            - generic [ref=f26e272]: "Okay, so I got:"
+            - generic [ref=f26e273]:
+              - generic [ref=f26e274]:
+                - generic [ref=f26e275]: BIO101 exam
+                - generic [ref=f26e276]: on Fri, Oct 16 9am
+                - generic [ref=f26e277]: 1h
+              - generic [ref=f26e278]:
+                - button "Looks right" [ref=f26e279] [cursor=pointer]
+                - button "Change something" [ref=f26e280] [cursor=pointer]
+          - generic [ref=f26e281]: thanks
+          - generic [ref=f26e283]: You're welcome, Gadiel. I'm here if you need help planning your study time before Friday.
+          - generic [ref=f26e286]: I'm listening. Just say "Hi Rei" whenever you need me.
+          - generic [ref=f26e289]: what time is it
+          - generic [ref=f26e291]: It's 6:04 pm on Monday.
+      - generic [ref=f26e295]:
+        - generic [ref=f26e296]:
+          - generic [ref=f26e298]: Rei
+          - generic [ref=f26e299]: · here
+        - generic [ref=f26e300]:
+          - button "Tap anywhere to resume hands-free. Turn off hands-free" [ref=f26e302] [cursor=pointer]:
+            - generic [ref=f26e304]: Tap anywhere to resume hands-free
+          - generic [ref=f26e307]:
+            - button "Attach a reviewer or notes" [ref=f26e308] [cursor=pointer]
+            - textbox "Message" [ref=f26e311]:
+              - /placeholder: Tell Rei your plan…
+            - button "Switch to voice mode" [ref=f26e312] [cursor=pointer]
+  - generic [ref=f26e316]:
+    - generic [ref=f26e317]:
+      - tablist "Study" [ref=f26e319]:
+        - tab "Focus" [ref=f26e320] [cursor=pointer]
+        - tab "Library" [selected] [ref=f26e321] [cursor=pointer]
+      - generic [ref=f26e322]:
+        - button "AI and network status" [ref=f26e324] [cursor=pointer]:
+          - generic [ref=f26e328]: Auto · Cloud
+        - radiogroup "Switch pal" [ref=f26e329]:
+          - radio "Rei, idle Rei" [checked] [ref=f26e330] [cursor=pointer]:
+            - img "Rei, idle" [ref=f26e332]
+            - generic [ref=f26e416]: Rei
+          - radio [ref=f26e417] [cursor=pointer]:
+            - img "Diel, idle" [ref=f26e419]
+          - radio [ref=f26e505] [cursor=pointer]:
+            - img "Jhyvie, idle" [ref=f26e507]
+          - radio [ref=f26e605] [cursor=pointer]:
+            - img "Jaypee, idle" [ref=f26e607]
+    - generic [ref=f26e689]:
+      - generic [ref=f26e690]:
+        - generic [ref=f26e691]:
+          - heading "Library" [level=2] [ref=f26e692]
+          - paragraph [ref=f26e693]: Your reviewers and notes, by subject. Kept on this device.
+        - button "Folder" [ref=f26e694] [cursor=pointer]
+      - generic [ref=f26e697]: Make a folder for each subject, or attach a reviewer in the chat with the button and Pal files it for you.

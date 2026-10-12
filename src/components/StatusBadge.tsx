@@ -87,7 +87,7 @@ export function StatusBadge({
         onClick={() => setOpen((o) => !o)}
         className="press group relative flex items-center gap-1.5 whitespace-nowrap rounded-full border border-ink/[0.08] bg-paper/75 px-2.5 py-1 text-[11px] font-medium text-ink shadow-[var(--edge)] backdrop-blur-xl transition-all hover:bg-paper"
         aria-label="AI and network status"
-        title="AI Brain & Network Status (Advanced Mode)"
+        title={`${statusText} · ${modelDisplay}${latency ? ` · ${latency}ms` : ''}`}
       >
         <span className="relative flex size-2 shrink-0">
           {isAiOnline && (

@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
+$jdk21 = 'C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot'
+if (Test-Path $jdk21) { $env:JAVA_HOME = $jdk21 }
 Push-Location $repoRoot
 try {
     $modelFile = Join-Path $repoRoot '.cache/android-ai/qwen2.5-0.5b-instruct-q4_k_m.gguf'

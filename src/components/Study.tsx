@@ -28,6 +28,21 @@ interface Props {
   onLibraryTargetDone?: () => void
   onPlanFile: (file: LibraryFile, folder: Folder) => void
   onToast: (text: string) => void
+  /** Desktop: the Focus/Library switch is in the panel's top bar, not here */
+  tabsInHeader?: boolean
+}
+
+/** Focus / Library switch: inside Study on a phone, in the panel's top bar on a computer */
+export function StudyTabs({ section, onSection }: { section: 'focus' | 'library'; onSection: (s: 'focus' | 'library') => void }) {
+  return (
+    <div className="inline-flex rounded-full bg-ink/[0.05] p-1" role="tablist" aria-label="Study">
+      {(['focus', 'library'] as const).map((s) => (
+        <button key={s} role="tab" aria-selected={section === s} type="button" onClick={() => onSection(s)} className={`press h-8 rounded-full px-4 text-[13px] ${section === s ? 'bg-paper font-medium shadow-sm' : 'text-ink-2'}`}>
+          {s === 'focus' ? 'Focus' : 'Library'}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 const mmss = (ms: number) => {
@@ -40,15 +55,11 @@ export function Study(props: Props) {
   const { section, onSection } = props
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 justify-center px-4 pt-3">
-        <div className="inline-flex rounded-full bg-ink/[0.05] p-1" role="tablist" aria-label="Study">
-          {(['focus', 'library'] as const).map((s) => (
-            <button key={s} role="tab" aria-selected={section === s} type="button" onClick={() => onSection(s)} className={`press h-8 rounded-full px-4 text-[13px] ${section === s ? 'bg-paper font-medium shadow-sm' : 'text-ink-2'}`}>
-              {s === 'focus' ? 'Focus' : 'Library'}
-            </button>
-          ))}
+      {!props.tabsInHeader && (
+        <div className="flex shrink-0 justify-center px-4 pt-3">
+          <StudyTabs section={section} onSection={onSection} />
         </div>
-      </div>
+      )}
       <div className="min-h-0 flex-1">
         {section === 'focus' ? <Focus {...props} /> : <Library pal={props.pal} tasks={props.tasks} now={Date.now()} target={props.libraryTarget} onTargetDone={props.onLibraryTargetDone} onPlan={props.onPlanFile} onToast={props.onToast} />}
       </div>
