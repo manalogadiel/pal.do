@@ -1,0 +1,198 @@
+- generic [ref=f52e3]:
+  - navigation "Views" [ref=f52e4]:
+    - generic [ref=f52e7]:
+      - button "Today" [ref=f52e9] [cursor=pointer]
+      - button "Week" [ref=f52e13] [cursor=pointer]
+      - button "Tasks" [ref=f52e17] [cursor=pointer]
+      - button "Study" [ref=f52e20] [cursor=pointer]
+    - button "Paste a syllabus" [ref=f52e24] [cursor=pointer]
+    - button "Switch to light mode" [ref=f52e28] [cursor=pointer]
+    - button "Pal and preferences" [ref=f52e32] [cursor=pointer]
+  - complementary [ref=f52e37]:
+    - generic [ref=f52e39]:
+      - generic [ref=f52e40]:
+        - button "Hide chat (⌘/)" [ref=f52e41] [cursor=pointer]
+        - button "Mute spoken replies" [ref=f52e44] [cursor=pointer]
+      - log [ref=f52e49]:
+        - generic [ref=f52e50]:
+          - generic [ref=f52e51]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+          - generic [ref=f52e54]: what is next
+          - generic [ref=f52e56]: "Sunod mo: Travel to school, 4am."
+          - generic [ref=f52e59]: add gym tomorrow at 6pm
+          - generic [ref=f52e62]:
+            - generic [ref=f52e63]: Tap Add it on the card, or just tell me to go ahead, and it's on your calendar.
+            - generic [ref=f52e64]:
+              - generic [ref=f52e65]:
+                - generic [ref=f52e69]: Gym
+                - generic [ref=f52e70]: Tue · 6pm – 7pm
+              - generic [ref=f52e71]: Added
+          - generic [ref=f52e73]: oo
+          - generic [ref=f52e75]: Ayan, sige!
+          - generic [ref=f52e78]: set a timer for 25 minutes and remind me the last 2 minutes
+          - generic [ref=f52e80]: Sige! 25 minutes na timer, simula na. Sasabihan kita sa huling 2 minutes.
+          - generic [ref=f52e83]: Sige, off na ang hands-free. Tap mo lang yung mic pag gusto mo mag-usap.
+          - generic [ref=f52e86]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+          - generic [ref=f52e89]: pede ba ako mag meeting ng 4:30 am mamaya?
+          - generic [ref=f52e92]:
+            - generic [ref=f52e93]: Pede naman, pero free ka pa nga talaga noon (4:30am–5:30am). Gusto mo bang i-book ko yan?
+            - generic [ref=f52e94]:
+              - generic [ref=f52e95]:
+                - generic [ref=f52e98]: Meeting
+                - generic [ref=f52e99]: Mon · 4:30am – 5:30am
+              - generic [ref=f52e100]: Not added
+          - generic [ref=f52e102]: pano naging free e nasa travel ako nun
+          - generic [ref=f52e104]: Ooops, sorry! Nasa travel ka nga noon, so occupied na talaga. Wag na nating i-book yan, ayos?
+          - generic [ref=f52e107]: hi
+          - generic [ref=f52e109]: Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.
+          - generic [ref=f52e112]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+          - generic [ref=f52e115]: Hi
+          - generic [ref=f52e117]: hi
+          - generic [ref=f52e119]: Sige, off na ang hands-free. Tap mo lang yung mic pag gusto mo mag-usap.
+          - generic [ref=f52e122]: hoy jhivie
+          - generic [ref=f52e124]: Kumusta, Jhyvie here! Ready ka bang mag-plan o gusto mo na tayo mag-kampanya ng mga small wins?
+          - generic [ref=f52e127]: Hii! Ready ka ba mag-plan or gusto mo lang tawagan?
+          - generic [ref=f52e130]: can you add schedule for me
+          - generic [ref=f52e132]: Hoy-hoy! Ready ka ba para makipag-talk o planin ang schedule mo ngayon?
+          - generic [ref=f52e135]: Sure thing! But what time and for how long do you want to start?
+          - generic [ref=f52e138]: coffee date, 10am hanggang 1pm mamaya
+          - generic [ref=f52e141]:
+            - generic [ref=f52e142]: Perfect! Coffee date from tomorrow 10am to 1pm na 'to.
+            - generic [ref=f52e143]:
+              - generic [ref=f52e144]:
+                - generic [ref=f52e148]: Coffee date
+                - generic [ref=f52e149]: Tue · 10am – 1pm
+              - generic [ref=f52e150]: Changed
+          - generic [ref=f52e152]: mamaya hindi bukas
+          - generic [ref=f52e154]: Oops! Saka naman 'yung bukas ka? Oo nga, mamaya lang yan.
+          - generic [ref=f52e157]: oo lagay mo para mamaya
+          - generic [ref=f52e160]:
+            - generic [ref=f52e161]: Got it! Coffee date for tomorrow 10am-1pm na 'to.
+            - generic [ref=f52e162]:
+              - generic [ref=f52e163]:
+                - generic [ref=f52e167]: Coffee date
+                - generic [ref=f52e168]: Tue · 10am – 11am
+              - generic [ref=f52e169]: Changed
+          - generic [ref=f52e171]: mamaya ngaaaaaaa
+          - generic [ref=f52e173]: Hmms! Mamaya lang ba 'yan today o tomorrow na?
+          - generic [ref=f52e176]: today
+          - generic [ref=f52e178]: Got it! Coffee date today 10am-11am na 'to.
+          - generic [ref=f52e181]: yes add thta
+          - generic [ref=f52e184]:
+            - generic [ref=f52e185]: Gabi! Adding tomorrow's coffee date.
+            - generic [ref=f52e186]:
+              - generic [ref=f52e187]:
+                - generic [ref=f52e191]: Coffee date
+                - generic [ref=f52e192]: Tue · 10am – 11am
+              - generic [ref=f52e193]:
+                - button "Add it" [ref=f52e194] [cursor=pointer]
+                - button "Never mind" [ref=f52e195] [cursor=pointer]
+          - generic [ref=f52e196]: sabing mamayang 10 am hays
+          - generic [ref=f52e198]: Hm, sabing 10 am kung yan bago. Can't figure it out from the app. Use today's date instead.
+          - generic [ref=f52e201]: hi
+          - generic [ref=f52e203]: Hello, Jhy!
+          - generic [ref=f52e206]: waw thats quicker
+          - generic [ref=f52e208]: You're right! I'm glad to hear that, Jhy. I'll try to think of a better solution next time.
+          - generic [ref=f52e211]: im not jhy
+          - generic [ref=f52e213]: Yung naman, Jhy!
+          - generic [ref=f52e216]: wats my name
+          - generic [ref=f52e218]: Wats your name, Jhy?
+          - generic [ref=f52e221]: whats my name
+          - generic [ref=f52e223]: Wats your name, Jhy?
+          - generic [ref=f52e226]: who am ui
+          - generic [ref=f52e228]: You're Gadiel! Jhy is just my name, ha!
+      - generic [ref=f52e232]:
+        - generic:
+          - generic:
+            - button "Jhyvie, sleeping. Poke" [ref=f52e233] [cursor=pointer]
+            - generic [ref=f52e335]:
+              - generic [ref=f52e337]: Jhyvie
+              - generic [ref=f52e338]: · quiet hours
+        - generic [ref=f52e340]:
+          - textbox "Message" [ref=f52e341]:
+            - /placeholder: Tell Jhyvie your plan…
+          - button "Switch to voice mode" [ref=f52e342] [cursor=pointer]
+  - generic [ref=f52e346]:
+    - generic [ref=f52e347]:
+      - button "AI and network status" [ref=f52e349] [cursor=pointer]:
+        - generic [ref=f52e353]: Online
+        - generic [ref=f52e354]: ·
+        - generic [ref=f52e355]: Groq · Qwen3.8 27B
+      - radiogroup "Switch pal" [ref=f52e356]:
+        - radio [ref=f52e357] [cursor=pointer]:
+          - img "Rei, idle" [ref=f52e359]
+        - radio [ref=f52e443] [cursor=pointer]:
+          - img "Diel, idle" [ref=f52e445]
+        - radio "Jhyvie, sleeping Jhyvie" [checked] [ref=f52e531] [cursor=pointer]:
+          - img "Jhyvie, sleeping" [ref=f52e533]
+          - generic [ref=f52e616]: Jhyvie
+        - radio [ref=f52e617] [cursor=pointer]:
+          - img "Jaypee, idle" [ref=f52e619]
+    - generic [ref=f52e699]:
+      - generic [ref=f52e700]:
+        - generic [ref=f52e701]:
+          - button "Previous week" [ref=f52e702] [cursor=pointer]
+          - generic [ref=f52e705]: Oct 12 – 18
+          - button "Next week" [ref=f52e706] [cursor=pointer]
+          - button "Delete all plans" [ref=f52e709] [cursor=pointer]
+        - generic [ref=f52e712]:
+          - generic "Simulated time for the demo" [ref=f52e713]: Mon 3:40am
+          - button "+1h" [ref=f52e718] [cursor=pointer]
+          - button "+1d" [ref=f52e719] [cursor=pointer]
+        - generic "Committed hours per day" [ref=f52e721]:
+          - button "1" [ref=f52e722] [cursor=pointer]
+          - button "1" [ref=f52e726] [cursor=pointer]
+          - button "0" [ref=f52e730] [cursor=pointer]
+          - button "0" [ref=f52e733] [cursor=pointer]
+          - button "0" [ref=f52e736] [cursor=pointer]
+          - button "0" [ref=f52e739] [cursor=pointer]
+          - button "0" [ref=f52e742] [cursor=pointer]
+      - generic [ref=f52e746]:
+        - generic [ref=f52e747]:
+          - generic [ref=f52e749]:
+            - generic [ref=f52e750]: Mon
+            - generic [ref=f52e751]: "12"
+          - generic [ref=f52e754]:
+            - generic [ref=f52e755]: Tue
+            - generic [ref=f52e756]: "13"
+          - generic [ref=f52e758]:
+            - generic [ref=f52e759]: Wed
+            - generic [ref=f52e760]: "14"
+          - generic [ref=f52e762]:
+            - generic [ref=f52e763]: Thu
+            - generic [ref=f52e764]: "15"
+          - generic [ref=f52e766]:
+            - generic [ref=f52e767]: Fri
+            - generic [ref=f52e768]: "16"
+          - generic [ref=f52e770]:
+            - generic [ref=f52e771]: Sat
+            - generic [ref=f52e772]: "17"
+          - generic [ref=f52e774]:
+            - generic [ref=f52e775]: Sun
+            - generic [ref=f52e776]: "18"
+        - generic [ref=f52e778]:
+          - generic [ref=f52e779]:
+            - generic [ref=f52e780]: 5a
+            - generic [ref=f52e781]: 6a
+            - generic [ref=f52e782]: 7a
+            - generic [ref=f52e783]: 8a
+            - generic [ref=f52e784]: 9a
+            - generic [ref=f52e785]: 10a
+            - generic [ref=f52e786]: 11a
+            - generic [ref=f52e787]: 12p
+            - generic [ref=f52e788]: 1p
+            - generic [ref=f52e789]: 2p
+            - generic [ref=f52e790]: 3p
+            - generic [ref=f52e791]: 4p
+            - generic [ref=f52e792]: 5p
+            - generic [ref=f52e793]: 6p
+            - generic [ref=f52e794]: 7p
+            - generic [ref=f52e795]: 8p
+            - generic [ref=f52e796]: 9p
+            - generic [ref=f52e797]: 10p
+            - generic [ref=f52e798]: 11p
+          - button "Travel to school 4am – 5am" [ref=f52e842] [cursor=pointer]:
+            - generic [ref=f52e844]: Travel to school
+            - generic [ref=f52e849]: 4am – 5am
+          - button "Gym 6pm – 7pm" [ref=f52e893] [cursor=pointer]:
+            - generic [ref=f52e895]: Gym
+            - generic [ref=f52e900]: 6pm – 7pm
