@@ -1,0 +1,205 @@
+- generic [ref=f10e3]:
+  - navigation "Views" [ref=f10e4]:
+    - generic [ref=f10e7]:
+      - button "Today" [ref=f10e9] [cursor=pointer]
+      - button "Week" [ref=f10e13] [cursor=pointer]
+      - button "Tasks" [ref=f10e17] [cursor=pointer]
+      - button "Study" [ref=f10e20] [cursor=pointer]
+    - button "Paste a syllabus" [ref=f10e24] [cursor=pointer]
+    - button "Switch to light mode" [ref=f10e28] [cursor=pointer]
+    - button "Pal and preferences" [ref=f10e32] [cursor=pointer]
+  - complementary [ref=f10e37]:
+    - generic [ref=f10e39]:
+      - generic [ref=f10e40]:
+        - button "Hide chat (⌘/)" [ref=f10e41] [cursor=pointer]
+        - button "Mute spoken replies" [ref=f10e44] [cursor=pointer]
+      - log [ref=f10e49]:
+        - generic [ref=f10e50]:
+          - generic [ref=f10e51]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+          - generic [ref=f10e54]: how is my week
+          - generic [ref=f10e56]: Busy pero may maraming free slots, lalo na sa hapon at gabi ng Lunes hanggang Linggo!
+          - generic [ref=f10e59]: whats my name
+          - generic [ref=f10e61]: Ikaw si Gadiel, syempre!
+          - generic [ref=f10e65]:
+            - generic [ref=f10e66]: Hey, did you get to this?
+            - generic [ref=f10e68]:
+              - generic [ref=f10e69]:
+                - generic [ref=f10e72]: Meeting
+                - generic [ref=f10e73]: 10am–1pm
+              - generic [ref=f10e74]:
+                - button "Done" [ref=f10e75] [cursor=pointer]
+                - button "Partly" [ref=f10e76] [cursor=pointer]
+                - button "Not yet" [ref=f10e77] [cursor=pointer]
+          - generic [ref=f10e79]:
+            - generic [ref=f10e80]: So… how did this one go?
+            - generic [ref=f10e82]:
+              - generic [ref=f10e83]:
+                - generic [ref=f10e86]: Meeting
+                - generic [ref=f10e87]: 10am–1pm
+              - generic [ref=f10e88]:
+                - button "Done" [ref=f10e89] [cursor=pointer]
+                - button "Partly" [ref=f10e90] [cursor=pointer]
+                - button "Not yet" [ref=f10e91] [cursor=pointer]
+          - generic [ref=f10e92]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+          - generic [ref=f10e95]: May exam ako e
+          - generic [ref=f10e97]: Exam. When does it start?
+          - generic [ref=f10e100]: Bukas pa naman
+          - generic [ref=f10e102]: Exam on Tue, Oct 13. What time does it start?
+          - generic [ref=f10e105]: 4pm pa
+          - generic [ref=f10e107]: Exam starts Tue, Oct 13 at 4pm. What time does it end?
+          - generic [ref=f10e110]: 6pm
+          - generic [ref=f10e113]:
+            - generic [ref=f10e114]: Add Exam, Tue 4pm? Say yes or no.
+            - generic [ref=f10e115]:
+              - generic [ref=f10e116]:
+                - generic [ref=f10e119]: Exam
+                - generic [ref=f10e120]: Tue · 4pm – 6pm
+              - generic [ref=f10e121]: Not added
+          - generic [ref=f10e123]: Hi Jhyvie
+          - generic [ref=f10e125]: I'm not Jhyvie. I'm Rei 🙂
+          - generic [ref=f10e128]: "no"
+          - generic [ref=f10e130]: Sure, not adding it.
+          - generic [ref=f10e133]: bus home tomorrow 5-5:45pm
+          - generic [ref=f10e136]:
+            - generic [ref=f10e137]: Add Bus home, Tue 5pm? Say yes or no.
+            - generic [ref=f10e138]:
+              - generic [ref=f10e139]:
+                - generic [ref=f10e143]: Bus home
+                - generic [ref=f10e144]: Tue · 5pm – 5:45pm
+              - generic [ref=f10e145]: Added
+          - generic [ref=f10e147]: "yes"
+          - generic [ref=f10e149]: Added! Bus home, Tue, Oct 13 5pm is on your calendar.
+          - generic [ref=f10e152]: Exam tomorrow 4-6pm
+          - generic [ref=f10e155]:
+            - generic [ref=f10e156]: Your exam is 4pm–6pm. It overlaps Bus home, 5pm–5:45pm. I can move Bus home to 3:15pm–4pm instead. Add it anyway?
+            - generic [ref=f10e157]:
+              - generic [ref=f10e158]:
+                - generic [ref=f10e161]: Exam
+                - generic [ref=f10e162]: Tue · 4pm – 6pm
+              - paragraph [ref=f10e163]: Overlaps Bus home, 5pm–5:45pm.
+              - generic [ref=f10e164]: Not added
+          - generic [ref=f10e166]: "no"
+          - generic [ref=f10e168]: Sure, not adding it.
+          - generic [ref=f10e171]: Exam tomorrow 4-6pm
+          - generic [ref=f10e174]:
+            - generic [ref=f10e175]: Your exam is 4pm–6pm. It overlaps Bus home, 5pm–5:45pm. I can move Bus home to 7pm–7:45pm instead. Add it anyway?
+            - generic [ref=f10e176]:
+              - generic [ref=f10e177]:
+                - generic [ref=f10e180]: Exam
+                - generic [ref=f10e181]: Tue · 4pm – 6pm
+              - paragraph [ref=f10e182]: Overlaps Bus home, 5pm–5:45pm.
+              - generic [ref=f10e183]: Added, Bus home moved to 7pm
+          - generic [ref=f10e185]: I'm listening. Just say "Hi Rei" whenever you need me.
+      - generic [ref=f10e189]:
+        - generic:
+          - generic:
+            - button "Rei, idle. Poke" [ref=f10e190] [cursor=pointer]
+            - generic [ref=f10e317]:
+              - generic [ref=f10e319]: Rei
+              - generic [ref=f10e320]: · here
+        - generic [ref=f10e321]:
+          - button "Tap anywhere to resume hands-free. Turn off hands-free" [ref=f10e323] [cursor=pointer]:
+            - generic [ref=f10e325]: Tap anywhere to resume hands-free
+          - generic [ref=f10e328]:
+            - textbox "Message" [ref=f10e329]:
+              - /placeholder: Tell Rei your plan…
+            - button "Switch to voice mode" [ref=f10e330] [cursor=pointer]
+  - generic [ref=f10e334]:
+    - generic [ref=f10e335]:
+      - button "AI and network status" [ref=f10e337] [cursor=pointer]:
+        - generic [ref=f10e341]: Auto · Cloud
+        - generic [ref=f10e342]: ·
+        - generic [ref=f10e343]: Groq · Qwen3.8 27B
+      - radiogroup "Switch pal" [ref=f10e344]:
+        - radio "Rei, idle Rei" [checked] [ref=f10e345] [cursor=pointer]:
+          - img "Rei, idle" [ref=f10e347]
+          - generic [ref=f10e431]: Rei
+        - radio [ref=f10e432] [cursor=pointer]:
+          - img "Diel, idle" [ref=f10e434]
+        - radio [ref=f10e520] [cursor=pointer]:
+          - img "Jhyvie, idle" [ref=f10e522]
+        - radio [ref=f10e620] [cursor=pointer]:
+          - img "Jaypee, idle" [ref=f10e622]
+    - generic [ref=f10e702]:
+      - generic [ref=f10e703]:
+        - generic [ref=f10e704]:
+          - button "Previous week" [ref=f10e705] [cursor=pointer]
+          - generic [ref=f10e708]: Oct 12 – 18
+          - button "Next week" [ref=f10e709] [cursor=pointer]
+          - button "Delete all plans" [ref=f10e712] [cursor=pointer]
+        - generic [ref=f10e715]:
+          - generic "Simulated time for the demo" [ref=f10e716]: Mon 5:35pm
+          - button "+1h" [ref=f10e721] [cursor=pointer]
+          - button "+1d" [ref=f10e722] [cursor=pointer]
+        - generic "Committed hours per day" [ref=f10e724]:
+          - button "4" [ref=f10e725] [cursor=pointer]
+          - button "3" [ref=f10e729] [cursor=pointer]
+          - button "0" [ref=f10e733] [cursor=pointer]
+          - button "0" [ref=f10e736] [cursor=pointer]
+          - button "0" [ref=f10e739] [cursor=pointer]
+          - button "0" [ref=f10e742] [cursor=pointer]
+          - button "0" [ref=f10e745] [cursor=pointer]
+      - generic [ref=f10e749]:
+        - generic [ref=f10e750]:
+          - generic [ref=f10e752]:
+            - generic [ref=f10e753]: Mon
+            - generic [ref=f10e754]: "12"
+          - generic [ref=f10e757]:
+            - generic [ref=f10e758]: Tue
+            - generic [ref=f10e759]: "13"
+          - generic [ref=f10e761]:
+            - generic [ref=f10e762]: Wed
+            - generic [ref=f10e763]: "14"
+          - generic [ref=f10e765]:
+            - generic [ref=f10e766]: Thu
+            - generic [ref=f10e767]: "15"
+          - generic [ref=f10e769]:
+            - generic [ref=f10e770]: Fri
+            - generic [ref=f10e771]: "16"
+          - generic [ref=f10e773]:
+            - generic [ref=f10e774]: Sat
+            - generic [ref=f10e775]: "17"
+          - generic [ref=f10e777]:
+            - generic [ref=f10e778]: Sun
+            - generic [ref=f10e779]: "18"
+        - generic [ref=f10e781]:
+          - generic [ref=f10e782]:
+            - generic [ref=f10e783]: 5a
+            - generic [ref=f10e784]: 6a
+            - generic [ref=f10e785]: 7a
+            - generic [ref=f10e786]: 8a
+            - generic [ref=f10e787]: 9a
+            - generic [ref=f10e788]: 10a
+            - generic [ref=f10e789]: 11a
+            - generic [ref=f10e790]: 12p
+            - generic [ref=f10e791]: 1p
+            - generic [ref=f10e792]: 2p
+            - generic [ref=f10e793]: 3p
+            - generic [ref=f10e794]: 4p
+            - generic [ref=f10e795]: 5p
+            - generic [ref=f10e796]: 6p
+            - generic [ref=f10e797]: 7p
+            - generic [ref=f10e798]: 8p
+            - generic [ref=f10e799]: 9p
+            - generic [ref=f10e800]: 10p
+            - generic [ref=f10e801]: 11p
+          - generic [ref=f10e802]:
+            - button "Travel to school 4am – 5am" [ref=f10e845] [cursor=pointer]:
+              - generic [ref=f10e847]: Travel to school
+              - generic [ref=f10e852]: 4am – 5am
+            - button "Travel to school 4am – 5am" [ref=f10e853] [cursor=pointer]:
+              - generic [ref=f10e855]: Travel to school
+              - generic [ref=f10e860]: 4am – 5am
+            - button "Meeting 10am – 1pm" [ref=f10e861] [cursor=pointer]:
+              - generic [ref=f10e863]: Meeting
+              - generic [ref=f10e867]: 10am – 1pm
+          - generic [ref=f10e868]:
+            - button "Gym 6pm – 7pm" [ref=f10e911] [cursor=pointer]:
+              - generic [ref=f10e913]: Gym
+              - generic [ref=f10e918]: 6pm – 7pm
+            - button "Bus home 7pm – 7:45pm" [ref=f10e919] [cursor=pointer]:
+              - generic [ref=f10e921]: Bus home
+              - generic [ref=f10e926]: 7pm – 7:45pm
+            - button "Exam 4pm – 6pm" [ref=f10e927] [cursor=pointer]:
+              - generic [ref=f10e929]: Exam
+              - generic [ref=f10e933]: 4pm – 6pm

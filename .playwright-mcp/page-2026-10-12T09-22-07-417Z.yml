@@ -1,0 +1,211 @@
+- generic [ref=f2e3]:
+  - banner [ref=f2e4]:
+    - generic "Pal.Do" [ref=f2e5]:
+      - generic [ref=f2e6]: Pal
+      - generic [ref=f2e8]: Do
+    - button "AI and network status" [ref=f2e10] [cursor=pointer]:
+      - generic [ref=f2e14]: Offline · Your PC
+    - button "Rei. Switch pal" [ref=f2e16] [cursor=pointer]:
+      - img "Rei, idle" [ref=f2e18]
+      - generic [ref=f2e102]: Rei
+    - button "Pal and preferences" [active] [ref=f2e103] [cursor=pointer]
+  - main [ref=f2e108]:
+    - generic [ref=f2e109]:
+      - generic [ref=f2e110]:
+        - button "M 12" [ref=f2e111] [cursor=pointer]:
+          - generic [ref=f2e112]: M
+          - generic [ref=f2e113]: "12"
+        - button "T 13" [ref=f2e114] [cursor=pointer]:
+          - generic [ref=f2e115]: T
+          - generic [ref=f2e116]: "13"
+        - button "W 14" [ref=f2e117] [cursor=pointer]:
+          - generic [ref=f2e118]: W
+          - generic [ref=f2e119]: "14"
+        - button "T 15" [ref=f2e120] [cursor=pointer]:
+          - generic [ref=f2e121]: T
+          - generic [ref=f2e122]: "15"
+        - button "F 16" [ref=f2e123] [cursor=pointer]:
+          - generic [ref=f2e124]: F
+          - generic [ref=f2e125]: "16"
+        - button "S 17" [ref=f2e126] [cursor=pointer]:
+          - generic [ref=f2e127]: S
+          - generic [ref=f2e128]: "17"
+        - button "S 18" [ref=f2e129] [cursor=pointer]:
+          - generic [ref=f2e130]: S
+          - generic [ref=f2e131]: "18"
+      - generic [ref=f2e132]:
+        - generic [ref=f2e133]:
+          - button "Previous week" [ref=f2e134] [cursor=pointer]
+          - generic [ref=f2e137]: Oct 12 – 18
+          - button "Next week" [ref=f2e138] [cursor=pointer]
+          - button "Delete all plans" [ref=f2e141] [cursor=pointer]
+        - generic [ref=f2e144]:
+          - generic "Simulated time for the demo" [ref=f2e145]: Mon 5:22pm
+          - button "+1h" [ref=f2e150] [cursor=pointer]
+          - button "+1d" [ref=f2e151] [cursor=pointer]
+      - generic [ref=f2e153]:
+        - generic [ref=f2e156]:
+          - generic [ref=f2e157]: Tue
+          - generic [ref=f2e158]: "13"
+        - generic [ref=f2e160]:
+          - generic [ref=f2e161]:
+            - generic [ref=f2e162]: 7a
+            - generic [ref=f2e163]: 8a
+            - generic [ref=f2e164]: 9a
+            - generic [ref=f2e165]: 10a
+            - generic [ref=f2e166]: 11a
+            - generic [ref=f2e167]: 12p
+            - generic [ref=f2e168]: 1p
+            - generic [ref=f2e169]: 2p
+            - generic [ref=f2e170]: 3p
+            - generic [ref=f2e171]: 4p
+            - generic [ref=f2e172]: 5p
+            - generic [ref=f2e173]: 6p
+            - generic [ref=f2e174]: 7p
+            - generic [ref=f2e175]: 8p
+            - generic [ref=f2e176]: 9p
+            - generic [ref=f2e177]: 10p
+            - generic [ref=f2e178]: 11p
+          - generic [ref=f2e179]:
+            - button "Gym 6pm – 7pm" [ref=f2e218] [cursor=pointer]:
+              - generic [ref=f2e220]: Gym
+              - generic [ref=f2e225]: 6pm – 7pm
+            - button "Bus home 7pm – 7:45pm" [ref=f2e226] [cursor=pointer]:
+              - generic [ref=f2e228]: Bus home
+              - generic [ref=f2e233]: 7pm – 7:45pm
+            - button "Exam 4pm – 6pm" [ref=f2e234] [cursor=pointer]:
+              - generic [ref=f2e236]: Exam
+              - generic [ref=f2e240]: 4pm – 6pm
+  - generic [ref=f2e243]:
+    - generic [ref=f2e245]:
+      - button "Rei, idle. Poke" [ref=f2e246] [cursor=pointer]
+      - button "Rei says" [ref=f2e373] [cursor=pointer]:
+        - generic [ref=f2e374]: Your exam is 4pm–6pm. It overlaps Bus home, 5pm–5:45pm. I can move Bus home to 7pm–7:45pm instead. Add it anyway?
+    - generic [ref=f2e375]:
+      - button "Getting ready… 100%. Turn off hands-free" [ref=f2e377] [cursor=pointer]:
+        - generic [ref=f2e379]: Getting ready… 100%
+      - generic [ref=f2e382]:
+        - textbox "Message" [ref=f2e383]:
+          - /placeholder: Tell Rei your plan…
+        - button "Switch to voice mode" [ref=f2e384] [cursor=pointer]
+  - navigation "Views" [ref=f2e389]:
+    - button "Today" [ref=f2e391] [cursor=pointer]
+    - button "Week" [ref=f2e395] [cursor=pointer]
+    - button "Tasks" [ref=f2e399] [cursor=pointer]
+    - button "Study" [ref=f2e402] [cursor=pointer]
+  - generic [ref=f2e407]:
+    - generic [ref=f2e408]:
+      - generic [ref=f2e409]:
+        - generic "Pal.Do" [ref=f2e410]:
+          - generic [ref=f2e411]: Pal
+          - generic [ref=f2e413]: Do
+        - generic [ref=f2e414]: Preferences
+      - generic [ref=f2e415]:
+        - generic "Step 2 of 2" [ref=f2e416]:
+          - button "Pal selection" [ref=f2e417] [cursor=pointer]
+          - button "Ground rules & settings" [ref=f2e418] [cursor=pointer]
+        - button "Close" [ref=f2e419] [cursor=pointer]
+    - generic [ref=f2e422]:
+      - generic [ref=f2e423]:
+        - heading "A few ground rules." [level=1] [ref=f2e424]
+        - paragraph [ref=f2e425]: Your calendar stays on this device. When the AI Brain is on, Rei sends a short summary of your schedule to answer you.
+        - generic [ref=f2e427]:
+          - generic [ref=f2e428]: What Rei won't do
+          - list [ref=f2e429]:
+            - listitem [ref=f2e430]: Write, solve, or summarize your graded work
+            - listitem [ref=f2e432]: Predict grades or tell you what you'll score
+            - listitem [ref=f2e434]: Judge how stressed or tired you are
+            - listitem [ref=f2e436]: Change your calendar without your tap
+        - generic [ref=f2e438]:
+          - generic [ref=f2e439]: What should Rei call you?
+          - textbox "What should Rei call you?" [ref=f2e440]:
+            - /placeholder: Your name or nickname (optional)
+            - text: Gadiel
+          - generic [ref=f2e441]: Kept on this device and sent with your messages so Rei can use it.
+        - generic [ref=f2e442]:
+          - generic [ref=f2e443]: When do you focus best?
+          - generic [ref=f2e444]:
+            - button "morning" [ref=f2e445] [cursor=pointer]
+            - button "afternoon" [ref=f2e446] [cursor=pointer]
+            - button "evening" [ref=f2e447] [cursor=pointer]
+        - generic [ref=f2e448]:
+          - generic [ref=f2e449]:
+            - generic [ref=f2e450]:
+              - generic [ref=f2e451]: AI Brain (Groq API)
+              - generic [ref=f2e452]: Active from .env
+            - generic [ref=f2e453]:
+              - button "On" [ref=f2e454] [cursor=pointer]
+              - link "Free API key ↗" [ref=f2e455] [cursor=pointer]:
+                - /url: https://console.groq.com
+          - textbox "Using key from .env (paste here to override)" [ref=f2e456]
+          - generic [ref=f2e457]: "Cloud: qwen3.8-27b → gpt-oss-120b → gpt-oss-20b · then your PC's AI · then simple rules"
+        - generic [ref=f2e459]:
+          - heading "AI mode" [level=3] [ref=f2e460]
+          - radiogroup "AI mode" [ref=f2e461]:
+            - radio "Auto· best Cloud, or basics offline" [ref=f2e462] [cursor=pointer]:
+              - generic [ref=f2e463]: Auto· best
+              - generic [ref=f2e464]: Cloud, or basics offline
+            - radio "Online Cloud AI only" [ref=f2e465] [cursor=pointer]:
+              - generic [ref=f2e466]: Online
+              - generic [ref=f2e467]: Cloud AI only
+            - radio "Offline Your PC or basics" [checked] [ref=f2e468] [cursor=pointer]:
+              - generic [ref=f2e469]: Offline
+              - generic [ref=f2e470]: Your PC or basics
+          - paragraph [ref=f2e471]: Never uses the cloud. Uses your PC's AI if it's set up below, otherwise Pal's built-in rules.
+        - generic [ref=f2e472]:
+          - generic [ref=f2e473]:
+            - generic [ref=f2e474]:
+              - generic [ref=f2e475]: Your PC's AI (Ollama)
+              - generic [ref=f2e476]: Connected · qwen3.5:4b. Takes over when the cloud AI runs out.
+            - button "On" [ref=f2e477] [cursor=pointer]
+          - generic [ref=f2e478]:
+            - textbox "Ollama address" [ref=f2e479]: http://localhost:11434
+            - combobox "Model" [ref=f2e480]:
+              - option "qwen2.5:0.5b"
+              - option "qwen3.5:2b"
+              - option "qwen3.5:4b" [selected]
+        - generic [ref=f2e481]:
+          - generic [ref=f2e482]:
+            - generic [ref=f2e483]:
+              - generic [ref=f2e484]:
+                - text: Hands-free
+                - generic [ref=f2e485]: ("Hi Rei")
+              - generic [ref=f2e486]: Listening on this device. Only what you say after "Hi Rei" leaves it, to be written out.
+            - button "On" [ref=f2e487] [cursor=pointer]
+          - generic [ref=f2e488] [cursor=pointer]:
+            - checkbox "Write out what I say on this device only (most private, but weaker with Taglish)" [ref=f2e489]
+            - generic [ref=f2e490]: Write out what I say on this device only (most private, but weaker with Taglish)
+        - generic [ref=f2e491]:
+          - button "Appearance Dark Light" [ref=f2e492] [cursor=pointer]:
+            - generic [ref=f2e493]:
+              - generic [ref=f2e494]: Appearance
+              - generic [ref=f2e495]: Dark
+            - generic [ref=f2e496]: Light
+          - button "Syllabus Pull out deadlines Paste" [ref=f2e497] [cursor=pointer]:
+            - generic [ref=f2e498]:
+              - generic [ref=f2e499]: Syllabus
+              - generic [ref=f2e500]: Pull out deadlines
+            - generic [ref=f2e501]: Paste
+        - generic [ref=f2e502]:
+          - generic [ref=f2e503]:
+            - generic [ref=f2e504]: Remembered
+            - generic [ref=f2e505]: Nothing after 9pm
+          - button "Clear" [ref=f2e506] [cursor=pointer]
+        - generic [ref=f2e507]:
+          - generic [ref=f2e508]:
+            - generic [ref=f2e509]:
+              - generic [ref=f2e510]: Advanced Mode
+              - generic [ref=f2e511]: HUD
+            - generic [ref=f2e512]: Show live AI model, online/offline status, and response latency on interface
+          - switch "Toggle Advanced Mode" [checked] [ref=f2e513] [cursor=pointer]
+        - generic [ref=f2e514]:
+          - generic [ref=f2e515]:
+            - generic [ref=f2e516]: Offline Alarm Check
+            - generic [ref=f2e517]: Schedule a 5-second test alarm
+          - button "Test Alarm" [ref=f2e518] [cursor=pointer]
+      - generic [ref=f2e519]:
+        - img "Rei, cheer" [ref=f2e520]
+        - generic [ref=f2e657]:
+          - button "Back" [ref=f2e658] [cursor=pointer]
+          - button "Save Changes" [ref=f2e659] [cursor=pointer]
+  - button "Reset demo week" [ref=f2e660] [cursor=pointer]

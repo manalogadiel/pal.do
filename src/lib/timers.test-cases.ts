@@ -1,7 +1,7 @@
 // Voice timers, device commands and the wake phrase. Run by `pnpm eval:chat` (scripts/eval-chat.mjs).
 import { parseCommand, parseDuration } from './commands'
 import { addReminder, addTime, cancelTimer, fmtLeft, NO_ALARMS, pauseTimer, resumeTimer, sayLength, startTimer, tickAlarms, timeLeft, upcomingAlarms } from './timers'
-import { matchWake } from './wake'
+import { isEcho, matchWake, soundKey } from './wake'
 
 const S = 1000
 const MIN = 60 * S
@@ -37,6 +37,8 @@ export function runVoiceTests(): string[] {
   const r3 = parseCommand('remind me at 3pm to call mom', NOW)
   eq('reminder at 3pm', r3 && r3.type === 'setReminder' ? [new Date(r3.at).getHours(), r3.text] : r3, [15, 'Call mom'])
   eq('reminder with no time → chat handles it', parseCommand('remind me to study', NOW), null)
+  const rt = parseCommand('pakisabihan mo ako mamayang 3pm na mag-review', NOW)
+  eq('Taglish reminder', rt && rt.type === 'setReminder' ? [new Date(rt.at).getHours(), rt.text] : rt, [15, 'Review'])
   eq('start focus', parseCommand('start focus', NOW), { type: 'study', op: 'start' })
   eq('"start studying friday 3pm" is planning', parseCommand('start studying friday 3pm', NOW), null)
   eq('time left on a timer', parseCommand('how much time left?', NOW, { timers: true }), { type: 'timer', op: 'left' })
@@ -50,6 +52,11 @@ export function runVoiceTests(): string[] {
   eq("what's next", parseCommand("what's next?", NOW), { type: 'next' })
   eq('ano meron ngayon', parseCommand('ano meron ako ngayon', NOW), { type: 'next' })
   eq('a planning message is not a command', parseCommand('add mo gym bukas 6pm', NOW, { timers: true }), null)
+  eq('whats my name', parseCommand('whats my name', NOW), { type: 'whoami' })
+  eq('wats my name (typo)', parseCommand('wats my name?', NOW), { type: 'whoami' })
+  eq('ano pangalan ko', parseCommand('ano pangalan ko', NOW), { type: 'whoami' })
+  eq('sino ako', parseCommand('jv sino ako?', NOW), { type: 'whoami' })
+  eq('"ano pangalan mo" asks the pal, not a command', parseCommand('ano pangalan mo', NOW), null)
 
   /* ---------- timers model ---------- */
   let a = startTimer(NO_ALARMS, 300, 0, { warnSeconds: 30 })
@@ -88,6 +95,12 @@ export function runVoiceTests(): string[] {
   eq('uh hi Jayvee', matchWake('Uh, hi Jayvee', 'jhyvie'), { command: '' })
   eq('hi jay vee (two words)', matchWake('hi jay vee start focus', 'jhyvie'), { command: 'start focus' })
   eq('one letter off', matchWake('hi jyvie start focus', 'jhyvie'), { command: 'start focus' })
+  // What Whisper actually wrote when Kokoro said "Hi Jhyvie" (the audio self-test)
+  eq('heard as "Jay Highby"', matchWake('Hi Jay Highby. Set me a timer for five minutes and remind me the last 30 seconds.', 'jhyvie'), { command: 'set me a timer for five minutes and remind me the last 30 seconds' })
+  eq('heard as "Jay Hivey"', matchWake("Hi Jay Hivey, what's next?", 'jhyvie'), { command: 'whats next' })
+  eq('heard as "Hi, Jay Hivey."', matchWake('Hi, Jay Hivey. Set me a timer', 'jhyvie'), { command: 'set me a timer' })
+  eq('"hi jay" alone is not Jhyvie', matchWake('hi jay how you doing', 'jhyvie'), null)
+  eq('sound keys', ['Jay Hivey', 'Jayvee', 'Jhyvie', 'JV'].map(soundKey), ['jaivi', 'jaivi', 'jivi', 'jv'])
   eq('Jaypee as jp', matchWake('hey jp timer 5 mins', 'jaypee'), { command: 'timer 5 mins' })
   eq('Rei as Ray', matchWake('hi ray', 'rei'), { command: '' })
   eq('no greeting → no wake', matchWake('jv set a timer', 'jhyvie'), null)
@@ -95,5 +108,14 @@ export function runVoiceTests(): string[] {
   eq('another pal → no wake', matchWake('hi Jhyvie', 'rei'), null)
   eq('the user\'s own name never wakes', matchWake('hi ray', 'rei', 'Ray'), null)
   eq('mid-sentence name → no wake', matchWake('I told jv hi', 'jhyvie'), null)
+
+  /* ---------- interrupting Pal: its own voice heard back is not "Hi Jhyvie" ---------- */
+  const GREET = 'Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.'
+  eq('Pal\'s greeting heard back → echo', isEcho('Hi, Jhyvie here. Kwento mo naman your week.', GREET, 'jhyvie'), true)
+  eq('a piece of it → echo', isEcho('Hi Jhyvie here', GREET, 'jhyvie'), true)
+  eq('"Hi Jhyvie stop" over the greeting → interrupt', isEcho('Hi Jhyvie stop', GREET, 'jhyvie'), false)
+  eq('"Hi Jhyvie, what\'s next?" over a line about next → interrupt', isEcho("Hi Jhyvie, what's next?", 'Next up: Bio class at 3pm.', 'jhyvie'), false)
+  eq('bare "Hi Jhyvie" over a line without it → interrupt', isEcho('Hi Jhyvie', 'Sige! 5 minutes na timer, simula na.', 'jhyvie'), false)
+  eq('nothing being said → never an echo', isEcho('Hi Jhyvie stop', '', 'jhyvie'), false)
   return fails
 }

@@ -1,10 +1,33 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { alarmMode, eventAlarmId, isReservedAlarmId, makeSerial, SESSION_ALARM_IDS, TIMER_ALARM_IDS, type AlarmMode } from './alarmIds'
-import { makeChime } from './chime'
+import { makeChime, type SoundName } from './chime'
 import type { CalEvent } from './core'
 
 export const isNative = Capacitor.isNativePlatform()
+
+/**
+ * Android 8+ takes a notification's sound from its channel, not from the notification. One channel for every
+ * reminder, timer and round end, with Pal's own alert (android/app/src/main/res/raw/paldo_alert.wav).
+ */
+const CHANNEL = 'paldo-alerts'
+const SOUND = 'paldo_alert.wav'
+let channel: Promise<void> | null = null
+function ensureChannel(): Promise<void> {
+  if (!isNative || Capacitor.getPlatform() !== 'android') return Promise.resolve()
+  return (channel ??= LocalNotifications.createChannel({
+    id: CHANNEL,
+    name: 'Reminders and timers',
+    description: 'Event heads-ups, timers, reminders and study rounds',
+    importance: 5,
+    visibility: 1,
+    sound: SOUND,
+    vibration: true,
+    lights: true,
+  }).catch((e) => { channel = null; console.warn('[notifications] channel', e) }))
+}
+/** What every scheduled alarm shares: Pal's sound and channel */
+const alert = { sound: SOUND, channelId: CHANNEL }
 
 /** Request local alarm and notification permissions */
 export async function requestNotificationPermission(): Promise<boolean> {
@@ -71,7 +94,7 @@ export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
         title: `${palName}: ${e.title}`,
         body: `Starts at ${new Date(e.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Ready to begin?`,
         schedule: { at: new Date(alertTime) },
-        sound: 'beep.wav',
+        ...alert,
         isExactNotification: mode === 'exact',
         extra: { eventId: e.id },
       }
@@ -87,6 +110,7 @@ export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
     }
 
     if (notifications.length > 0) {
+      await ensureChannel()
       await LocalNotifications.schedule({ notifications })
     }
   } catch (err) {
@@ -103,6 +127,7 @@ export async function testAlarm(palName = 'Rei', delaySeconds = 5): Promise<bool
 
   if (isNative) {
     try {
+      await ensureChannel()
       await LocalNotifications.schedule({
         notifications: [
           {
@@ -110,7 +135,7 @@ export async function testAlarm(palName = 'Rei', delaySeconds = 5): Promise<bool
             title: `${palName} (Alarm Test)`,
             body: `Ding! Your offline alarm is working properly!`,
             schedule: { at: atTime },
-            sound: 'beep.wav',
+            ...alert,
           },
         ],
       })
@@ -182,13 +207,14 @@ async function armSessionAlarmsNow(alarms: { at: number; title: string; body: st
     await cancelSessionAlarmsNow()
     const mode = await nativeAlarmMode()
     if (mode === 'off' || alarms.length === 0) return
+    await ensureChannel()
     await LocalNotifications.schedule({
       notifications: alarms.slice(0, SESSION_ALARM_IDS.length).map((a, i) => ({
         id: SESSION_ALARM_IDS[i],
         title: a.title,
         body: a.body,
         schedule: { at: new Date(a.at), allowWhileIdle: true },
-        sound: 'beep.wav',
+        ...alert,
         isExactNotification: mode === 'exact',
       })),
     })
@@ -213,13 +239,14 @@ export function scheduleTimerAlarms(alarms: { at: number; title: string; body: s
       await LocalNotifications.cancel({ notifications: TIMER_ALARM_IDS.map((id) => ({ id })) })
       const mode = await nativeAlarmMode()
       if (mode === 'off' || alarms.length === 0) return
+      await ensureChannel()
       await LocalNotifications.schedule({
         notifications: alarms.slice(0, TIMER_ALARM_IDS.length).map((a, i) => ({
           id: TIMER_ALARM_IDS[i],
           title: a.title,
           body: a.body,
           schedule: { at: new Date(a.at), allowWhileIdle: true },
-          sound: 'beep.wav',
+          ...alert,
           isExactNotification: mode === 'exact',
         })),
       })
@@ -241,5 +268,11 @@ const chime = makeChime(() =>
 )
 /** Call from a tap (Start/Resume/Skip) so the phase-end chime is allowed to sound later. */
 export const unlockChime = () => chime.unlock()
-/** Two short beeps; silent if the browser blocks audio or has none. Never throws. */
+/** The alarm melody; silent if the browser blocks audio or has none. Never throws. */
 export const playChime = () => chime.play()
+
+/** App sounds (send, reply, added…), unless switched off in Settings */
+const SOUNDS_KEY = 'paldo.sounds'
+export const soundsOn = () => { try { return localStorage.getItem(SOUNDS_KEY) !== 'off' } catch { return true } }
+export const setSoundsOn = (on: boolean) => { try { localStorage.setItem(SOUNDS_KEY, on ? 'on' : 'off') } catch {} }
+export const playSound = (name: SoundName) => { if (soundsOn()) chime.sound(name) }

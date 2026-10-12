@@ -1,0 +1,97 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - generic "Pal.Do" [ref=f1e5]:
+      - generic [ref=f1e6]: Pal
+      - generic [ref=f1e8]: Do
+    - button "AI and network status" [ref=f1e10] [cursor=pointer]:
+      - generic [ref=f1e14]: Auto · Cloud
+    - button "Rei. Switch pal" [ref=f1e1135] [cursor=pointer]:
+      - img "Rei, wave" [ref=f1e1136]
+      - generic [ref=f1e153]: Rei
+    - button "Pal and preferences" [ref=f1e154] [cursor=pointer]
+  - main [ref=f1e159]:
+    - generic [ref=f1e160]:
+      - generic [ref=f1e161]:
+        - button "M 12" [ref=f1e162] [cursor=pointer]:
+          - generic [ref=f1e163]: M
+          - generic [ref=f1e164]: "12"
+        - button "T 13" [ref=f1e165] [cursor=pointer]:
+          - generic [ref=f1e166]: T
+          - generic [ref=f1e167]: "13"
+        - button "W 14" [ref=f1e168] [cursor=pointer]:
+          - generic [ref=f1e169]: W
+          - generic [ref=f1e170]: "14"
+        - button "T 15" [ref=f1e171] [cursor=pointer]:
+          - generic [ref=f1e172]: T
+          - generic [ref=f1e173]: "15"
+        - button "F 16" [ref=f1e174] [cursor=pointer]:
+          - generic [ref=f1e175]: F
+          - generic [ref=f1e176]: "16"
+        - button "S 17" [ref=f1e177] [cursor=pointer]:
+          - generic [ref=f1e178]: S
+          - generic [ref=f1e179]: "17"
+        - button "S 18" [ref=f1e180] [cursor=pointer]:
+          - generic [ref=f1e181]: S
+          - generic [ref=f1e182]: "18"
+      - generic [ref=f1e183]:
+        - generic [ref=f1e184]:
+          - button "Previous week" [ref=f1e185] [cursor=pointer]
+          - generic [ref=f1e188]: Oct 12 – 18
+          - button "Next week" [ref=f1e189] [cursor=pointer]
+          - button "Delete all plans" [ref=f1e192] [cursor=pointer]
+        - generic [ref=f1e195]:
+          - generic "Simulated time for the demo" [ref=f1e196]: Mon 5:20pm
+          - button "+1h" [ref=f1e201] [cursor=pointer]
+          - button "+1d" [ref=f1e202] [cursor=pointer]
+      - generic [ref=f1e204]:
+        - generic [ref=f1e207]:
+          - generic [ref=f1e208]: Mon
+          - generic [ref=f1e209]: "12"
+        - generic [ref=f1e212]:
+          - generic [ref=f1e213]:
+            - generic [ref=f1e214]: 5a
+            - generic [ref=f1e215]: 6a
+            - generic [ref=f1e216]: 7a
+            - generic [ref=f1e217]: 8a
+            - generic [ref=f1e218]: 9a
+            - generic [ref=f1e219]: 10a
+            - generic [ref=f1e220]: 11a
+            - generic [ref=f1e221]: 12p
+            - generic [ref=f1e222]: 1p
+            - generic [ref=f1e223]: 2p
+            - generic [ref=f1e224]: 3p
+            - generic [ref=f1e225]: 4p
+            - generic [ref=f1e226]: 5p
+            - generic [ref=f1e227]: 6p
+            - generic [ref=f1e228]: 7p
+            - generic [ref=f1e229]: 8p
+            - generic [ref=f1e230]: 9p
+            - generic [ref=f1e231]: 10p
+            - generic [ref=f1e232]: 11p
+          - generic [ref=f1e233]:
+            - button "Travel to school 4am – 5am" [ref=f1e276] [cursor=pointer]:
+              - generic [ref=f1e278]: Travel to school
+              - generic [ref=f1e283]: 4am – 5am
+            - button "Travel to school 4am – 5am" [ref=f1e284] [cursor=pointer]:
+              - generic [ref=f1e286]: Travel to school
+              - generic [ref=f1e291]: 4am – 5am
+            - button "Meeting 10am – 1pm" [ref=f1e292] [cursor=pointer]:
+              - generic [ref=f1e294]: Meeting
+              - generic [ref=f1e298]: 10am – 1pm
+  - generic [ref=f1e301]:
+    - generic [ref=f1e303]:
+      - button "Rei, wave. Poke" [ref=f1e1231] [cursor=pointer]
+      - button "Show full reply" [ref=f1e1362] [cursor=pointer]:
+        - generic [ref=f1e1363]: Hi, I'm Rei. Tell me about y
+    - generic [ref=f1e477]:
+      - button "Say \"Hi Rei\". Turn off hands-free" [ref=f1e1364] [cursor=pointer]:
+        - generic [ref=f1e481]: Say "Hi Rei"
+      - generic [ref=f1e484]:
+        - textbox "Message" [ref=f1e485]:
+          - /placeholder: Tell Rei your plan…
+        - button "Switch to voice mode" [ref=f1e486] [cursor=pointer]
+  - navigation "Views" [ref=f1e491]:
+    - button "Today" [ref=f1e493] [cursor=pointer]
+    - button "Week" [ref=f1e497] [cursor=pointer]
+    - button "Tasks" [ref=f1e501] [cursor=pointer]
+    - button "Study" [ref=f1e504] [cursor=pointer]

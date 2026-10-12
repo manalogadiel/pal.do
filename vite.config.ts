@@ -1,6 +1,7 @@
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import fs from 'node:fs'
 import path from 'node:path'
 
 import siteConfiguration from './.figma/make/site.json'
@@ -8,22 +9,26 @@ import siteConfiguration from './.figma/make/site.json'
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  const androidPreview = mode === 'android-preview'
   // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
   const emitSourcemaps = mode === 'development'
 
   return {
+    publicDir: 'public',
     base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
     build: {
+      outDir: androidPreview ? 'dist-android' : 'dist',
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
     },
     plugins: [
-react(),
+      react(),
       tailwindcss(),
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
+      pruneUnusedModels(androidPreview ? 'dist-android' : 'dist'),
     ],
     resolve: {
       alias: [
@@ -44,7 +49,11 @@ react(),
       watch: {
         ignored: [
           '**/.figma/**',
-],
+          '**/.cache/**',
+          '**/android/**',
+          '**/dist/**',
+          '**/dist-android/**',
+        ],
       },
     },
     preview: {
@@ -53,6 +62,26 @@ react(),
     },
   }
 })
+
+/**
+ * Builds ship only the voice files the app loads from its own server: the voice detector (vad/) and the ONNX
+ * runtime (kokoro/ort/). Whisper downloads from Hugging Face the first time hands-free is turned on (stt.worker.ts
+ * falls back to it), and the Kokoro speech model was never used for speaking: leaving them out keeps ~165 MB off
+ * every deploy and APK. The bundler's second copy of the ONNX runtime is never loaded either (paths point at kokoro/ort/).
+ * The dev server still serves all of public/, so the voice self-test keeps working.
+ */
+function pruneUnusedModels(outDir: string): Plugin {
+  return {
+    name: 'paldo-prune-unused-models',
+    apply: 'build',
+    closeBundle() {
+      const out = path.resolve(__dirname, outDir)
+      for (const dir of ['whisper', 'kokoro/models', 'kokoro/voices']) fs.rmSync(path.join(out, dir), { recursive: true, force: true })
+      const assets = path.join(out, 'assets')
+      if (fs.existsSync(assets)) for (const f of fs.readdirSync(assets)) if (/^ort-wasm.*\.wasm$/.test(f)) fs.rmSync(path.join(assets, f))
+    },
+  }
+}
 
 type FigmaSiteConfiguration = {
   title?: string
@@ -93,7 +122,7 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
     return html.replace(`<!-- ${slotName} -->`, content)
   }
 
-  const title = config.title ?? "Figma Make App"
+  const title = config.title ?? "Pal.do"
   const description = config.description ?? ''
   const favicon = config.icons?.icon ?? ''
   const socialImage = config.openGraph?.image ?? ''
@@ -129,7 +158,9 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
       handler(html) {
         let result = html
         result = replaceHtmlCommentSlot(result, 'figma:lang', language)
-        result = replaceHtmlCommentSlot(result, 'figma:title', escapeHtmlText(title))
+        result = result.includes('<!-- figma:title -->')
+          ? replaceHtmlCommentSlot(result, 'figma:title', escapeHtmlText(title))
+          : result.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(title)}</title>`)
         result = replaceHtmlCommentSlot(result, 'figma:head-start', headStart)
         result = replaceHtmlCommentSlot(result, 'figma:head-end', headEnd)
         result = replaceHtmlCommentSlot(result, 'figma:body-start', bodyStart)

@@ -1,0 +1,18 @@
+pal.do Android preview third-party notices
+
+llama.cpp and ggml
+Source: https://github.com/ggml-org/llama.cpp
+Revision: f2cc7282ce0042641df55e0e563b75e824e2b647
+License: MIT; see llama.cpp-LICENSE.txt.
+The preview links the CPU inference engine. No upstream source was modified.
+
+nlohmann JSON for Modern C++ 3.12.0
+Source: https://github.com/nlohmann/json/tree/v3.12.0
+License: MIT; see nlohmann-json-LICENSE.txt.
+
+Qwen2.5-0.5B-Instruct-GGUF
+Source: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+Revision: 9217f5db79a29953eb74d5343926648285ec7e67
+License: Apache 2.0; see Qwen2.5-LICENSE.txt.
+The preview includes these unmodified model weights in its APK and installs
+them into private model storage automatically. Other models can be imported.

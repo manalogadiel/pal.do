@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import type { PalId, PalState } from '../lib/core'
 import { isPaused, LONG_EVERY, phaseLabel, remaining, FOCUS_MS, type Session } from '../lib/session'
 import { Pal } from '../pals/Pal'
+import Library, { type LibraryTarget } from './Library'
+import type { Task } from '../lib/core'
+import type { Folder, LibraryFile } from '../lib/library'
 
 interface Props {
   session: Session
@@ -17,6 +20,29 @@ interface Props {
   onSkip: () => void
   onStop: () => void
   onEnableAlarms: () => void
+  /** Library: reviewers and notes in folders */
+  tasks: Task[]
+  section: 'focus' | 'library'
+  onSection: (s: 'focus' | 'library') => void
+  libraryTarget?: LibraryTarget | null
+  onLibraryTargetDone?: () => void
+  onPlanFile: (file: LibraryFile, folder: Folder) => void
+  onToast: (text: string) => void
+  /** Desktop: the Focus/Library switch is in the panel's top bar, not here */
+  tabsInHeader?: boolean
+}
+
+/** Focus / Library switch: inside Study on a phone, in the panel's top bar on a computer */
+export function StudyTabs({ section, onSection }: { section: 'focus' | 'library'; onSection: (s: 'focus' | 'library') => void }) {
+  return (
+    <div className="inline-flex rounded-full bg-ink/[0.05] p-1" role="tablist" aria-label="Study">
+      {(['focus', 'library'] as const).map((s) => (
+        <button key={s} role="tab" aria-selected={section === s} type="button" onClick={() => onSection(s)} className={`press h-8 rounded-full px-4 text-[13px] ${section === s ? 'bg-paper font-medium shadow-sm' : 'text-ink-2'}`}>
+          {s === 'focus' ? 'Focus' : 'Library'}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 const mmss = (ms: number) => {
@@ -24,8 +50,25 @@ const mmss = (ms: number) => {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
 }
 
-/** Pomodoro screen. Presentational: the session lives in App so switching tabs never stops it. */
-export function Study({ session, pal, palState, todayMinutes, palLine, alarmsOn, onStart, onPause, onResume, onSkip, onStop, onEnableAlarms }: Props) {
+/** Study: the focus timer, and the library of reviewers. The session lives in App so switching tabs never stops it. */
+export function Study(props: Props) {
+  const { section, onSection } = props
+  return (
+    <div className="flex h-full flex-col">
+      {!props.tabsInHeader && (
+        <div className="flex shrink-0 justify-center px-4 pt-3">
+          <StudyTabs section={section} onSection={onSection} />
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        {section === 'focus' ? <Focus {...props} /> : <Library pal={props.pal} tasks={props.tasks} now={Date.now()} target={props.libraryTarget} onTargetDone={props.onLibraryTargetDone} onPlan={props.onPlanFile} onToast={props.onToast} />}
+      </div>
+    </div>
+  )
+}
+
+/** Pomodoro screen */
+function Focus({ session, pal, palState, todayMinutes, palLine, alarmsOn, onStart, onPause, onResume, onSkip, onStop, onEnableAlarms }: Props) {
   const running = session.phase !== 'idle' && !isPaused(session)
   // Display-only clock; correctness comes from the session's timestamps
   const [now, setNow] = useState(Date.now())

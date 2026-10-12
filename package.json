@@ -8,15 +8,19 @@
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt",
-    "eval:chat": "node scripts/eval-chat.mjs"
+    "eval:chat": "node scripts/eval-chat.mjs",
+    "check:android-ai": "node scripts/check-android-ai.mjs",
+    "android:prepare-ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-android-ai.ps1",
+    "android:preview": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android-preview.ps1"
   },
   "dependencies": {
+    "@capacitor-community/text-to-speech": "8.0.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/local-notifications": "^8.3.1",
     "@huggingface/transformers": "3.8.1",
-    "@mlc-ai/web-llm": "^0.2.85",
     "@ricky0123/vad-web": "0.0.31",
     "kokoro-js": "^1.2.1",
+    "pdfjs-dist": "6.3.289",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

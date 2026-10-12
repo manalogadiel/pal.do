@@ -30,12 +30,20 @@ function to24(h: number, ap?: string) {
   return h
 }
 
+const WEEKDAY_WORD = String.raw`mon(?:day)?|lunes|tue(?:s|sday)?|martes|wed(?:nesday)?|miyerkules|miyerkoles|thu(?:r|rs|rsday)?|huwebes|fri(?:day)?|biyernes|byernes|sat(?:urday)?|sabado|sun(?:day)?|linggo`
+/** "tom" is texting for tomorrow, unless it's someone named Tom ("dinner with Tom", "kasama si tom") */
+const TOM = String.raw`(?<!\b(?:with|si|kay|ni|and|kasama|&)\s+)tom(?![\w'])`
+const DAY_WORD = String.raw`(?:today|ngayon|tonight|mamaya(?:ng)?|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|${TOM}|bukas|sa makalawa|${WEEKDAY_WORD})`
+/** "mamaya hindi bukas", "today not tomorrow", "instead of saturday": the day after the "not" is the wrong one */
+const NOT_DAY = new RegExp(String.raw`\b(?:hindi|di|not|instead of|wag|huwag)\s+(?:sa\s+|ng\s+)?${DAY_WORD}\b`, 'gi')
+const ANY_DAY = new RegExp(String.raw`\b${DAY_WORD}\b|\bin \d+ days?\b|\b(?:${MONTHS.join('|')})[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}\/\d{1,2}\b`, 'gi')
+
 function dayBase(text: string, now: number): number | null {
-  const s = text.toLowerCase()
+  const s = text.toLowerCase().replace(NOT_DAY, ' ')
   const today = startOfDay(now)
-  if (/\b(today|ngayon|tonight|mamaya|mamayang)\b/.test(s)) return today
+  if (/\b(today|ngayon|tonight|mamaya|mamayang|later)\b/.test(s)) return today
   if (/\b(day after tomorrow|sa makalawa)\b/.test(s)) return addDays(today, 2)
-  if (/\b(tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|tom|bukas)\b/.test(s)) return addDays(today, 1)
+  if (/\b(tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas)\b/.test(s) || new RegExp(String.raw`\b${TOM}`).test(s)) return addDays(today, 1)
   const inN = s.match(/\bin (\d+) days?\b/)
   if (inN) return addDays(today, +inN[1])
   const md = s.match(new RegExp(`\\b(${MONTHS.join('|')})[a-z]*\\.?\\s+(\\d{1,2})\\b`))
@@ -80,7 +88,8 @@ function timeOfDay(text: string): [number, number] | null {
   return null
 }
 
-const N = String.raw`(\d+(?:\.\d+)?|an?|one|isang|half an?)`
+// A spoken "a" / "an" needs a space after it: "4:30 am mamaya" is not "a m(inute) later"
+const N = String.raw`(\d+(?:\.\d+)?|(?:an?|one|isang|half an?)(?=\s))`
 const UNIT = String.raw`(h|hr|hrs|hour|hours|oras|m|min|mins|minutes|minuto)`
 const REL_BEFORE = new RegExp(String.raw`\b(?:in|after|within|pagkatapos ng)\s+${N}\s*${UNIT}\b`, 'i')
 const REL_AFTER = new RegExp(String.raw`\b${N}\s*${UNIT}\s+(?:after|later|from now|mamaya|mula ngayon)\b`, 'i')
@@ -175,6 +184,32 @@ export function hasSingleDay(text: string, now: number) {
   return dayBase(text, now) != null
 }
 
+/**
+ * The one day a message names ("mamaya", "bukas", "sabado", "oct 17"), with "hindi bukas" crossed out.
+ * Null when it names none, or two different ones ("prelims sabado, review bukas").
+ */
+export function namedDay(text: string, now: number): number | null {
+  const s = text.toLowerCase().replace(NOT_DAY, ' ')
+  const d = dayBase(s, now)
+  if (d == null) return null
+  const seen = new Set((s.match(ANY_DAY) ?? []).map((w) => dayBase(w, now)))
+  return seen.size > 1 ? null : d
+}
+
+/** The one clock time a message gives ("10 am", "at 14:30", "noon"), or null when none or more than one */
+export function clockTime(text: string): [number, number] | null {
+  const s = text.toLowerCase()
+  const all = s.match(new RegExp(CLOCK.source, 'gi')) ?? []
+  if (all.length > 1) return null
+  if (all.length === 1) {
+    const c = all[0].match(CLOCK)!
+    return [to24(+c[1], c[3]), c[2] ? +c[2] : 0]
+  }
+  const h24 = s.match(/\bat (\d{1,2}):(\d{2})\b/)
+  if (h24) return [+h24[1], +h24[2]]
+  return /\b(noon|tanghali)\b/.test(s) ? [12, 0] : null
+}
+
 export function parseHours(text: string): number | null {
   const s = text.toLowerCase()
   const h = s.match(/(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|oras)\b/)
@@ -208,12 +243,18 @@ export function eventKind(text: string): Kind | null {
 const STRIP = [
   RANGE, CLOCK, NEXT_WEEK, REL_BEFORE, REL_AFTER,
   /^\s*(hey|hi|hello|yo|uy|bosing|boss)\b/gi,
+  // "pede ba ako mag meeting": asking, not part of the title ("mag-review" keeps its verb)
+  /\b(pwede|puwede|pede|pwd|can i|could i|may i|is it ok(ay)? (if|to)|okay lang ba)\b/gi,
+  /\bmag(?=\s)/gi,
   /\bat \d{1,2}:\d{2}\b/gi,
   /(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|oras|m|min|mins|minutes)\b/gi,
   /\bin \d+ days?\b/gi,
   new RegExp(`\\b(${MONTHS.join('|')})[a-z]*\\.?\\s+\\d{1,2}\\b`, 'gi'),
   /\b\d{1,2}\/\d{1,2}\b/g,
-  /\b(today|tonight|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas|ngayon|mamaya(ng)?|gabi|hapon|umaga|morning|afternoon|evening|noon|midnight|day after)\b/gi,
+  /\b(today|tonight|later|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas|ngayon|mamaya(ng)?|gabi|hapon|umaga|morning|afternoon|evening|noon|midnight|day after)\b/gi,
+  new RegExp(String.raw`\b${TOM}`, 'gi'),
+  // Taglish fillers ("may exam ako e", "bukas pa naman"), never part of a title. "E-commerce" keeps its E.
+  /(?<![\w-])(e+h*|naman|lang|daw|raw|pala|talaga|kasi|nga)(?![\w-])/gi,
   ...DAYS.map(([re]) => new RegExp(re.source, 'gi')),
   /\b(i have|i've got|i got|got|there's|there is|i need to|need to|have to|gotta|i need|kailangan ko|kailangan|may|meron|ako|ko|mo|ung|yung|ang|sa|ng|para|na|pa|ba|deadline|due|until|before|by|on|at|this|next|my|a|an|the|i|is|it's|its|to|for|of|and|please|pls|po|paki|add|put|schedule|sched|plan|lagyan|ilagay|lagay|remind me|help me)\b/gi,
   /\b(every|each|tuwing|daily|weekdays|weekends?|from|klase|class(es)?)\b/gi,

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeDraft, type Card } from '../lib/agent'
 import { fmtDay, fmtHours, fmtTime, type CalEvent, type PalId, type PalState } from '../lib/core'
 import { Pal } from '../pals/Pal'
-import { ChevronL, Glyph, Mic, Send, Speaker, SpeakerOff, Waves, X } from './Icons'
+import { Calendar, Cards, ChevronL, Clip, Glyph, Mic, Quiz, Send, Speaker, SpeakerOff, Waves, X } from './Icons'
 import type { HandsFreeState } from '../lib/handsfree'
 
 /** The pal's current line: greeting or latest reply. Lives only in the speech bubble. */
@@ -57,6 +57,11 @@ interface Props {
   onCollapse?: () => void
   /** Hands-free "Hi {pal}": its state for the status chip, and the on/off switch */
   handsFree?: { on: boolean; state: HandsFreeState; progress?: number; toggle: () => void }
+  /** The AI is working on a reply: "• • •" in the log, so nobody types the same thing twice */
+  thinking?: boolean
+  onCancelReply?: () => void
+  /** The paperclip: a reviewer, handout or notes for the Study library */
+  onAttach?: (file: File) => void
 }
 
 /** What the hands-free chip says, and its dot */
@@ -64,7 +69,7 @@ function handsFreeChip(h: NonNullable<Props['handsFree']>, palName: string): { l
   if (h.state === 'loading') return { label: `Getting ready… ${Math.round((h.progress ?? 0) * 100)}%`, dot: 'bg-ink-3' }
   if (h.state === 'awake') return { label: 'Listening…', dot: 'bg-tangerine animate-pulse' }
   if (h.state === 'thinking') return { label: 'Got it…', dot: 'bg-tangerine' }
-  if (h.state === 'paused') return { label: `${palName} is talking…`, dot: 'bg-ink-3' }
+  if (h.state === 'paused') return { label: `${palName} is talking… say "Hi ${palName}" to interrupt`, dot: 'bg-ink-3' }
   if (h.state === 'error') return { label: "Hands-free couldn't start", dot: 'bg-rose-500' }
   if (h.state === 'off') return { label: 'Tap anywhere to resume hands-free', dot: 'bg-ink-3' }
   return { label: `Say "Hi ${palName}"`, dot: 'bg-emerald-500' }
@@ -96,6 +101,7 @@ export function Chat(p: Props) {
   const feedRef = useRef<HTMLDivElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const speech = useSpeech(p.bubble)
 
   useEffect(() => {
@@ -136,10 +142,11 @@ export function Chat(p: Props) {
     end.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'end' })
   }, [])
 
-  // Auto-scroll when messages update, card resolves, log opens, or pal height settles
+  // Auto-scroll when messages update, card resolves, log opens, pal height settles, or the hands-free chip
+  // appears/goes (it makes the composer taller, which would tuck the newest message under the pal row)
   useEffect(() => {
     scrollToBottom(false)
-  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, scrollToBottom])
+  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, p.handsFree?.on, p.thinking, scrollToBottom])
 
   // On page mount / reload, ensure feed immediately scrolls to bottom so the last bubble is on top of the mascot
   useEffect(() => {
@@ -177,7 +184,7 @@ export function Chat(p: Props) {
       <div className={`pointer-events-auto flex items-center gap-1.5 pb-1 text-[12px] text-ink-3 ${row ? 'mb-1 min-w-0 flex-1' : ''}`}>
         <span className={`size-1.5 rounded-[2px] ${shownState === 'sleeping' ? 'bg-ink-3' : 'pulse-dot bg-tangerine'}`} />
         <span className="font-medium text-ink-2">{p.palName}</span>
-        <span>· {STATE_LABEL[shownState]}</span>
+        <span>· {p.thinking ? 'thinking…' : STATE_LABEL[shownState]}</span>
       </div>
     )
   }
@@ -252,6 +259,16 @@ export function Chat(p: Props) {
                   )}
                 </div>
               ))}
+              {p.thinking && (
+                <div className="land flex justify-start" role="status" aria-label={`${p.palName} is thinking`}>
+                  <div className="flex h-[42px] items-center gap-1.5 rounded-[22px] rounded-bl-[8px] border border-ink/[0.06] bg-paper px-4 shadow-[0_2px_10px_-2px_rgba(0,0,0,0.06)]">
+                    {[0, 160, 320].map((d) => (
+                      <span key={d} className="size-1.5 rounded-full bg-ink-3 motion-safe:animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                    ))}
+                    {p.onCancelReply && <button type="button" aria-label="Cancel reply" onClick={p.onCancelReply} className="ml-2 text-[12px] text-ink-2">Cancel</button>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {/* Spacer = pal row height, so scrolling to the end lifts the newest message above the pal */}
@@ -290,7 +307,15 @@ export function Chat(p: Props) {
             )
           })()}
           {!voiceMode ? (
-            <div className="relative flex items-end gap-1.5 rounded-[28px] bg-ink/[0.05] p-1.5 pl-5 transition-[background-color,box-shadow] duration-200 focus-within:bg-ink/[0.07]">
+            <div className={`relative flex items-end gap-1.5 rounded-[28px] bg-ink/[0.05] p-1.5 transition-[background-color,box-shadow] duration-200 focus-within:bg-ink/[0.07] ${p.onAttach ? 'pl-1.5' : 'pl-5'}`}>
+              {p.onAttach && (
+                <>
+                  <button type="button" onClick={() => fileRef.current?.click()} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover:text-ink" aria-label="Attach a reviewer or notes" title="Attach a reviewer or notes">
+                    <Clip className="size-[18px]" />
+                  </button>
+                  <input ref={fileRef} type="file" accept=".pdf,.txt,.md,image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onAttach!(f); e.target.value = '' }} />
+                </>
+              )}
               <textarea
                 ref={inputRef}
                 value={text}
@@ -584,6 +609,27 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
     )
   }
 
+  if (c.type === 'file') {
+    return (
+      <div className={wrap}>
+        <div className="inline-flex min-h-10 max-w-full items-center gap-2.5 rounded-full bg-ink/[0.04] pr-4 pl-3 text-[13.5px]">
+          <Clip className="size-4 shrink-0 text-ink-2" />
+          <span className="truncate font-semibold">{c.name}</span>
+          <span className="shrink-0 text-ink-2">{c.folderName}</span>
+        </div>
+        {!c.scanned && (
+          <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
+            <Btn primary onClick={() => onCard(m.id, 'plan')}><span className="inline-flex items-center gap-1.5"><Calendar className="size-3.5" /> Plan study</span></Btn>
+            <Btn onClick={() => onCard(m.id, 'cards')}><span className="inline-flex items-center gap-1.5"><Cards className="size-3.5" /> Flashcards</span></Btn>
+            <Btn onClick={() => onCard(m.id, 'quiz')}><span className="inline-flex items-center gap-1.5"><Quiz className="size-3.5" /> Quiz me</span></Btn>
+            <Btn onClick={() => onCard(m.id, 'read')}><span className="inline-flex items-center gap-1.5"><Speaker className="size-3.5" /> Read aloud</span></Btn>
+          </div>
+        )}
+        {c.scanned && <div className="mt-2.5 -ml-1"><Btn onClick={() => onCard(m.id, 'read')}>Open it</Btn></div>}
+      </div>
+    )
+  }
+
   if (c.type === 'event') {
     const G = Glyph[(c.kind as keyof typeof Glyph) ?? 'shift'] ?? Glyph.shift
     return (
@@ -598,14 +644,20 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
             {c.days?.length && c.until ? ` · until ${fmtDay(c.until).replace(/^\w+, /, '')}` : ''}
           </span>
         </div>
-        {c.conflicts > 0 && (
+        {c.clash?.length ? (
+          <p className="mt-2.5 text-[13.5px] leading-snug text-amber">
+            Overlaps {c.clash.join(' and ')}.{c.alt ? ` ${fmtTime(c.alt.start)}–${fmtTime(c.alt.end)} is free.` : ''}
+          </p>
+        ) : c.conflicts > 0 && (
           <p className="mt-2.5 text-[13.5px] leading-snug text-amber">
             This overlaps {c.conflicts} planned block{c.conflicts > 1 ? 's' : ''}. I can suggest new times for them if you add it.
           </p>
         )}
         {done ? <Done t={done} /> : (
-          <div className="mt-2.5 -ml-1 flex gap-1">
-            <Btn primary onClick={() => onCard(m.id, 'addEvent')}>{c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
+          <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
+            {c.moveOther && <Btn primary onClick={() => onCard(m.id, 'moveOther')}>Move {c.moveOther.title} to {fmtTime(c.moveOther.to.start)}</Btn>}
+            {c.alt && <Btn primary onClick={() => onCard(m.id, 'useAlt')}>Use {fmtTime(c.alt.start)}</Btn>}
+            <Btn primary={!c.alt && !c.moveOther} onClick={() => onCard(m.id, 'addEvent')}>{c.clash?.length ? 'Add anyway' : c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
             <Btn onClick={() => onCard(m.id, 'skipEvent')}>Never mind</Btn>
           </div>
         )}
@@ -625,9 +677,11 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
           <span className={`tnum text-ink-2 ${c.to ? 'line-through decoration-ink-3/60' : ''}`}>{when(c.start, c.end)}</span>
           {c.to && <span className="tnum font-medium">→ {when(c.to.start, c.to.end)}</span>}
         </div>
+        {c.targets && <ul className="mt-2 space-y-1 text-[13px] text-ink-2">{c.targets.map((target) => <li key={target.id}>{target.title} · {when(target.start, target.end)}</li>)}</ul>}
+        {c.clash?.length ? <p className="mt-2.5 text-[13.5px] leading-snug text-amber">The new time overlaps {c.clash.join(' and ')}.</p> : null}
         {done ? <Done t={done} /> : (
           <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
-            <Btn primary onClick={() => onCard(m.id, 'apply')}>{removing ? (c.seriesIds ? 'Remove this one' : 'Remove') : 'Move it'}</Btn>
+            <Btn primary onClick={() => onCard(m.id, 'apply')}>{removing ? (c.targets ? `Remove ${c.targets.length} blocks` : c.seriesIds ? 'Remove this one' : 'Remove') : 'Move it'}</Btn>
             {removing && c.seriesIds && <Btn onClick={() => onCard(m.id, 'removeAll')}>Remove all {c.seriesIds.length}</Btn>}
             <Btn onClick={() => onCard(m.id, 'keep')}>Keep it</Btn>
           </div>

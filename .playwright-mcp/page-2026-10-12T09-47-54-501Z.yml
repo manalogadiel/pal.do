@@ -1,0 +1,53 @@
+- generic [ref=f20e3]:
+  - banner [ref=f20e4]:
+    - generic "Pal.Do" [ref=f20e5]:
+      - generic [ref=f20e6]: Pal
+      - generic [ref=f20e8]: Do
+    - button "AI and network status" [ref=f20e10] [cursor=pointer]:
+      - generic [ref=f20e14]: Auto · Cloud
+    - button "Rei. Switch pal" [ref=f20e16] [cursor=pointer]:
+      - img "Rei, idle" [ref=f20e18]
+      - generic [ref=f20e102]: Rei
+    - button "Pal and preferences" [ref=f20e103] [cursor=pointer]
+  - main [ref=f20e108]:
+    - generic [ref=f20e109]:
+      - tablist "Study" [ref=f20e111]:
+        - tab "Focus" [ref=f20e112] [cursor=pointer]
+        - tab "Library" [selected] [ref=f20e113] [cursor=pointer]
+      - generic [ref=f20e115]:
+        - generic [ref=f20e116]:
+          - button "Library" [ref=f20e117] [cursor=pointer]
+          - button "Delete folder" [ref=f20e120] [cursor=pointer]
+        - generic [ref=f20e123]:
+          - generic [ref=f20e124]:
+            - generic [ref=f20e125]: BIO
+            - heading "BIO101" [level=2] [ref=f20e126]
+          - button "Add file" [ref=f20e127] [cursor=pointer]
+        - list [ref=f20e130]:
+          - listitem [ref=f20e131]:
+            - generic [ref=f20e132]:
+              - button "BIO101 Midterm Reviewer 2 pages" [ref=f20e133] [cursor=pointer]:
+                - generic [ref=f20e134]: BIO101 Midterm Reviewer
+                - generic [ref=f20e135]: 2 pages
+              - button "Delete BIO101_Midterm-Reviewer.pdf" [ref=f20e136] [cursor=pointer]
+            - generic [ref=f20e139]:
+              - button "Plan study" [ref=f20e140] [cursor=pointer]
+              - button "Flashcards" [ref=f20e144] [cursor=pointer]
+              - button "Quiz me" [ref=f20e148] [cursor=pointer]
+              - button "Read aloud" [ref=f20e152] [cursor=pointer]
+  - generic [ref=f20e158]:
+    - button "Rei says" [ref=f20e161] [cursor=pointer]:
+      - generic [ref=f20e162]: Hey Gadiel! So what's your week looking like?
+    - generic [ref=f20e163]:
+      - button "Getting ready… 100%. Turn off hands-free" [ref=f20e165] [cursor=pointer]:
+        - generic [ref=f20e167]: Getting ready… 100%
+      - generic [ref=f20e170]:
+        - button "Attach a reviewer or notes" [ref=f20e171] [cursor=pointer]
+        - textbox "Message" [ref=f20e174]:
+          - /placeholder: Tell Rei your plan…
+        - button "Switch to voice mode" [ref=f20e175] [cursor=pointer]
+  - navigation "Views" [ref=f20e180]:
+    - button "Today" [ref=f20e182] [cursor=pointer]
+    - button "Week" [ref=f20e186] [cursor=pointer]
+    - button "Tasks" [ref=f20e190] [cursor=pointer]
+    - button "Study" [ref=f20e193] [cursor=pointer]

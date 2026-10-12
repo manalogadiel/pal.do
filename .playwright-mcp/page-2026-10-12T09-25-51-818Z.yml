@@ -1,0 +1,115 @@
+- generic [ref=f5e3]:
+  - navigation "Views" [ref=f5e4]:
+    - generic [ref=f5e7]:
+      - button "Today" [ref=f5e9] [cursor=pointer]
+      - button "Week" [ref=f5e13] [cursor=pointer]
+      - button "Tasks 1" [ref=f5e17] [cursor=pointer]:
+        - text: Tasks
+        - generic [ref=f5e20]: "1"
+      - button "Study" [ref=f5e21] [cursor=pointer]
+    - button "Paste a syllabus" [ref=f5e25] [cursor=pointer]
+    - button "Switch to dark mode" [ref=f5e29] [cursor=pointer]
+    - button "Pal and preferences" [ref=f5e32] [cursor=pointer]
+  - complementary [ref=f5e37]:
+    - generic [ref=f5e39]:
+      - generic [ref=f5e40]:
+        - button "Hide chat (⌘/)" [ref=f5e41] [cursor=pointer]
+        - button "Speak replies aloud" [ref=f5e44] [cursor=pointer]
+      - log [ref=f5e48]:
+        - generic [ref=f5e49]:
+          - generic [ref=f5e50]: Good afternoon
+          - heading "Tell Rei what your week looks like." [level=2] [ref=f5e51]
+          - paragraph [ref=f5e52]: Classes, shifts, deadlines. Type it or say it. Rei asks about anything missing and suggests times. You decide.
+          - generic [ref=f5e53]:
+            - button "Bio exam Friday" [ref=f5e54] [cursor=pointer]
+            - button "Shift Sat 2-8pm" [ref=f5e55] [cursor=pointer]
+            - button "How's my week?" [ref=f5e56] [cursor=pointer]
+            - button "Paste my syllabus" [ref=f5e57] [cursor=pointer]
+      - generic [ref=f5e59]:
+        - button "Rei says" [ref=f5e60] [cursor=pointer]:
+          - generic [ref=f5e61]: Hi, I'm Rei. Tell me about your week, we'll figure it out together.
+        - generic [ref=f5e63]:
+          - textbox "Message" [ref=f5e64]:
+            - /placeholder: Tell Rei your plan…
+          - button "Switch to voice mode" [ref=f5e65] [cursor=pointer]
+  - generic [ref=f5e69]:
+    - radiogroup "Switch pal" [ref=f5e71]:
+      - radio "Rei, idle Rei" [checked] [ref=f5e72] [cursor=pointer]:
+        - img "Rei, idle" [ref=f5e74]
+        - generic [ref=f5e158]: Rei
+      - radio [ref=f5e159] [cursor=pointer]:
+        - img "Diel, idle" [ref=f5e161]
+      - radio [ref=f5e247] [cursor=pointer]:
+        - img "Jhyvie, idle" [ref=f5e249]
+      - radio [ref=f5e347] [cursor=pointer]:
+        - img "Jaypee, idle" [ref=f5e349]
+    - generic [ref=f5e429]:
+      - generic [ref=f5e430]:
+        - button "Rei, idle. Poke" [ref=f5e433] [cursor=pointer]
+        - button "Talk to Rei" [ref=f5e561] [cursor=pointer]
+        - generic [ref=f5e562]: Monday
+        - heading "October 12" [level=1] [ref=f5e563]
+        - paragraph [ref=f5e564]: 1 thing left today · about 0m booked
+      - generic [ref=f5e565]:
+        - heading "Today" [level=2] [ref=f5e566]
+        - list [ref=f5e567]:
+          - listitem [ref=f5e569]:
+            - generic [ref=f5e570]: 8am
+            - button "Bus to campus 45m" [ref=f5e572] [cursor=pointer]:
+              - generic [ref=f5e576]: Bus to campus
+              - generic [ref=f5e577]: 45m
+          - listitem [ref=f5e578]:
+            - generic [ref=f5e579]: 9am
+            - button "Calc II 1.5h" [ref=f5e581] [cursor=pointer]:
+              - generic [ref=f5e584]: Calc II
+              - generic [ref=f5e585]: 1.5h
+          - listitem [ref=f5e586]:
+            - generic [ref=f5e587]: 5pm
+            - button "Bus home 45m" [ref=f5e589] [cursor=pointer]:
+              - generic [ref=f5e593]: Bus home
+              - generic [ref=f5e594]: 45m
+      - generic [ref=f5e595]:
+        - generic [ref=f5e596]:
+          - heading "This week" [level=2] [ref=f5e597]
+          - button "Open week" [ref=f5e598] [cursor=pointer]
+        - generic "Committed hours per day" [ref=f5e600]:
+          - button "2" [ref=f5e601] [cursor=pointer]
+          - button "4" [ref=f5e605] [cursor=pointer]
+          - button "6" [ref=f5e609] [cursor=pointer]
+          - button "7" [ref=f5e613] [cursor=pointer]
+          - button "2" [ref=f5e617] [cursor=pointer]
+          - button "6" [ref=f5e621] [cursor=pointer]
+          - button "3" [ref=f5e625] [cursor=pointer]
+      - generic [ref=f5e629]:
+        - heading "Coming up" [level=2] [ref=f5e630]
+        - list [ref=f5e631]:
+          - listitem [ref=f5e632]:
+            - 'img "Rizal reflection paper: 0m of 3h done" [ref=f5e633]':
+              - generic [ref=f5e637]: "0"
+            - generic [ref=f5e638]:
+              - generic [ref=f5e639]: Rizal reflection paper
+              - generic [ref=f5e640]: Fri · 3h left
+  - generic [ref=f5e642]:
+    - generic [ref=f5e643]:
+      - generic "Pal.Do" [ref=f5e645]:
+        - generic [ref=f5e646]: Pal
+        - generic [ref=f5e648]: Do
+      - generic "Step 1 of 2" [ref=f5e650]:
+        - button "Pal selection" [ref=f5e651] [cursor=pointer]
+        - button "Ground rules & settings" [ref=f5e652] [cursor=pointer]
+    - generic [ref=f5e653]:
+      - heading "Pick your pal." [level=1] [ref=f5e654]
+      - generic [ref=f5e655]:
+        - generic [ref=f5e656]:
+          - button "Previous pal" [ref=f5e657] [cursor=pointer]
+          - img "Rei, idle" [ref=f5e661]
+          - button "Next pal" [ref=f5e789] [cursor=pointer]
+        - generic [ref=f5e792]:
+          - generic [ref=f5e793]: Rei
+          - generic [ref=f5e794]: Calm and gentle · Encouraging, never rushes you
+        - generic [ref=f5e795]:
+          - button "Rei" [ref=f5e796] [cursor=pointer]
+          - button "Diel" [ref=f5e798] [cursor=pointer]
+          - button "Jhyvie" [ref=f5e800] [cursor=pointer]
+          - button "Jaypee" [ref=f5e802] [cursor=pointer]
+      - button "Continue with Rei" [ref=f5e805] [cursor=pointer]
