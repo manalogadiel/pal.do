@@ -8,7 +8,7 @@
 // through the speaker are ignored.
 import type { MicVAD } from '@ricky0123/vad-web'
 import type { PalId } from './core'
-import { isEcho, matchWake } from './wake'
+import { isEcho, matchWake, wakesOtherPal } from './wake'
 
 export type HandsFreeState = 'off' | 'loading' | 'listening' | 'awake' | 'thinking' | 'paused' | 'error'
 
@@ -26,6 +26,8 @@ export interface HandsFreeOptions {
   onCommand: (text: string) => void
   /** Turned itself off: no wake for 30 minutes */
   onIdle?: () => void
+  /** "Hey Jhyvie" heard while another pal listens: the name they used, and the request after it ('' when none) */
+  onWrongName?: (wrong: string, command: string) => void
   /** "Hi Jhyvie" while Pal was talking: stop talking now; the command (if any) follows through onWake / onCommand */
   onBargeIn?: () => void
   /** Dev/tests only: run the loop without a microphone, fed by simulateHeard() */
@@ -165,7 +167,19 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
   }
 
   const wake = matchWake(local, o.pal, o.userName)
-  if (!wake) return set('listening') // not for Pal: dropped right here
+  if (!wake) {
+    // "Hey Jhyvie" while Rei listens: Rei says who it is, then takes the request anyway
+    const other = o.onWrongName ? wakesOtherPal(local, o.pal, o.userName) : null
+    set('listening')
+    if (other) {
+      lastWake = Date.now()
+      if (!other.command) followUntil = Date.now() + FOLLOW_UP_MS
+      // Same as a real wake: the cloud re-hears the request, and keeps what came after the name
+      const command = other.command ? wakesOtherPal(await best(local), o.pal, o.userName)?.command || other.command : ''
+      o.onWrongName!(other.wrong, command)
+    }
+    return // not for Pal: dropped right here
+  }
   lastWake = Date.now()
   if (!wake.command) {
     followUntil = Date.now() + FOLLOW_UP_MS

@@ -115,6 +115,26 @@ export function clashes(slots: Slot[], events: CalEvent[], skipId?: string) {
 }
 
 /**
+ * An exam at 4–6pm on top of "Bus home 5–5:45pm": a commute can move, the exam can't. The ride keeps its side:
+ * one that starts during the new slot goes after it (the first free time, up to 3 hours later, e.g. after a 6pm
+ * gym), one that starts before it goes earlier. Never across the new slot: "Bus home" before the exam is no help.
+ * Null unless the only thing in the way is one commute, or nothing fits that day.
+ */
+export function moveAside(slot: Slot, hit: CalEvent[], events: CalEvent[], now: number): { event: CalEvent; to: Slot } | null {
+  if (hit.length !== 1 || hit[0].kind !== 'commute') return null
+  const e = hit[0]
+  const len = e.end - e.start
+  const later = e.start >= slot.start
+  const taken = [...events, { id: '', title: '', kind: 'protected', status: 'planned', ...slot } as CalEvent]
+  for (let k = 0; k <= 12; k++) {
+    const s = later ? { start: slot.end + k * 15 * MIN, end: slot.end + k * 15 * MIN + len } : { start: slot.start - len - k * 15 * MIN, end: slot.start - k * 15 * MIN }
+    if (startOfDay(s.start) !== startOfDay(e.start) || s.start < now || s.end > at(startOfDay(e.start), DAY_END)) break
+    if (!clashes([s], taken, e.id).length) return { event: e, to: s }
+  }
+  return null
+}
+
+/**
  * The closest time, earlier or later the same day, where every slot fits clear of everything planned,
  * with the 15-min buffer after a commute or shift (as in freeGaps). Never in the past, before 5am or after 11pm.
  * Repeats move together. Null when nothing fits that day.

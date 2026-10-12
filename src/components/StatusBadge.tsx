@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { getLocalAiModel, getLocalAiUrl } from '../lib/groq'
+import { cloudReady, getLocalAiModel, getLocalAiUrl } from '../lib/groq'
+import { AI_MODE_EVENT, getAiMode, isPhoneAiPlatform } from '../lib/ai-mode'
 
 export interface StatusBadgeProps {
   isOnline: boolean
@@ -14,8 +15,10 @@ export interface StatusBadgeProps {
 
 export function formatModelDisplayName(model: string): string {
   const m = model.toLowerCase()
+  if (m.startsWith('phone/')) return 'This phone · Qwen 0.5B'
   if (!m || m.includes('rule')) return 'Local Rules'
   if (m.includes(':')) return `Your PC · ${model}` // Ollama tags look like qwen3.5:4b
+  if (m === 'gemini') return 'Gemini Flash-Lite'
   if (m.includes('qwen3.8')) return 'Groq · Qwen3.8 27B'
   if (m.includes('gpt-oss-120b')) return 'Groq · GPT-OSS 120B'
   if (m.includes('gpt-oss')) return 'Groq · GPT-OSS 20B'
@@ -33,13 +36,21 @@ export function StatusBadge({
 }: StatusBadgeProps) {
   const [open, setOpen] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
+  const [mode, setMode] = useState(getAiMode)
+  useEffect(() => { const update = () => setMode(getAiMode()); window.addEventListener(AI_MODE_EVENT, update); return () => window.removeEventListener(AI_MODE_EVENT, update) }, [])
+  const onPhone = isPhoneAiPlatform()
+  const pcModel = !onPhone && getLocalAiUrl() ? getLocalAiModel() : ''
 
-  // Status computation. "Your PC": Ollama answered (unlimited, used when the cloud is out of quota).
-  const onPc = activeModel.includes(':')
-  const isAiOnline = (isOnline && hasGroqKey && !activeModel.toLowerCase().includes('local')) || onPc
-  const isLocalOnly = !onPc && isOnline && (!hasGroqKey || activeModel.toLowerCase().includes('local'))
-  const isNetworkOffline = !isOnline && !onPc
-  const pcModel = getLocalAiUrl() ? getLocalAiModel() : ''
+  // Where the next reply comes from under this mode: the cloud, this device (phone model / your PC), or the rules
+  const cloud = mode !== 'offline' && isOnline && hasGroqKey && cloudReady()
+  const device = mode === 'online' ? '' : onPhone ? 'This phone' : pcModel ? 'Your PC' : ''
+  const brain = cloud ? 'Cloud' : device || (mode === 'online' ? (isOnline ? 'Not set up' : 'No internet') : 'Basics')
+  const onPc = brain === 'Your PC'
+  const offlinePhone = brain === 'This phone'
+  const isAiOnline = cloud || !!device
+  // Rose: Online mode with no way to the cloud. Amber: answering without the cloud. Green: cloud.
+  const isNetworkOffline = mode === 'online' && !cloud
+  const isLocalOnly = !cloud && !isNetworkOffline
 
   // Close when clicking outside
   useEffect(() => {
@@ -65,13 +76,7 @@ export function StatusBadge({
       ? 'bg-amber-400'
       : 'bg-emerald-400'
 
-  const statusText = onPc
-    ? 'Your PC'
-    : isNetworkOffline
-    ? 'Offline'
-    : isLocalOnly
-      ? 'Local Mode'
-      : 'Online'
+  const statusText = `${mode === 'auto' ? 'Auto' : mode === 'online' ? 'Online' : 'Offline'} · ${brain}`
 
   const modelDisplay = formatModelDisplayName(activeModel)
 
@@ -80,7 +85,7 @@ export function StatusBadge({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="press group relative flex items-center gap-1.5 rounded-full border border-ink/[0.08] bg-paper/75 px-2.5 py-1 text-[11px] font-medium text-ink shadow-[var(--edge)] backdrop-blur-xl transition-all hover:bg-paper"
+        className="press group relative flex items-center gap-1.5 whitespace-nowrap rounded-full border border-ink/[0.08] bg-paper/75 px-2.5 py-1 text-[11px] font-medium text-ink shadow-[var(--edge)] backdrop-blur-xl transition-all hover:bg-paper"
         aria-label="AI and network status"
         title="AI Brain & Network Status (Advanced Mode)"
       >
@@ -138,7 +143,7 @@ export function StatusBadge({
             <div className="flex justify-between items-center">
               <span className="text-ink-3">AI Brain</span>
               <span className="font-medium">
-                {onPc ? "Your PC's AI (Ollama)" : hasGroqKey ? 'Groq Cloud (LPU)' : 'Local Rule Engine'}
+                {offlinePhone ? 'On this phone' : onPc ? "Your PC's AI (Ollama)" : cloud ? 'Cloud AI' : 'Built-in rules'}
               </span>
             </div>
 
@@ -156,11 +161,11 @@ export function StatusBadge({
               </span>
             </div>
 
-            {(hasGroqKey || pcModel) && (
+            {mode !== 'offline' && (hasGroqKey || pcModel || onPhone) && (
               <div className="flex justify-between items-start gap-2">
                 <span className="text-ink-3 shrink-0">Fallback Chain</span>
                 <span className="font-mono text-[10.5px] text-right text-ink-2">
-                  {[hasGroqKey && 'Qwen3.8 27B → GPT-OSS 120B → GPT-OSS 20B', pcModel && `Your PC (${pcModel})`, 'Rules'].filter(Boolean).join(' → ')}
+                  {[hasGroqKey && 'Groq → Gemini', mode === 'auto' && onPhone && 'This phone', mode === 'auto' && pcModel && `Your PC (${pcModel})`, 'Rules'].filter(Boolean).join(' → ')}
                 </span>
               </div>
             )}

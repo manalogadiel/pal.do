@@ -6,8 +6,11 @@ import type { Energy } from '../lib/schedule'
 import { Pal, PALS } from '../pals/Pal'
 import { Boundary } from './Chat'
 import { ChevronL, ChevronR, Glyph, SyllabusArt, Trash, Wordmark, X } from './Icons'
-import { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, getLocalAiModel, getLocalAiUrl, getSavedGroqKey, isGroqDisabled, listOllamaModels, preloadOllama, setGroqApiKey, setGroqDisabled, setLocalAiModel, setLocalAiUrl } from '../lib/groq'
-import { testAlarm } from '../lib/notifications'
+import { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, getLocalAiModel, hasCloudAi, getLocalAiUrl, getSavedGroqKey, isGroqDisabled, listOllamaModels, preloadOllama, setGroqApiKey, setGroqDisabled, setLocalAiModel, setLocalAiUrl } from '../lib/groq'
+import { playSound, setSoundsOn, soundsOn, testAlarm } from '../lib/notifications'
+import AndroidAiSettings from './AndroidAiSettings'
+import AiModeSelector from './AiModeSelector'
+import { isPhoneAiPlatform } from '../lib/ai-mode'
 
 /* ---------- Pal stage: one character at a time, swipe or arrows ---------- */
 const IDS = Object.keys(PALS) as PalId[]
@@ -123,6 +126,22 @@ function LocalAiRow() {
   )
 }
 
+/* ---------- Sounds: little blips for send, reply, added; alarms always ring ---------- */
+function SoundsRow() {
+  const [on, setOn] = useState(soundsOn)
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium text-ink">Sounds</div>
+        <div className="text-[11.5px] text-ink-3">Soft blips when you send, Pal replies, and plans are added. Timers and reminders always ring.</div>
+      </div>
+      <button type="button" onClick={() => { setSoundsOn(!on); setOn(!on); if (!on) playSound('added') }} className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-tangerine' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}>
+        {on ? 'On' : 'Off'}
+      </button>
+    </div>
+  )
+}
+
 /* ---------- Hands-free "Hi {pal}": privacy in plain words, and the device-only switch ---------- */
 function HandsFreeRow({ palName, on, toggle, deviceOnly, setDeviceOnly }: { palName: string; on: boolean; toggle: () => void; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }) {
   return (
@@ -133,7 +152,7 @@ function HandsFreeRow({ palName, on, toggle, deviceOnly, setDeviceOnly }: { palN
           <div className="text-[11.5px] text-ink-3">
             {on
               ? `Listening on this device. Only what you say after "Hi ${palName}" leaves it, to be written out${deviceOnly ? ': with device-only on, nothing does' : ''}.`
-              : `Say "Hi ${palName}" and talk, no tapping. Sets up an ~80 MB listener on this device the first time.`}
+              : `Say "Hi ${palName}" and talk, no tapping. Downloads an ~80 MB listener the first time (Wi-Fi recommended).${isPhoneAiPlatform() ? ' Listens while the app is open.' : ''}`}
           </div>
         </div>
         <button
@@ -161,6 +180,7 @@ export function Onboarding({
   prefsLabel,
   onClearPrefs,
   handsFree,
+  extras,
 }: {
   initial?: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean; userName?: string }
   onDone: (v: { pal: PalId; name: string; energy: Energy; advancedMode: boolean; userName?: string }) => void
@@ -172,6 +192,8 @@ export function Onboarding({
   onClearPrefs?: () => void
   /** Hands-free "Hi {pal}" switch and its device-only setting */
   handsFree?: { on: boolean; toggle: () => void; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }
+  /** On a phone the header has no room for these, so Settings holds them */
+  extras?: { dark: boolean; toggleDark: () => void; onSyllabus: () => void }
 }) {
   const isEditing = Boolean(initial)
   const [step, setStep] = useState(isEditing ? 1 : 0)
@@ -273,7 +295,7 @@ export function Onboarding({
               <div className="mt-5">
                 <div className="flex items-center justify-between text-[12px] font-medium text-ink-3">
                   <div className="flex items-center gap-1.5">
-                    <span>AI Brain (Groq API)</span>
+                    <span>Your own Groq key <span className="font-normal">(optional)</span></span>
                     {hasEnvKey && !groqKey && (
                       <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                         Active from .env
@@ -281,13 +303,13 @@ export function Onboarding({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
+                    {!isPhoneAiPlatform() && <button
                       type="button"
                       onClick={() => { setGroqOff(!groqOff); setGroqDisabled(!groqOff) }}
                       className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-tangerine/15 text-tangerine'}`}
                     >
                       {groqOff ? 'Off (local only)' : 'On'}
-                    </button>
+                    </button>}
                     <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-tangerine hover:underline">Free API key ↗</a>
                   </div>
                 </div>
@@ -299,16 +321,35 @@ export function Onboarding({
                     setGroqKey(k)
                     setGroqApiKey(k)
                   }}
-                  placeholder={hasEnvKey ? "Using key from .env (paste here to override)" : "gsk_... (optional, blank = offline rules)"}
+                  placeholder={hasEnvKey ? "Using key from .env (paste here to override)" : hasCloudAi() ? "gsk_… (blank = Pal's shared free AI)" : "gsk_… (blank = simple offline rules)"}
                   className="mt-1.5 w-full rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[13px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]"
                 />
                 <div className="mt-1 text-[11px] text-ink-3">
-                  Cloud: <span className="font-mono text-ink-2">qwen3.8-27b → gpt-oss-120b → gpt-oss-20b</span> · then your PC's AI · then simple rules
+                  {groqKey ? 'Your key: no daily limit from Pal. ' : hasCloudAi() ? "Without a key, Pal's free cloud AI is shared by everyone and has a daily limit. " : ''}Cloud: <span className="font-mono text-ink-2">qwen3.8-27b → gpt-oss → {groqKey ? '' : 'Gemini Flash-Lite → '}</span>{isPhoneAiPlatform() ? 'this phone (Auto)' : "your PC's AI · then simple rules"}
                 </div>
               </div>
 
-              <LocalAiRow />
+              {isPhoneAiPlatform() ? <AndroidAiSettings /> : <><div className="mt-5 rounded-[18px] bg-ink/[0.035] p-4"><AiModeSelector /></div><LocalAiRow /></>}
               {handsFree && <HandsFreeRow palName={name || PALS[pal].name} {...handsFree} />}
+              <SoundsRow />
+              {extras && (
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={extras.toggleDark} className="press flex items-center justify-between gap-2 rounded-[16px] bg-ink/[0.035] p-3 text-left">
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-ink">Appearance</span>
+                      <span className="block text-[11.5px] text-ink-3">{extras.dark ? 'Dark' : 'Light'}</span>
+                    </span>
+                    <span className="rounded-full bg-paper px-2.5 py-1 text-[11.5px] font-medium text-ink shadow-sm">{extras.dark ? 'Light' : 'Dark'}</span>
+                  </button>
+                  <button type="button" onClick={extras.onSyllabus} className="press flex items-center justify-between gap-2 rounded-[16px] bg-ink/[0.035] p-3 text-left">
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-ink">Syllabus</span>
+                      <span className="block text-[11.5px] text-ink-3">Pull out deadlines</span>
+                    </span>
+                    <span className="rounded-full bg-paper px-2.5 py-1 text-[11.5px] font-medium text-ink shadow-sm">Paste</span>
+                  </button>
+                </div>
+              )}
 
               {prefsLabel && (
                 <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">

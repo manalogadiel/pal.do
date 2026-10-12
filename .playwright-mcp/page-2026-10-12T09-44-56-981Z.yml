@@ -1,0 +1,44 @@
+- generic [ref=f18e3]:
+  - banner [ref=f18e4]:
+    - generic "Pal.Do" [ref=f18e5]:
+      - generic [ref=f18e6]: Pal
+      - generic [ref=f18e8]: Do
+    - button "AI and network status" [ref=f18e10] [cursor=pointer]:
+      - generic [ref=f18e14]: Auto · Cloud
+    - button "Rei. Switch pal" [ref=f18e16] [cursor=pointer]:
+      - img "Rei, idle" [ref=f18e18]
+      - generic [ref=f18e104]: Rei
+    - button "Pal and preferences" [ref=f18e105] [cursor=pointer]
+  - main [ref=f18e110]:
+    - generic [ref=f18e111]:
+      - tablist "Study" [ref=f18e113]:
+        - tab "Focus" [ref=f18e114] [cursor=pointer]
+        - tab "Library" [selected] [ref=f18e115] [cursor=pointer]
+      - generic [ref=f18e117]:
+        - generic [ref=f18e118]:
+          - generic [ref=f18e119]:
+            - heading "Library" [level=2] [ref=f18e120]
+            - paragraph [ref=f18e121]: Your reviewers and notes, by subject. Kept on this device.
+          - button "Folder" [ref=f18e122] [cursor=pointer]
+        - button "BIO101, 1 file" [ref=f18e126] [cursor=pointer]:
+          - generic [ref=f18e129]:
+            - generic [ref=f18e130]: BIO
+            - generic [ref=f18e131]:
+              - generic [ref=f18e132]: BIO101
+              - generic [ref=f18e133]: 1 file
+  - generic [ref=f18e136]:
+    - button "Rei says" [ref=f18e139] [cursor=pointer]:
+      - generic [ref=f18e140]: Hey Gadiel! So what's your week looking like?
+    - generic [ref=f18e141]:
+      - button "Tap anywhere to resume hands-free. Turn off hands-free" [ref=f18e143] [cursor=pointer]:
+        - generic [ref=f18e145]: Tap anywhere to resume hands-free
+      - generic [ref=f18e148]:
+        - button "Attach a reviewer or notes" [ref=f18e149] [cursor=pointer]
+        - textbox "Message" [ref=f18e152]:
+          - /placeholder: Tell Rei your plan…
+        - button "Switch to voice mode" [ref=f18e153] [cursor=pointer]
+  - navigation "Views" [ref=f18e158]:
+    - button "Today" [ref=f18e160] [cursor=pointer]
+    - button "Week" [ref=f18e164] [cursor=pointer]
+    - button "Tasks" [ref=f18e168] [cursor=pointer]
+    - button "Study" [ref=f18e171] [cursor=pointer]

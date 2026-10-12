@@ -1,0 +1,41 @@
+- generic [ref=f24e3]:
+  - banner [ref=f24e4]:
+    - generic "Pal.Do" [ref=f24e5]:
+      - generic [ref=f24e6]: Pal
+      - generic [ref=f24e8]: Do
+    - button "AI and network status" [ref=f24e10] [cursor=pointer]:
+      - generic [ref=f24e14]: Auto · Cloud
+    - button "Rei. Switch pal" [ref=f24e16] [cursor=pointer]:
+      - img "Rei, idle" [ref=f24e18]
+      - generic [ref=f24e102]: Rei
+    - button "Pal and preferences" [ref=f24e103] [cursor=pointer]
+  - main [ref=f24e108]:
+    - generic [ref=f24e109]:
+      - tablist "Study" [ref=f24e111]:
+        - tab "Focus" [ref=f24e112] [cursor=pointer]
+        - tab "Library" [selected] [ref=f24e113] [cursor=pointer]
+      - generic [ref=f24e115]:
+        - generic [ref=f24e116]:
+          - generic [ref=f24e117]:
+            - heading "Library" [level=2] [ref=f24e118]
+            - paragraph [ref=f24e119]: Your reviewers and notes, by subject. Kept on this device.
+          - button "Folder" [ref=f24e120] [cursor=pointer]
+        - generic [ref=f24e123]: Make a folder for each subject, or attach a reviewer in the chat with the button and Pal files it for you.
+  - generic [ref=f24e126]:
+    - button "Minimize the chat" [ref=f24e127] [cursor=pointer]
+    - generic [ref=f24e131]:
+      - button "Rei says" [ref=f24e134] [cursor=pointer]:
+        - generic [ref=f24e135]: Hey Gadiel! So what's your week looking like?
+      - generic [ref=f24e136]:
+        - button "Tap anywhere to resume hands-free. Turn off hands-free" [ref=f24e138] [cursor=pointer]:
+          - generic [ref=f24e140]: Tap anywhere to resume hands-free
+        - generic [ref=f24e143]:
+          - button "Attach a reviewer or notes" [ref=f24e144] [cursor=pointer]
+          - textbox "Message" [ref=f24e147]:
+            - /placeholder: Tell Rei your plan…
+          - button "Switch to voice mode" [ref=f24e148] [cursor=pointer]
+  - navigation "Views" [ref=f24e153]:
+    - button "Today" [ref=f24e155] [cursor=pointer]
+    - button "Week" [ref=f24e159] [cursor=pointer]
+    - button "Tasks" [ref=f24e163] [cursor=pointer]
+    - button "Study" [ref=f24e166] [cursor=pointer]

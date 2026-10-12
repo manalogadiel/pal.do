@@ -33,6 +33,9 @@
   --ev-sage: #e0ede6;
   --ev-sage-rule: #87b39b;
   --ev-sage-ink: #345a46;
+  --ev-lilac: #ebe8f6;
+  --ev-lilac-rule: #9d93cf;
+  --ev-lilac-ink: #463d7a;
 
   --shadow-lg: 0 24px 60px -24px rgb(60 44 30 / 0.28), 0 4px 14px -6px rgb(60 44 30 / 0.1);
   --edge: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 -1px 0 rgb(42 40 38 / 0.04);
@@ -73,6 +76,9 @@
     --ev-sage: #1e2a24;
     --ev-sage-rule: #93c0a6;
     --ev-sage-ink: #cbe3d5;
+    --ev-lilac: #26233a;
+    --ev-lilac-rule: #ada3df;
+    --ev-lilac-ink: #d9d4f2;
     --shadow-lg: 0 24px 60px -20px rgb(0 0 0 / 0.65), 0 4px 14px -6px rgb(0 0 0 / 0.4);
     --edge: inset 0 1px 0 rgb(255 255 255 / 0.07), inset 0 -1px 0 rgb(0 0 0 / 0.2);
 }
@@ -177,6 +183,38 @@
   background-color: color-mix(in srgb, var(--ev-sand) 55%, transparent);
   background-image: repeating-linear-gradient(135deg, var(--ev-sand) 0 6px, transparent 6px 11px);
 }
+/* ---------- Study library folders: each one a colour family, a paper, a tab position ---------- */
+.folder { --f-bg: var(--ev-class); --f-rule: var(--ev-class-rule); --f-ink: var(--ev-class-ink); }
+.folder[data-tone='exam'] { --f-bg: var(--ev-exam); --f-rule: var(--ev-exam-rule); --f-ink: var(--ev-exam-ink); }
+.folder[data-tone='sage'] { --f-bg: var(--ev-sage); --f-rule: var(--ev-sage-rule); --f-ink: var(--ev-sage-ink); }
+.folder[data-tone='sand'] { --f-bg: var(--ev-sand); --f-rule: var(--ev-sand-rule); --f-ink: var(--ev-sand-ink); }
+.folder[data-tone='shift'] { --f-bg: var(--ev-shift); --f-rule: var(--ev-shift-rule); --f-ink: var(--ev-shift-ink); }
+.folder[data-tone='lilac'] { --f-bg: var(--ev-lilac); --f-rule: var(--ev-lilac-rule); --f-ink: var(--ev-lilac-ink); }
+.folder-face { background-color: var(--f-bg); color: var(--f-ink); }
+.folder-face[data-pattern='lines'] { background-image: repeating-linear-gradient(to bottom, transparent 0 21px, color-mix(in srgb, var(--f-rule) 30%, transparent) 21px 22px); background-position: 0 30px; }
+.folder-face[data-pattern='grid'] {
+  background-image: linear-gradient(color-mix(in srgb, var(--f-rule) 20%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--f-rule) 20%, transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.folder-face[data-pattern='dots'] { background-image: radial-gradient(circle, color-mix(in srgb, var(--f-rule) 45%, transparent) 1.1px, transparent 1.6px); background-size: 13px 13px; }
+.folder-face[data-pattern='stripes'] { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--f-rule) 16%, transparent) 0 7px, transparent 7px 14px); }
+/* The folder's back panel (its tab) sits a shade deeper than the front, like real card stock */
+.folder-back { background-color: color-mix(in srgb, var(--f-bg) 78%, var(--f-rule)); }
+/* The label sticker: pixel type on a slightly crooked paper label with a stepped pixel edge. Always a light label. */
+.folder-sticker {
+  font-family: var(--font-pixel);
+  background: #fbf9f5;
+  color: #3b352f;
+  box-shadow: 0 0 0 2px var(--f-rule), 2px 2px 0 2px color-mix(in srgb, var(--f-rule) 45%, transparent);
+  image-rendering: pixelated;
+}
+/* Flashcard flip */
+.flip { transform-style: preserve-3d; transition: transform 420ms var(--ease-out); }
+.flip[data-flipped='true'] { transform: rotateY(180deg); }
+.flip > * { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip > .flip-back { transform: rotateY(180deg); }
+@media (prefers-reduced-motion: reduce) { .flip { transition: none; } }
+
 .hatch {
   background-image: repeating-linear-gradient(45deg, var(--ev-sage) 0 2px, transparent 2px 7px);
   background-color: color-mix(in srgb, var(--ev-sage) 60%, transparent);
@@ -346,3 +384,5 @@
 
 /* Mobile: the composer + tab bar float over content; let every scroller clear them */
 .under-dock .overflow-y-auto { padding-bottom: calc(370px + env(safe-area-inset-bottom)); }
+/* Chat minimized to the little pal button: only the tab bar and that button to clear */
+.under-dock-min .overflow-y-auto { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }

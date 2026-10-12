@@ -67,3 +67,11 @@ export const Trash = (p: P) => <S {...p}><path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 
 /** Hands-free: sound waves */
 export const Waves = (p: P) => <S {...p}><path d="M2 8h.01M4.75 6v4M7.5 3.5v9M10.25 5.5v5M13 7v2" /></S>
 export const TimerIcon = (p: P) => <S {...p}><circle cx="8" cy="9" r="5.25" /><path d="M8 9V6.5M6.5 1.75h3M8 1.75v2" /></S>
+export const Clip = (p: P) => <S {...p}><path d="M12.5 7.25 7.6 12.15a3 3 0 0 1-4.25-4.25l5.3-5.3a2 2 0 0 1 2.83 2.83L6.2 10.7a1 1 0 0 1-1.42-1.41L9.5 4.6" /></S>
+export const Plus = (p: P) => <S {...p}><path d="M8 3v10M3 8h10" /></S>
+export const Play = (p: P) => <S {...p}><path d="M5 3.25v9.5L12.5 8z" /></S>
+export const Pause = (p: P) => <S {...p}><path d="M5.5 3.5v9M10.5 3.5v9" /></S>
+export const Cards = (p: P) => <S {...p}><rect x="2" y="4.5" width="9" height="9" rx="1.5" /><path d="M5 2.5h7.5a1.5 1.5 0 0 1 1.5 1.5v7.5" /></S>
+export const Quiz = (p: P) => <S {...p}><circle cx="8" cy="8" r="6" /><path d="M6.3 6.3a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.9.7-.9 1.3M8 11.2v.05" /></S>
+export const Calendar = (p: P) => <S {...p}><rect x="2.25" y="3.25" width="11.5" height="10.5" rx="2" /><path d="M2.25 6.5h11.5M5.5 1.75v3M10.5 1.75v3" /></S>
+export const ChevronD = (p: P) => <S {...p}><path d="M3.5 6 8 10.5 12.5 6" /></S>

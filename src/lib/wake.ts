@@ -59,6 +59,60 @@ export function isEcho(heard: string, line: string, pal: PalId) {
   return rest.filter((w) => said.has(w)).length / rest.length >= 0.6
 }
 
+/** Typed names only: sound-alikes like "deal" or "ray" are real words in a typed message */
+const TYPED: Record<PalId, string[]> = {
+  jhyvie: ['jhyvie', 'jhivie', 'jhyvee', 'jivie', 'jhy', 'jv'],
+  jaypee: ['jaypee', 'jaypi', 'jp'],
+  rei: ['rei'],
+  diel: ['diel'],
+}
+const palName = (id: PalId) => id[0].toUpperCase() + id.slice(1)
+
+/**
+ * "Hi Jhyvie", "Jhyvie, add my exam", "thanks jv" sent to another pal: the name they used, and the rest of the
+ * message (a request still gets handled). Null when they used this pal's name or no name at all.
+ */
+export function wrongPal(text: string, pal: PalId, userName?: string): { wrong: string; rest: string } | null {
+  const s = norm(text)
+  const user = userName ? norm(userName) : ''
+  for (const id of Object.keys(TYPED) as PalId[]) {
+    if (id === pal) continue
+    const names = TYPED[id].filter((n) => n !== user && !TYPED[pal].includes(n)).join('|')
+    if (!names) continue
+    // The rest comes from the original text, so "4:30pm" and "what's" survive
+    const head = new RegExp(String.raw`^\s*${FILLER}(?:${GREETING}[\s,!.]+)?(?:${names})(?![\w'])[\s,!.:]*(.*)$`, 'i').exec(text)
+    if (head) return { wrong: palName(id), rest: head[1].trim() }
+    if (new RegExp(String.raw`(?:^|\s)(?:${GREETING}|thanks|thank you|ty|salamat)\s+(?:${names})$`).test(s)) return { wrong: palName(id), rest: '' }
+    // "add my exam, jhyvie": a name after a comma at the very end
+    const tail = new RegExp(String.raw`^(.*),\s*(?:${names})[.!?\s]*$`, 'i').exec(text.trim())
+    if (tail) return { wrong: palName(id), rest: tail[1].trim() }
+  }
+  return null
+}
+
+/** Sound-alikes that are everyday words: "okay deal" or "hey ray" is not someone calling Diel or Rei */
+const EVERYDAY = new Set(['deal', 'dial', 'ray', 'rey', 'rae', 'dil', 'deel', 'jay p', 'j p', 'gv', 'jay v', 'j v'])
+
+/**
+ * "Hey Jhyvie" heard while Rei is listening: the other pal's name and what came after it, or null.
+ * Stricter than waking: a real greeting (hi/hey/hello) and a known spelling of the name, never a sound-alike.
+ */
+export function wakesOtherPal(heard: string, pal: PalId, userName?: string): { wrong: string; command: string } | null {
+  const text = norm(heard)
+  const head = /^(?:hi+|hey|hello)\s+(.+)$/.exec(text)
+  if (!head || matchWake(heard, pal, userName)) return null
+  const user = userName ? norm(userName) : ''
+  for (const id of Object.keys(NAMES) as PalId[]) {
+    if (id === pal) continue
+    const names = NAMES[id].filter((n) => n !== user && !EVERYDAY.has(n)).sort((a, b) => b.length - a.length)
+    for (const n of names) {
+      const m = new RegExp(String.raw`^${n.replace(/ /g, String.raw`\s*`)}(?:\s+|$)(.*)$`).exec(head[1])
+      if (m) return { wrong: palName(id), command: m[1].trim() }
+    }
+  }
+  return null
+}
+
 /**
  * The command after "Hi {pal}" ('' when they only said the greeting), or null when this isn't a wake phrase.
  * `userName`: never wake on the user's own name ("hi Gadiel" from a friend).

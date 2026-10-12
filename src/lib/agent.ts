@@ -20,12 +20,14 @@ export interface LastEvent { title: string; kind: string; start: number; end: nu
 export type Card =
   | { type: 'readback'; draft: Draft }
   /** replaces: planned blocks this plan takes over, removed only when it's accepted */
-  | { type: 'proposal'; taskId: string; blockIds: string[]; why: string; shortfall: number; freeHours: number; commute?: boolean; replaces?: string[] }
+  | { type: 'proposal'; taskId: string; blockIds: string[]; why: string; shortfall: number; freeHours: number; commute?: boolean; replaces?: string[]; taskUpdate?: { due: number; hours: number } }
   | { type: 'checkin'; eventIds: string[] }
   /** conflicts: study blocks it lands on (re-planned on add). clash: other events it overlaps ("Travel to school, 4am–5am"); alt: the nearest free time. */
-  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; whatIf?: boolean; days?: number[]; until?: number; clash?: string[]; alt?: { start: number; end: number } }
+  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; whatIf?: boolean; days?: number[]; until?: number; clash?: string[]; alt?: { start: number; end: number }; moveOther?: { id: string; title: string; to: { start: number; end: number } } }
   /** Remove or move something already on the calendar. seriesIds: the same slot on other days, for "remove all". clash: what the new time overlaps. */
-  | { type: 'change'; mode: 'remove' | 'move'; eventId: string; title: string; kind: string; start: number; end: number; to?: { start: number; end: number }; seriesIds?: string[]; clash?: string[] }
+  | { type: 'change'; mode: 'remove' | 'move'; eventId: string; title: string; kind: string; start: number; end: number; to?: { start: number; end: number }; seriesIds?: string[]; targets?: { id: string; title: string; start: number; end: number }[]; clash?: string[] }
+  /** A file attached in chat, now in the Study library: plan study from it, flashcards, quiz, read aloud */
+  | { type: 'file'; fileId: string; name: string; folderName: string; scanned: boolean }
   | { type: 'notify' }
   | { type: 'boundary' }
 
@@ -54,6 +56,8 @@ export interface Turn {
   awaiting: Awaiting
   action?: Action
   rule?: string
+  /** which canned line answered ("unknown" = the rules didn't understand it) */
+  key?: string
   /** undefined = leave as is; null = clear */
   pending?: PendingEvent | null
 }
@@ -73,7 +77,7 @@ const BASE: Lines = {
   greet: ["Hey! So what's your week looking like?", "Hi hi. What've you got going on this week?"],
   greetNamed: ["Hey {user}! So what's your week looking like?", 'Hi {user}! What have you got going on this week?'],
   askDue: ["Ooh okay. When's it due?", 'Got it. When do you need it done by?', 'Okay, and the deadline is…?'],
-  dueRetry: ['Wait, which day was that? Like "Friday 5pm" or "Oct 18" works.', 'Sorry, missed the day. "Next Tuesday"? "Bukas"?'],
+  dueRetry: ['Wait, which day was that? Like "Friday 5pm" or "Oct 18" works.', 'Sorry, missed the day. "Next Tuesday"? "Tomorrow"?'],
   askHours: ["How long do you think it'll take you?", 'Gut feeling, how many hours?'],
   askHoursExam: ['How much study time do you want before it?', 'How many hours of review feels right?'],
   hoursRetry: ['Just a ballpark is fine, like "3 hours". Or say "not sure" and I\'ll guess.'],
@@ -113,7 +117,7 @@ const BASE: Lines = {
   thanks: ['Anytime!', 'Of course :)'],
   chatHow: ["Doing good, thanks for asking! How's your week going?", 'All good here! Anything coming up for you?'],
   chatWho: ["I'm your planning buddy. Tell me your classes, deadlines or shifts and I'll fit them into your week.", 'I help you plan your week. Try "Bio exam Friday" or "gym tomorrow 5pm".'],
-  chatAck: ['Okay! Just tell me whenever something comes up.', "Sige! I'm here if you need to plan something."],
+  chatAck: ['Okay! Just tell me whenever something comes up.', "Sure! I'm here if you need to plan something."],
   chatHuh: ['Oops, was I unclear? I can add things to your week, like "study tomorrow 3pm" or "Math quiz Friday".', "Hmm, sorry! Ask me to add a class, shift or deadline and I'll handle it."],
   unknown: [
     'Hmm, not sure I caught that. If it\'s about your schedule, try "Bio exam Friday" or "gym tomorrow 5pm". Or should we look at {next}?',
@@ -171,7 +175,7 @@ const BASE: Lines = {
   removed: ['Okay, {what} is off your calendar.', 'Done, {what} is gone.'],
   moved: ['Moved! {what} is at the new time.'],
   kept: ['Okay, left it as is.', 'Sure, keeping it.'],
-  confirmWhich: ['Wait, para sure: add this one?', 'Just checking, this one?'],
+  confirmWhich: ['Wait, just to be sure: add this one?', 'Just checking, this one?'],
   slowNet: ["My connection's being slow, so simpler answers from me for a bit."],
   quotaLocal: ["My free cloud AI ran out for now, so I'm thinking on your PC instead. A bit slower, same me."],
   quotaOut: ['My free AI limit ran out, so simple answers from me until about {time}.'],
@@ -182,14 +186,43 @@ const BASE: Lines = {
   voiceOn: ["Okay, I'll talk out loud now.", 'Voice on! You can just talk to me too.'],
   askDays: ['{what}, got it. Which days?', 'Okay, {what}. What days do you have it?'],
   daysRetry: ['Which days though? Like "MWF", "TTh", or "just today".'],
+  askStart: ['{what}. What time does it start?', '{what}. When does it start?'],
+  askEnd: ['{what} starts {when}. What time does it end?'],
+  addAsk: ['{what}. Add it?'],
+  newEventAsk: ['Sure. What would you like to schedule?'],
+  declineOk: ['Okay. What would you like to do instead?'],
+  examOverlap: ['Your exam is {range}. It overlaps {clash}.{move} Add it anyway?'],
+  moveOther: [' I can move {other} to {to} instead.'],
+  studyWhich: ['Which exam or deadline is this review for, and when is it?'],
+  studyHours: ['How many hours of review would you like before {what}?'],
+  examStill: ['Your calendar still has {what}. Should the exam itself move, or should review still finish before it?'],
+  removeWhichTime: ['Which event at that time do you mean? Tell me its title and day.'],
+  removeWhichPlan: ['Which review plan should I remove? Tell me its day or start time so I can show the exact blocks.'],
+  removeWhichBlocks: ['Which review blocks should I remove? I will keep the exam itself.'],
+  wrongPal: ["I'm not {wrong}. I'm {me} 🙂", "Close! I'm {me}, not {wrong}."],
+  cloudNotSet: ["My cloud brain isn't set up on this device, so I'll keep it simple for now."],
+  phoneModelMissed: ["I couldn't work that one out on this phone. Try saying it like \"Bio exam Friday 3pm\"."],
+  fileSaved: ['Saved {file} in your {folder} folder. Want me to plan study time from it, make flashcards, or quiz you?'],
+  fileScanned: ["Saved {file} in {folder}. It's scanned pages, so I can show it but can't read it out or quiz you on it."],
+  fileTooBig: ['{file} is over 25 MB. Try a smaller copy, or split it.'],
+  fileUnsupported: ['I can keep PDFs, text files and images. {file} is something else.'],
+  fileUnreadable: ["{file} wouldn't open. If it has a password, save a copy without one."],
+  planFromFile: ['{file} is about {h} of studying.{topics}'],
+  planNeedsDate: ['{file} is about {h} of studying. When is the {what}?'],
+  noFilesYet: ['Attach a reviewer first with the paperclip next to the message box, and I can make flashcards or a quiz from it.'],
+  openCards: ['Here are flashcards from {file}.'],
+  openQuiz: ["Here's a practice quiz from {file}. Good luck!"],
+  openRead: ["Opening {file}. Tap Read aloud and I'll read it to you."],
 }
 const VOICE: Record<PalId, Partial<Lines>> = {
   rei: {
+    wrongPal: ["I'm not {wrong}. I'm Rei 🙂"],
     greet: ["Hi, I'm Rei. Tell me about your week, we'll figure it out together."],
     doneOk: ["That one's done. Proud of you.", 'Nice and steady. Checked off.'],
     offtopic: ["I hear you, but that's not something I can help with. Maybe we take a gentle look at {next}?"],
   },
   diel: {
+    wrongPal: ["Close, but I'm Diel, not {wrong}."],
     greet: ["Hey, Diel here. Give me your classes, deadlines, shifts. I like a good schedule."],
     askHours: ['How many hours, roughly?', "What's your estimate in hours?"],
     accepted: ["In the calendar. I'll check in after each block."],
@@ -241,8 +274,38 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     time: ['{t} na! {d} ngayon.'],
     focusStart: ['Tara, focus muna! Nandito lang ako.'],
     breakStart: ['Galing! Break muna, 5 minutes. Inom ka tubig!'],
+    unknown: ['Hmm, di ko masyado na-gets. Kung sa schedule, try mo "Bio exam Friday" o "gym bukas 5pm". O tingnan natin {next}?', 'Sorry, di ko nakuha. Sabihin mo lang ano meron and ilalagay ko.'],
+    eventAdd: ['Idagdag ko ba ito?', 'Ilagay ko na ba?'],
+    eventAdded: ['G! Nasa calendar na ang {what}.', 'Done, nailagay ko na ang {what}.'],
+    eventSkipped: ['Sige, di ko na ilalagay.'],
+    confirmHint: ["Tap mo lang yung Add it, o sabihin mo lang 'go', at ilalagay ko na."],
+    removeAsk: ['Tanggalin ko na ba ito?'],
+    thanks: ['Walang anuman!', 'Anytime! :)'],
+    chatAck: ['Sige! Sabihin mo lang pag may ipaplano tayo.'],
+    askDays: ['{what}, gets! Anong mga araw?'],
+    askStart: ['{what}. Anong oras magsisimula?', '{what}. Mga anong oras start?'],
+    askEnd: ['{what}, simula {when}. Anong oras matatapos?'],
+    addAsk: ['{what}. Idagdag ko na?'],
+    newEventAsk: ['Sige! Ano ilalagay natin?'],
+    declineOk: ['Sige. Ano na lang gagawin natin?'],
+    examOverlap: ['Exam mo {range}, pero sabay sa {clash}.{move} I-add ko pa rin?'],
+    moveOther: [' Pwede kong ilipat ang {other} sa {to}.'],
+    studyWhich: ['Para saang exam o deadline itong review, at kailan?'],
+    studyHours: ['Ilang oras ng review gusto mo bago ang {what}?'],
+    wrongPal: ["Hindi ako si {wrong}, si {me} 'to! 🙂", "Uy, {me} 'to, hindi si {wrong}!"],
+    cloudNotSet: ['Di pa naka-set up ang cloud AI ko dito, kaya simple lang muna ako.'],
+    phoneModelMissed: ['Di ko na-gets yun dito sa phone. Try mo ganito: "Bio exam Friday 3pm".'],
+    fileSaved: ['Nai-save ko na ang {file} sa {folder} folder mo. Gusto mo i-plan natin ang study time, gawan kita ng flashcards, o quiz?'],
+    fileScanned: ['Nai-save ko ang {file} sa {folder}. Scanned pages siya, kaya makikita mo pero di ko mababasa o magagawan ng quiz.'],
+    planFromFile: ['Mga {h} ng aral ang {file}.{topics}'],
+    planNeedsDate: ['Mga {h} ng aral ang {file}. Kailan ang {what}?'],
+    noFilesYet: ['Mag-attach ka muna ng reviewer gamit yung paperclip sa tabi ng message box, tapos gagawan kita ng flashcards o quiz.'],
+    openCards: ['Eto flashcards mula sa {file}.'],
+    openQuiz: ['Eto practice quiz mula sa {file}. Kaya mo yan!'],
+    openRead: ['Binuksan ko ang {file}. Tap mo Read aloud at babasahin ko sa iyo.'],
   },
   jaypee: {
+    wrongPal: ["Ha, not {wrong}! It's Jaypee."],
     greet: ["Yo, Jaypee here! What's the week look like?"],
     askDue: ['When is it due?', 'Deadline?'],
     askHours: ['How many hours?'],
@@ -280,7 +343,7 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
   const keep = { draft: ctx.draft, awaiting: ctx.awaiting }
   const F = { next: ctx.facts?.next ?? 'your week' }
   const out = (key: string, extra: Partial<Turn> = {}, vars?: Record<string, string | number>): Turn => ({
-    ...keep, text: say(pal, key, vars), ...extra,
+    ...keep, text: say(pal, key, vars), key, ...extra,
   })
 
   if (INJECT.test(text)) return out('inject', { rule: 'Scope filter: instruction override' })

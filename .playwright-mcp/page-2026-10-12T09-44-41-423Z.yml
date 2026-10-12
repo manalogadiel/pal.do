@@ -1,0 +1,98 @@
+- generic [ref=f17e3]:
+  - banner [ref=f17e4]:
+    - generic "Pal.Do" [ref=f17e5]:
+      - generic [ref=f17e6]: Pal
+      - generic [ref=f17e8]: Do
+    - button "AI and network status" [ref=f17e10] [cursor=pointer]:
+      - generic [ref=f17e14]: Auto · Cloud
+    - button "Rei. Switch pal" [ref=f17e16] [cursor=pointer]:
+      - img "Rei, idle" [ref=f17e18]
+      - generic [ref=f17e102]: Rei
+    - button "Pal and preferences" [ref=f17e103] [cursor=pointer]
+  - main [ref=f17e108]:
+    - generic [ref=f17e109]:
+      - generic [ref=f17e110]:
+        - button "M 12" [ref=f17e111] [cursor=pointer]:
+          - generic [ref=f17e112]: M
+          - generic [ref=f17e113]: "12"
+        - button "T 13" [ref=f17e114] [cursor=pointer]:
+          - generic [ref=f17e115]: T
+          - generic [ref=f17e116]: "13"
+        - button "W 14" [ref=f17e117] [cursor=pointer]:
+          - generic [ref=f17e118]: W
+          - generic [ref=f17e119]: "14"
+        - button "T 15" [ref=f17e120] [cursor=pointer]:
+          - generic [ref=f17e121]: T
+          - generic [ref=f17e122]: "15"
+        - button "F 16" [ref=f17e123] [cursor=pointer]:
+          - generic [ref=f17e124]: F
+          - generic [ref=f17e125]: "16"
+        - button "S 17" [ref=f17e126] [cursor=pointer]:
+          - generic [ref=f17e127]: S
+          - generic [ref=f17e128]: "17"
+        - button "S 18" [ref=f17e129] [cursor=pointer]:
+          - generic [ref=f17e130]: S
+          - generic [ref=f17e131]: "18"
+      - generic [ref=f17e132]:
+        - generic [ref=f17e133]:
+          - button "Previous week" [ref=f17e134] [cursor=pointer]
+          - generic [ref=f17e137]: Oct 12 – 18
+          - button "Next week" [ref=f17e138] [cursor=pointer]
+          - button "Delete all plans" [ref=f17e141] [cursor=pointer]
+        - generic [ref=f17e144]:
+          - generic "Simulated time for the demo" [ref=f17e145]: Mon 5:44pm
+          - button "+1h" [ref=f17e150] [cursor=pointer]
+          - button "+1d" [ref=f17e151] [cursor=pointer]
+      - generic [ref=f17e153]:
+        - generic [ref=f17e156]:
+          - generic [ref=f17e157]: Mon
+          - generic [ref=f17e158]: "12"
+        - generic [ref=f17e161]:
+          - generic [ref=f17e162]:
+            - generic [ref=f17e163]: 5a
+            - generic [ref=f17e164]: 6a
+            - generic [ref=f17e165]: 7a
+            - generic [ref=f17e166]: 8a
+            - generic [ref=f17e167]: 9a
+            - generic [ref=f17e168]: 10a
+            - generic [ref=f17e169]: 11a
+            - generic [ref=f17e170]: 12p
+            - generic [ref=f17e171]: 1p
+            - generic [ref=f17e172]: 2p
+            - generic [ref=f17e173]: 3p
+            - generic [ref=f17e174]: 4p
+            - generic [ref=f17e175]: 5p
+            - generic [ref=f17e176]: 6p
+            - generic [ref=f17e177]: 7p
+            - generic [ref=f17e178]: 8p
+            - generic [ref=f17e179]: 9p
+            - generic [ref=f17e180]: 10p
+            - generic [ref=f17e181]: 11p
+          - generic [ref=f17e182]:
+            - button "Travel to school 4am – 5am" [ref=f17e225] [cursor=pointer]:
+              - generic [ref=f17e227]: Travel to school
+              - generic [ref=f17e232]: 4am – 5am
+            - button "Travel to school 4am – 5am" [ref=f17e233] [cursor=pointer]:
+              - generic [ref=f17e235]: Travel to school
+              - generic [ref=f17e240]: 4am – 5am
+            - button "Meeting 10am – 1pm" [ref=f17e241] [cursor=pointer]:
+              - generic [ref=f17e243]: Meeting
+              - generic [ref=f17e247]: 10am – 1pm
+  - generic [ref=f17e250]:
+    - generic [ref=f17e252]:
+      - button "Rei, idle. Poke" [ref=f17e253] [cursor=pointer]
+      - button "Rei says" [ref=f17e380] [cursor=pointer]:
+        - generic [ref=f17e381]: Hey Gadiel! So what's your week looking like?
+    - generic [ref=f17e382]:
+      - button "Tap anywhere to resume hands-free. Turn off hands-free" [ref=f17e384] [cursor=pointer]:
+        - generic [ref=f17e386]: Tap anywhere to resume hands-free
+      - generic [ref=f17e389]:
+        - button "Attach a reviewer or notes" [ref=f17e390] [cursor=pointer]
+        - textbox "Message" [ref=f17e393]:
+          - /placeholder: Tell Rei your plan…
+        - button "Switch to voice mode" [ref=f17e394] [cursor=pointer]
+  - navigation "Views" [ref=f17e399]:
+    - button "Today" [ref=f17e401] [cursor=pointer]
+    - button "Week" [ref=f17e405] [cursor=pointer]
+    - button "Tasks" [ref=f17e409] [cursor=pointer]
+    - button "Study" [ref=f17e412] [cursor=pointer]

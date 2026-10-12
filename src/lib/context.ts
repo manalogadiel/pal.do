@@ -16,7 +16,7 @@ export interface Snapshot {
   today: string
   /** Weather sentence fragment, or '' when unknown */
   weather: string
-  /** Short ids the model may use ("e3") → real event ids. Anything not in here doesn't exist. */
+  /** Short ids the model may use ("e3") → real event ids in this bounded snapshot. */
   refs: Record<string, string>
 }
 
@@ -41,6 +41,7 @@ export interface Open {
   draft?: { title: string; kind: string; due?: number; hours?: number } | null
   /** What the user asked to be called (Settings) */
   user?: string
+  focusTitle?: string
 }
 
 function describeCard(c: OpenCard) {
@@ -90,18 +91,22 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
 
   // What's actually on the calendar, with short ids the model uses to remove or move one
   const refs: Record<string, string> = {}
+  const focusTitle = open.focusTitle || open.card?.title || open.draft?.title
+  const words = focusTitle?.toLowerCase().split(/\W+/).filter((word) => word.length > 2 && !['review', 'study', 'exam', 'the', 'for'].includes(word)) ?? []
+  const relevant = (e: CalEvent) => words.length > 0 && words.every((word) => e.title.toLowerCase().includes(word))
   const upcoming = busy
-    .filter((e) => e.status === 'planned' && e.kind !== 'commute' && e.kind !== 'deadline' && e.end > now && e.start < today + 7 * DAY)
-    .sort((a, b) => a.start - b.start)
+    // Commutes only for today and tomorrow (a daily bus ride would crowd out the week), so "move my bus" can find it
+    .filter((e) => (e.status === 'planned' || e.status === 'proposed') && (e.kind !== 'commute' || e.start < today + 2 * DAY) && e.kind !== 'deadline' && e.end > now && e.start < today + 7 * DAY)
+    .sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || a.start - b.start)
     .slice(0, 10)
     .map((e, i) => {
       refs[`e${i + 1}`] = e.id
-      return `e${i + 1} ${span(e.start, e.end)} ${e.title} (${e.kind})`
+      return `e${i + 1} ${span(e.start, e.end)} ${e.title} (${e.status}, ${e.taskId && e.kind === 'work' ? 'review session' : e.kind}${e.taskId ? `; task ${e.taskId}` : ''})`
     })
 
   const upcomingTasks = tasks.filter((t) => t.due > now).sort((a, b) => a.due - b.due)
   const plannedFor = (t: Task) => busy.filter((e) => e.taskId === t.id && e.kind === 'work' && e.status === 'planned' && e.start >= now).reduce((a, e) => a + hoursOf(e), 0)
-  const taskLine = (t: Task) => `${t.title} (${t.kind}), ${fmtDay(t.due)} (needs ${fmtDur(Math.max(0, t.hours - t.doneHours))}, ${fmtDur(plannedFor(t))} planned)`
+  const taskLine = (t: Task) => `${t.title} (${t.kind}), ${fmtDay(t.due)} ${fmtTime(t.due)} (needs ${fmtDur(Math.max(0, t.hours - t.doneHours))} of review/work, ${fmtDur(plannedFor(t))} planned)`
   const nextTask = upcomingTasks[0]
   const atRisk = upcomingTasks.filter((t) => t.due - now < 3 * DAY && t.doneHours + plannedFor(t) < t.hours)
 
@@ -132,7 +137,7 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
 - Still today: ${leftLine}
 - Free today: ${fmtDur(freeH)}${gapLine ? ` (${gapLine})` : ''}
 - Free next 7 days: ${week.map((w) => `${short(w.d)} ${fmtDur(w.free)}`).join(', ')}${busiest && busiest.booked > 0 ? ` (busiest: ${short(busiest.d)}, ${fmtDur(busiest.booked)} booked)` : ''}
-- On the calendar, next 7 days (id, when, title, kind): ${upcoming.length ? `\n  ${upcoming.join('\n  ')}` : 'nothing'}
+- Calendar next 7 days (id,time,title,status/role; proposed=unaccepted): ${upcoming.length ? `\n  ${upcoming.join('\n  ')}` : 'nothing'}${upcoming.length === 10 ? ' (limited list; ask for day/title before declaring an event absent)' : ''}
 - Deadlines: ${upcomingTasks.length ? upcomingTasks.slice(0, 4).map(taskLine).join('; ') : 'none'}
 - Needs attention: ${atRisk.length ? atRisk.map((t) => `${t.title} due ${fmtDay(t.due)}`).join('; ') : 'nothing'}
 - Weather: ${wx}${prefLine ? `

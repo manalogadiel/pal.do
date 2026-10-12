@@ -31,7 +31,9 @@ function to24(h: number, ap?: string) {
 }
 
 const WEEKDAY_WORD = String.raw`mon(?:day)?|lunes|tue(?:s|sday)?|martes|wed(?:nesday)?|miyerkules|miyerkoles|thu(?:r|rs|rsday)?|huwebes|fri(?:day)?|biyernes|byernes|sat(?:urday)?|sabado|sun(?:day)?|linggo`
-const DAY_WORD = String.raw`(?:today|ngayon|tonight|mamaya(?:ng)?|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas|sa makalawa|${WEEKDAY_WORD})`
+/** "tom" is texting for tomorrow, unless it's someone named Tom ("dinner with Tom", "kasama si tom") */
+const TOM = String.raw`(?<!\b(?:with|si|kay|ni|and|kasama|&)\s+)tom(?![\w'])`
+const DAY_WORD = String.raw`(?:today|ngayon|tonight|mamaya(?:ng)?|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|${TOM}|bukas|sa makalawa|${WEEKDAY_WORD})`
 /** "mamaya hindi bukas", "today not tomorrow", "instead of saturday": the day after the "not" is the wrong one */
 const NOT_DAY = new RegExp(String.raw`\b(?:hindi|di|not|instead of|wag|huwag)\s+(?:sa\s+|ng\s+)?${DAY_WORD}\b`, 'gi')
 const ANY_DAY = new RegExp(String.raw`\b${DAY_WORD}\b|\bin \d+ days?\b|\b(?:${MONTHS.join('|')})[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}\/\d{1,2}\b`, 'gi')
@@ -39,9 +41,9 @@ const ANY_DAY = new RegExp(String.raw`\b${DAY_WORD}\b|\bin \d+ days?\b|\b(?:${MO
 function dayBase(text: string, now: number): number | null {
   const s = text.toLowerCase().replace(NOT_DAY, ' ')
   const today = startOfDay(now)
-  if (/\b(today|ngayon|tonight|mamaya|mamayang)\b/.test(s)) return today
+  if (/\b(today|ngayon|tonight|mamaya|mamayang|later)\b/.test(s)) return today
   if (/\b(day after tomorrow|sa makalawa)\b/.test(s)) return addDays(today, 2)
-  if (/\b(tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|tom|bukas)\b/.test(s)) return addDays(today, 1)
+  if (/\b(tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas)\b/.test(s) || new RegExp(String.raw`\b${TOM}`).test(s)) return addDays(today, 1)
   const inN = s.match(/\bin (\d+) days?\b/)
   if (inN) return addDays(today, +inN[1])
   const md = s.match(new RegExp(`\\b(${MONTHS.join('|')})[a-z]*\\.?\\s+(\\d{1,2})\\b`))
@@ -249,7 +251,10 @@ const STRIP = [
   /\bin \d+ days?\b/gi,
   new RegExp(`\\b(${MONTHS.join('|')})[a-z]*\\.?\\s+\\d{1,2}\\b`, 'gi'),
   /\b\d{1,2}\/\d{1,2}\b/g,
-  /\b(today|tonight|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas|ngayon|mamaya(ng)?|gabi|hapon|umaga|morning|afternoon|evening|noon|midnight|day after)\b/gi,
+  /\b(today|tonight|later|tomorrow|tomorow|tommorow|tommorrow|tmorrow|tmrw|tmr|bukas|ngayon|mamaya(ng)?|gabi|hapon|umaga|morning|afternoon|evening|noon|midnight|day after)\b/gi,
+  new RegExp(String.raw`\b${TOM}`, 'gi'),
+  // Taglish fillers ("may exam ako e", "bukas pa naman"), never part of a title. "E-commerce" keeps its E.
+  /(?<![\w-])(e+h*|naman|lang|daw|raw|pala|talaga|kasi|nga)(?![\w-])/gi,
   ...DAYS.map(([re]) => new RegExp(re.source, 'gi')),
   /\b(i have|i've got|i got|got|there's|there is|i need to|need to|have to|gotta|i need|kailangan ko|kailangan|may|meron|ako|ko|mo|ung|yung|ang|sa|ng|para|na|pa|ba|deadline|due|until|before|by|on|at|this|next|my|a|an|the|i|is|it's|its|to|for|of|and|please|pls|po|paki|add|put|schedule|sched|plan|lagyan|ilagay|lagay|remind me|help me)\b/gi,
   /\b(every|each|tuwing|daily|weekdays|weekends?|from|klase|class(es)?)\b/gi,

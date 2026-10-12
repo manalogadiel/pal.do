@@ -397,7 +397,7 @@ export async function runEval(opts: { llm?: boolean; apiKey?: string; pal?: PalI
     const card: OpenCard | undefined = c.open?.(now) ?? (c.lastEvent ? { type: 'event', title: c.lastEvent.title, start: t9, end: t9 + 3_600_000 } : undefined)
     const clock = c.clock ?? now
     const facts = card || c.setup || c.clock || c.user ? buildContext(clock, [...events, ...(c.setup?.(clock) ?? [])], tasks, null, {}, { card, cardIsLatest: c.latest ?? true, user: c.user }) : snap
-    const ask = () => askGroq(c.input, pal, apiKey, clock, c.history ?? [], facts, !!card)
+    const ask = () => askGroq(c.input, pal, apiKey, clock, c.history ?? [], facts, !!card, { provider: opts.local ? 'local' : 'cloud' })
     let r = await ask()
     // Every cloud model is out of its daily quota: more calls only fail, so stop instead of burning retries
     if (!r && aiFailure() === 'quota') {

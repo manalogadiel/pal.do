@@ -94,7 +94,7 @@ export async function runSessionTests(): Promise<string[]> {
   chime.play()
   eq('chime one shared context', made, 1)
   eq('chime resumed in the tap', resumed, 1)
-  eq('chime two beeps per play', beeps, 4)
+  eq('chime: the alarm melody is four notes per play', beeps, 8)
   // Alarm ops run in call order: a quick Pause must not finish before the Start's slower arming
   const order: string[] = []
   const serial = makeSerial()

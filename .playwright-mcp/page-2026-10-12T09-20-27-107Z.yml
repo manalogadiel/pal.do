@@ -1,0 +1,134 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - generic "Pal.Do" [ref=f1e5]:
+      - generic [ref=f1e6]: Pal
+      - generic [ref=f1e8]: Do
+    - button "AI and network status" [ref=f1e10] [cursor=pointer]:
+      - generic [ref=f1e14]: Offline · Your PC
+    - button "Rei. Switch pal" [ref=f1e1135] [cursor=pointer]:
+      - img "Rei, listening" [ref=f1e1365]
+      - generic [ref=f1e153]: Rei
+    - button "Pal and preferences" [ref=f1e154] [cursor=pointer]
+  - main [ref=f1e159]:
+    - generic [ref=f1e160]:
+      - generic [ref=f1e161]:
+        - button "M 12" [ref=f1e162] [cursor=pointer]:
+          - generic [ref=f1e163]: M
+          - generic [ref=f1e164]: "12"
+        - button "T 13" [ref=f1e165] [cursor=pointer]:
+          - generic [ref=f1e166]: T
+          - generic [ref=f1e167]: "13"
+        - button "W 14" [ref=f1e168] [cursor=pointer]:
+          - generic [ref=f1e169]: W
+          - generic [ref=f1e170]: "14"
+        - button "T 15" [ref=f1e171] [cursor=pointer]:
+          - generic [ref=f1e172]: T
+          - generic [ref=f1e173]: "15"
+        - button "F 16" [ref=f1e174] [cursor=pointer]:
+          - generic [ref=f1e175]: F
+          - generic [ref=f1e176]: "16"
+        - button "S 17" [ref=f1e177] [cursor=pointer]:
+          - generic [ref=f1e178]: S
+          - generic [ref=f1e179]: "17"
+        - button "S 18" [ref=f1e180] [cursor=pointer]:
+          - generic [ref=f1e181]: S
+          - generic [ref=f1e182]: "18"
+      - generic [ref=f1e183]:
+        - generic [ref=f1e184]:
+          - button "Previous week" [ref=f1e185] [cursor=pointer]
+          - generic [ref=f1e188]: Oct 12 – 18
+          - button "Next week" [ref=f1e189] [cursor=pointer]
+          - button "Delete all plans" [ref=f1e192] [cursor=pointer]
+        - generic [ref=f1e195]:
+          - generic "Simulated time for the demo" [ref=f1e196]: Mon 5:20pm
+          - button "+1h" [ref=f1e201] [cursor=pointer]
+          - button "+1d" [ref=f1e202] [cursor=pointer]
+      - generic [ref=f1e204]:
+        - generic [ref=f1e207]:
+          - generic [ref=f1e208]: Mon
+          - generic [ref=f1e209]: "12"
+        - generic [ref=f1e212]:
+          - generic [ref=f1e213]:
+            - generic [ref=f1e214]: 5a
+            - generic [ref=f1e215]: 6a
+            - generic [ref=f1e216]: 7a
+            - generic [ref=f1e217]: 8a
+            - generic [ref=f1e218]: 9a
+            - generic [ref=f1e219]: 10a
+            - generic [ref=f1e220]: 11a
+            - generic [ref=f1e221]: 12p
+            - generic [ref=f1e222]: 1p
+            - generic [ref=f1e223]: 2p
+            - generic [ref=f1e224]: 3p
+            - generic [ref=f1e225]: 4p
+            - generic [ref=f1e226]: 5p
+            - generic [ref=f1e227]: 6p
+            - generic [ref=f1e228]: 7p
+            - generic [ref=f1e229]: 8p
+            - generic [ref=f1e230]: 9p
+            - generic [ref=f1e231]: 10p
+            - generic [ref=f1e232]: 11p
+          - generic [ref=f1e233]:
+            - button "Travel to school 4am – 5am" [ref=f1e276] [cursor=pointer]:
+              - generic [ref=f1e278]: Travel to school
+              - generic [ref=f1e283]: 4am – 5am
+            - button "Travel to school 4am – 5am" [ref=f1e284] [cursor=pointer]:
+              - generic [ref=f1e286]: Travel to school
+              - generic [ref=f1e291]: 4am – 5am
+            - button "Meeting 10am – 1pm" [ref=f1e292] [cursor=pointer]:
+              - generic [ref=f1e294]: Meeting
+              - generic [ref=f1e298]: 10am – 1pm
+  - button "Close chat" [ref=f1e1463] [cursor=pointer]
+  - generic [ref=f1e300]:
+    - generic [ref=f1e1464]:
+      - button "Done" [ref=f1e1465] [cursor=pointer]
+      - button "Mute spoken replies" [ref=f1e1466] [cursor=pointer]
+    - log [ref=f1e1471]:
+      - generic [ref=f1e1472]:
+        - generic [ref=f1e1473]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+        - generic [ref=f1e1476]: how is my week
+        - generic [ref=f1e1478]: Busy pero may maraming free slots, lalo na sa hapon at gabi ng Lunes hanggang Linggo!
+        - generic [ref=f1e1481]: whats my name
+        - generic [ref=f1e1483]: Ikaw si Gadiel, syempre!
+        - generic [ref=f1e1487]:
+          - generic [ref=f1e1488]: Hey, did you get to this?
+          - generic [ref=f1e1490]:
+            - generic [ref=f1e1491]:
+              - generic [ref=f1e1494]: Meeting
+              - generic [ref=f1e1495]: 10am–1pm
+            - generic [ref=f1e1496]:
+              - button "Done" [ref=f1e1497] [cursor=pointer]
+              - button "Partly" [ref=f1e1498] [cursor=pointer]
+              - button "Not yet" [ref=f1e1499] [cursor=pointer]
+        - generic [ref=f1e1501]:
+          - generic [ref=f1e1502]: So… how did this one go?
+          - generic [ref=f1e1504]:
+            - generic [ref=f1e1505]:
+              - generic [ref=f1e1508]: Meeting
+              - generic [ref=f1e1509]: 10am–1pm
+            - generic [ref=f1e1510]:
+              - button "Done" [ref=f1e1511] [cursor=pointer]
+              - button "Partly" [ref=f1e1512] [cursor=pointer]
+              - button "Not yet" [ref=f1e1513] [cursor=pointer]
+        - generic [ref=f1e1514]: Nakikinig na ako! Sabihin mo lang "Hi Jhyvie" pag kailangan mo ako.
+        - generic [ref=f1e1517]: May exam ako e
+        - generic [ref=f1e1519]: Exam. When does it start?
+    - generic [ref=f1e301]:
+      - generic:
+        - generic:
+          - button "Rei, listening. Poke" [ref=f1e1523] [cursor=pointer]
+          - generic [ref=f1e1657]:
+            - generic [ref=f1e1659]: Rei
+            - generic [ref=f1e1660]: · listening
+      - generic [ref=f1e477]:
+        - button "Rei is talking… say \"Hi Rei\" to interrupt. Turn off hands-free" [ref=f1e1661] [cursor=pointer]:
+          - generic [ref=f1e481]: Rei is talking… say "Hi Rei" to interrupt
+        - generic [ref=f1e484]:
+          - textbox "Message" [active] [ref=f1e485]:
+            - /placeholder: Tell Rei your plan…
+          - button "Switch to voice mode" [ref=f1e486] [cursor=pointer]
+  - navigation "Views" [ref=f1e491]:
+    - button "Today" [ref=f1e493] [cursor=pointer]
+    - button "Week" [ref=f1e497] [cursor=pointer]
+    - button "Tasks" [ref=f1e501] [cursor=pointer]
+    - button "Study" [ref=f1e504] [cursor=pointer]

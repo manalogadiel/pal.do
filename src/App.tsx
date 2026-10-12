@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ANSWERABLE, defaultHours, greetLine, say, turn, type Awaiting, type Card, type Draft, type PendingEvent } from './lib/agent'
 import { addDays, at, DAY, fmtDay, fmtHours, fmtTime, HOUR, hoursOf, MIN, seedWeek, startOfDay, startOfWeek, uid, type CalEvent, type PalId, type PalState, type Task } from './lib/core'
-import { clashes, freeGaps, nearestFree, occurrences, propose, type Energy, type Prefs } from './lib/schedule'
+import { clashes, freeGaps, moveAside, nearestFree, occurrences, propose, type Energy, type Prefs } from './lib/schedule'
 import { buildContext, type OpenCard } from './lib/context'
-import { parseRange, parseWhen } from './lib/parse'
+import { isYes, namedDay, parseHours, parseRange, parseWhen } from './lib/parse'
+import { wrongPal } from './lib/wake'
 import { getCachedWeather, refreshWeather, weatherLine, type Weather } from './lib/weather'
 import { Calendar, LoadStrip } from './components/Calendar'
 import { Chat, type Msg, type MascotBubble } from './components/Chat'
 import { BlockPopover, DeletePlansSheet, Onboarding, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
-import { ChevronL, ChevronR, Clock, Gear, Moon, Sun, Trash, Wordmark } from './components/Icons'
+import { ChevronD, ChevronL, ChevronR, Clock, Gear, Moon, Sun, Trash, Wordmark } from './components/Icons'
 import { Pal, PALS } from './pals/Pal'
 import { Rail, TabBar, type View } from './components/Nav'
 import { Today } from './components/Today'
 import { Tasks } from './components/Tasks'
-import { loadKokoro, speakKokoro, stopKokoro } from './lib/voice'
-import { cancelSessionAlarms, enableAlarms, notifyWeb, playChime, scheduleSessionAlarms, scheduleTimerAlarms, syncEventAlarms, unlockChime } from './lib/notifications'
+import { stopKokoro } from './lib/voice'
+import { hasNativeTts, speakNative, stopNative } from './lib/native-tts'
+import { deleteFolder, getFile, listFiles, listFolders, newFolder, saveFolder, type Folder, type LibraryFile } from './lib/library'
+import { importFile } from './lib/study-files'
+import { studyHours, suggestFolder, terms, titleFromFileName, topicsOf } from './lib/study-material'
+import type { LibraryMode, LibraryTarget } from './components/Library'
+import { cancelSessionAlarms, enableAlarms, notifyWeb, playChime, playSound, scheduleSessionAlarms, scheduleTimerAlarms, syncEventAlarms, unlockChime } from './lib/notifications'
 import { focusElapsed, fromSaved, isPaused, LONG_EVERY, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './lib/session'
 import { addReminder, addTime, cancelTimer, fmtLeft, isPaused as isTimerPaused, newestTimer, NO_ALARMS, pauseTimer, resumeTimer, sayLength, startTimer, tickAlarms, timeLeft, upcomingAlarms, type Alarms, type Alert } from './lib/timers'
 import { parseCommand, type Command } from './lib/commands'
@@ -23,6 +29,11 @@ import { expectFollowUp, isHandsFreeOn, setPalSpeaking, startHandsFree, stopHand
 import { Study } from './components/Study'
 import { aiFailure, alignToMessage, askGroq, CLOUD_CHAIN, cloudIssue, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, preloadOllama, PRIMARY_MODEL, recoverEvent, toLocalIso, transcribeGroq, type AiAction, type AiFailure, type ChatTurn, type Claim } from './lib/groq'
 import { StatusBadge } from './components/StatusBadge'
+import { AI_MODE_EVENT, getAiMode, isPhoneAiPlatform } from './lib/ai-mode'
+import { AiRequestGate } from './lib/ai-request'
+import { chooseProvider, getNativeFailure, phoneModelAnswers } from './lib/groq'
+import { automaticModelSetup, nativeErrorMessage, phoneAi } from './lib/native-ai'
+import { describeFocus, emptyFocus, eventFromFocus, removePreviewedEvents, resolveStudyRequest, selectStudyGroup, updateConversationFocus, type ConversationFocus } from './lib/conversation'
 
 const KEY = 'paldo-v1'
 const QUIET: [number, number] = [23, 7]
@@ -30,7 +41,7 @@ const MAX_CHECKINS = 3
 const VOICE_PITCH: Record<PalId, number> = { rei: 1.1, diel: 0.9, jhyvie: 1.3, jaypee: 1.05 }
 
 interface Settings { pal: PalId; name: string; energy: Energy; onboarded: boolean; voiceOn: boolean; notify: boolean; notifyAsked: boolean; advancedMode?: boolean; prefs?: Prefs; lastBrief?: string; userName?: string; handsFree?: boolean; sttDeviceOnly?: boolean }
-interface Saved { settings: Settings; events: CalEvent[]; tasks: Task[]; msgs: Msg[]; asked: string[]; alerted: string[]; log: Record<string, number>; offset: number; session?: Session; focusLog?: Record<string, number>; alarms?: Alarms }
+interface Saved { settings: Settings; events: CalEvent[]; tasks: Task[]; msgs: Msg[]; asked: string[]; alerted: string[]; log: Record<string, number>; offset: number; session?: Session; focusLog?: Record<string, number>; alarms?: Alarms; conversation?: ConversationFocus }
 
 function load(): Saved {
   try {
@@ -47,7 +58,9 @@ function load(): Saved {
 /** "delete mo yan", "tanggalin mo", "cancel that" */
 const REMOVE_ASK = /\b(delete|remove|tanggal\w*|bura\w*|alis\w*|cancel)\b/i
 /** "add anyway", "ok lang", "yung original": keep the asked time even though it overlaps */
-const ADD_ANYWAY = /\b(any ?ways?|kahit (na )?(overlap|sabay|ganun|ganon|ganyan)|ok(ay)? lang|ituloy|tuloy (mo|na|lang)|(yung|the) (original|una|first)( time)?|same time|as is)\b/i
+/** Phone-model errors the user can fix (import a model, free space); anything else is just a missed reply */
+const NATIVE_SETUP_ISSUES = ['MISSING_MODEL', 'UNSUPPORTED_ARCH', 'INVALID_MODEL', 'INSUFFICIENT_SPACE', 'LOAD_FAILED', 'PROMPT_TOO_LONG']
+const ADD_ANYWAY =/\b(any ?ways?|kahit (na )?(overlap|sabay|ganun|ganon|ganyan)|ok(ay)? lang|ituloy|tuloy (mo|na|lang)|(yung|the) (original|una|first)( time)?|same time|as is)\b/i
 /** "asaan", "wala sa calendar", "where is it": they can't find something Pal just added */
 const WHERE_ASK = /\b(asan|asaan|nasaan|nasan|where('?s| is| did) (it|that)( go)?|wala sa (calendar|kalendaryo)|di ko (makita|nakita)|hindi ko (makita|nakita)|can'?t (see|find))\b/i
 
@@ -57,11 +70,15 @@ const isQuiet = (t: number) => {
 }
 
 export default function App() {
+  const aiRequests = useRef(new AiRequestGate())
   const init = useMemo(load, [])
   const [settings, setSettings] = useState(init.settings)
   const [events, setEvents] = useState(init.events)
   const [tasks, setTasks] = useState(init.tasks)
   const [msgs, setMsgs] = useState(init.msgs)
+  const [conversation, setConversation] = useState<ConversationFocus>(init.conversation ?? emptyFocus())
+  const conversationRef = useRef(conversation)
+  const saveConversation = (focus: ConversationFocus) => { conversationRef.current = focus; setConversation(focus) }
   // The pal's current line. Never persisted, never in the feed.
   const [bubble, setBubble] = useState<MascotBubble | null>(() => ({ id: uid(), mascotId: init.settings.pal, text: greetLine(init.settings.pal, init.settings.userName), kind: 'greeting' }))
   const [asked, setAsked] = useState(init.asked)
@@ -90,13 +107,21 @@ export default function App() {
   const [lastIntent, setLastIntent] = useState<string>('')
   // Your PC's AI takes ~40s to load the first time: start it now, not on the first message
   useEffect(() => preloadOllama(), [])
+  useEffect(() => {
+    if (!isPhoneAiPlatform()) return
+    const setup = automaticModelSetup(() => phoneAi.prepare!(), () => !document.hidden)
+    setup.start()
+    document.addEventListener('visibilitychange', setup.start)
+    return () => { setup.stop(); document.removeEventListener('visibilitychange', setup.start) }
+  }, [])
   // Keep today's weather warm so offline questions still get an answer
   useEffect(() => {
-    const go = () => refreshWeather().then((w) => w && setWeather(w))
+    const go = () => { if (isPhoneAiPlatform() && getAiMode() === 'offline') return; void refreshWeather().then((w) => w && setWeather(w)) }
     go()
     const i = setInterval(go, 30 * MIN)
     window.addEventListener('online', go)
-    return () => { clearInterval(i); window.removeEventListener('online', go) }
+    window.addEventListener(AI_MODE_EVENT, go)
+    return () => { clearInterval(i); window.removeEventListener('online', go); window.removeEventListener(AI_MODE_EVENT, go) }
   }, [])
 
   useEffect(() => {
@@ -116,6 +141,14 @@ export default function App() {
   const [dayIdx, setDayIdx] = useState((new Date().getDay() + 6) % 7)
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 899px)').matches)
   const [chatOpen, setChatOpen] = useState(false) // mobile drawer
+  // Mobile: the pal + text box dock tucked into a small pal button, so the page underneath gets the whole screen.
+  // Remembered; a dot on the button means Pal said something meanwhile.
+  const [dockMin, setDockMinState] = useState(() => { try { return localStorage.getItem('paldo.dock') === 'min' } catch { return false } })
+  const dockMinRef = useRef(dockMin)
+  dockMinRef.current = dockMin
+  const [unseen, setUnseen] = useState(false)
+  const setDockMin = (v: boolean) => { setDockMinState(v); setUnseen(false); try { localStorage.setItem('paldo.dock', v ? 'min' : 'open') } catch {} }
+  useEffect(() => { if (chatOpen) setUnseen(false) }, [chatOpen])
   const [clearing, setClearing] = useState(false)
   const [collapsed, setCollapsed] = useState(false) // desktop bubble
   const [instant, setInstant] = useState(false) // keyboard toggles skip the morph
@@ -218,7 +251,7 @@ export default function App() {
       const line = say(palRef.current, key)
       if (natural) {
         if (document.hidden) notifyWeb(PALS[palRef.current].name, line)
-        if (!isQuiet(Date.now())) playChime()
+        if (!isQuiet(Date.now())) next.phase === 'focus' ? playSound('focus') : next.phase === 'break' ? playSound('break') : playChime()
         // The Study screen shows the line itself; on other tabs a toast is the visual cue, which stays in quiet hours
         if (viewRef.current !== 'study') toast({ text: line })
       }
@@ -295,8 +328,8 @@ export default function App() {
 
   /* ---------- persistence & clocks ---------- */
   useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify({ settings, events, tasks, msgs: msgs.slice(-80), asked, alerted, log, offset, session, focusLog, alarms } satisfies Saved))
-  }, [settings, events, tasks, msgs, asked, alerted, log, offset, session, focusLog, alarms])
+    localStorage.setItem(KEY, JSON.stringify({ settings, events, tasks, msgs: msgs.slice(-80), asked, alerted, log, offset, session, focusLog, alarms, conversation } satisfies Saved))
+  }, [settings, events, tasks, msgs, asked, alerted, log, offset, session, focusLog, alarms, conversation])
   useEffect(() => {
     const i = setInterval(() => setClock(Date.now()), 20_000)
     const mq = window.matchMedia('(max-width: 899px)')
@@ -327,11 +360,6 @@ export default function App() {
     speechSynthesis.addEventListener('voiceschanged', load)
     return () => speechSynthesis.removeEventListener('voiceschanged', load)
   }, [])
-  useEffect(() => {
-    // warm the offline voice early so replies don't fall back to the browser voice
-    const t = setTimeout(loadKokoro, settings.voiceOn ? 0 : 3000)
-    return () => clearTimeout(t)
-  }, [settings.voiceOn])
   const voiceOnRef = useRef(settings.voiceOn)
   /* ---------- voice & speech ---------- */
   const cleanForSpeech = (raw: string): string => {
@@ -350,10 +378,23 @@ export default function App() {
 
   const speak = useCallback((text: string, force = false) => {
     if ((!voiceOnRef.current && !force) || !text) return
-    if (!('speechSynthesis' in window)) return
-
     const clean = cleanForSpeech(text)
     if (!clean) return
+    // The Android app: the phone's own voice (the WebView has none). Same hand-off as below when it finishes.
+    if (hasNativeTts()) {
+      setPalSpeaking(true, clean)
+      feel('talking', 60_000)
+      void speakNative(clean, pal).finally(() => {
+        setMood((m) => (m?.state === 'talking' ? null : m))
+        setPalSpeaking(false)
+        if (followNext.current) {
+          followNext.current = false
+          expectFollowUp()
+        }
+      })
+      return
+    }
+    if (!('speechSynthesis' in window)) return
 
     window.speechSynthesis.cancel()
     const u = new SpeechSynthesisUtterance(clean)
@@ -434,6 +475,8 @@ export default function App() {
   const dismiss = useCallback((id: string) => setToasts((x) => x.filter((t) => t.id !== id)), [])
   const palSay = (text: string, extra: Partial<Msg> = {}, state: PalState = 'talking') => {
     setBubble({ id: uid(), mascotId: palRef.current, text, kind: 'response' })
+    if (dockMinRef.current) setUnseen(true)
+    if (!voiceOnRef.current && !document.hidden) playSound('receive')
     // Always record pal replies in the chat history feed, avoiding immediate duplicates
     setMsgs((m) => {
       const last = m[m.length - 1]
@@ -480,7 +523,7 @@ export default function App() {
     // "Hi Jhyvie" … (pause): a chime and "Yes?" on screen, then the next sentence is the command
     onWake: () => {
       lastVoice.current = Date.now()
-      playChime()
+      playSound('wake')
       setBubble({ id: uid(), mascotId: palRef.current, text: say(palRef.current, 'hfYes'), kind: 'response' })
     },
     onCommand: (text: string) => {
@@ -488,12 +531,18 @@ export default function App() {
       sendRef.current(text, true)
     },
     onIdle: () => palSay(say(palRef.current, 'hfIdle', { name: PALS[palRef.current].name })),
+    // "Hey Jhyvie" while Rei listens: Rei says who it is, then handles the request (or waits for it)
+    onWrongName: (wrong: string, command: string) => {
+      lastVoice.current = Date.now()
+      palSay(say(palRef.current, 'wrongPal', { wrong, me: PALS[palRef.current].name }))
+      if (command) sendRef.current(command, true)
+    },
     // "Hi Jhyvie" over Pal's own voice: stop talking and listen
     onBargeIn: () => {
       lastVoice.current = Date.now()
       followNext.current = false
       window.speechSynthesis?.cancel()
-      stopKokoro()
+      stopKokoro(); stopNative()
     },
   })
   async function setHandsFree(on: boolean) {
@@ -677,8 +726,12 @@ export default function App() {
     if (!settings.onboarded || isQuiet(Date.now())) return
     const today = new Date().toDateString()
     if (settings.lastBrief === today) return
+    let cancelled = false
+    const mode = getAiMode()
     const id = setTimeout(async () => {
-      const w = (await Promise.race([refreshWeather(), new Promise<null>((r) => setTimeout(() => r(null), 4000))])) ?? getCachedWeather()
+      const offline = isPhoneAiPlatform() && mode === 'offline'
+      const w = offline ? getCachedWeather() : (await Promise.race([refreshWeather(), new Promise<null>((r) => setTimeout(() => r(null), 4000))])) ?? getCachedWeather()
+      if (cancelled || document.hidden || (isPhoneAiPlatform() && getAiMode() !== mode)) return
       if (w) setWeather(w)
       const s = buildContext(Date.now(), ev.current, tk.current, w, settings.prefs, { user: settings.userName })
       const h = new Date().getHours()
@@ -690,7 +743,7 @@ export default function App() {
       ].filter(Boolean).join(' '))
       setSettings((x) => ({ ...x, lastBrief: today }))
     }, 1500)
-    return () => clearTimeout(id)
+    return () => { cancelled = true; clearTimeout(id) }
   }, [settings.onboarded]) // eslint-disable-line react-hooks/exhaustive-deps
   const resolve = (id: string, resolved: string, patch: Partial<Msg> = {}) => setMsgs((m) => m.map((x) => (x.id === id ? { ...x, resolved, ...patch } : x)))
   const flash = (ids: string[]) => {
@@ -704,22 +757,24 @@ export default function App() {
 
   /* ---------- planning ---------- */
   /** replaces: planned blocks the new plan takes over (removed only on Accept). perDay: fill each day up to that many hours. */
-  function offer(task: Task, hours: number, base: CalEvent[], lead: string, opts: { replaces?: string[]; perDay?: number } = {}) {
-    const p = propose(task, hours, base, nowRef.current, settings.energy, settings.prefs, opts.perDay)
+  function offer(task: Task, hours: number, base: CalEvent[], lead: string, opts: { replaces?: string[]; perDay?: number; notBefore?: number; preserveTotal?: boolean } = {}) {
+    const replaced = new Set(opts.replaces ?? [])
+    const p = propose(task, hours, base.filter((e) => !replaced.has(e.id)), Math.max(nowRef.current, opts.notBefore ?? nowRef.current), settings.energy, settings.prefs, opts.perDay)
     const next = [...base, ...p.blocks]
     setEvents(next)
     const commute = task.kind === 'exam' && base.some((e) => e.kind === 'commute' && e.start > nowRef.current && e.start < task.due && !e.note)
-    const card: Card = { type: 'proposal', taskId: task.id, blockIds: p.blocks.map((b) => b.id), why: p.why, shortfall: p.shortfall, freeHours: p.freeHours, commute, replaces: opts.replaces?.length ? opts.replaces : undefined }
+    const card: Card = { type: 'proposal', taskId: task.id, blockIds: p.blocks.map((b) => b.id), why: p.why, shortfall: p.shortfall, freeHours: p.freeHours, commute, replaces: opts.replaces?.length ? opts.replaces : undefined, taskUpdate: { due: task.due, hours: opts.preserveTotal ? task.hours : task.doneHours + hours } }
     // An older plan for the same task is stale now: say so, instead of an empty card
     setMsgs((ms) => ms.map((m) => (m.card?.type === 'proposal' && m.card.taskId === task.id && !m.resolved ? { ...m, resolved: 'Replaced by a newer plan' } : m)))
-    palSay(lead, { card }, p.shortfall > 0 ? 'alarmed' : 'talking')
+    const times = p.blocks.map((b) => `${fmtDay(b.start)} ${fmtTime(b.start)}–${fmtTime(b.end)}`).join(', ')
+    palSay(times ? `${say(pal, 'proposal')} ${times}.${p.shortfall > 0 ? ` ${fmtHours(p.shortfall)} still needs a slot.` : ''}` : 'No suitable study slots fit before this deadline. Which constraint can we adjust?', { card }, p.shortfall > 0 ? 'alarmed' : 'talking')
     if (p.blocks[0]) {
       showWeekOf(p.blocks[0].start)
       flash(p.blocks.map((b) => b.id))
     }
   }
 
-  function createTask(d: Draft, lead = say(pal, 'proposal'), perDay?: number) {
+  function createTask(d: Draft, lead = say(pal, 'proposal'), perDay?: number, notBefore?: number) {
     if (!d.due || !d.hours) return
     const hasTime = new Date(d.due).getHours() !== 23
     const task: Task = { id: uid(), title: d.title, kind: d.kind, due: d.due, hours: d.hours, doneHours: 0 }
@@ -728,7 +783,7 @@ export default function App() {
         ? { id: uid(), title: d.title, kind: 'exam', start: d.due, end: d.due + 1.5 * HOUR, status: 'planned', taskId: task.id }
         : { id: uid(), title: d.title, kind: 'deadline', start: d.due, end: d.due, status: 'planned', taskId: task.id }
     setTasks((t) => [...t, task])
-    offer(task, d.hours, [...ev.current, marker], lead, { perDay })
+    offer(task, d.hours, [...ev.current, marker], lead, { perDay, notBefore })
   }
 
   /** replaces: planned blocks an added event overlaps. They count as gone, but stay on the calendar until the new plan is accepted. */
@@ -746,7 +801,7 @@ export default function App() {
       setEvents(kept)
       return palSay(say(pal, 'reflowNone'))
     }
-    offer({ ...task, doneHours }, left, kept, opts.lead ?? say(pal, 'reflow', { h: fmtHours(left) }), { replaces: opts.replaces })
+    offer({ ...task, doneHours }, left, kept, opts.lead ?? say(pal, 'reflow', { h: fmtHours(left) }), { replaces: opts.replaces, preserveTotal: true })
   }
 
   /** "Prelims review" plans toward the Prelims task already set up, instead of a duplicate task */
@@ -761,20 +816,103 @@ export default function App() {
   }
 
   /** The model asked for study time ("find 3h before Friday", "2h every day until the 17th"). The app picks the slots. */
-  function findTime(g: AiAction, lead: string) {
+  function findTime(g: AiAction, lead: string, opts: { replace?: boolean; notBefore?: number } = {}) {
     const now = nowRef.current
-    const due = parseIsoToLocalMs(g.due) || now + 7 * DAY
+    const existing = matchTask(g.title ?? '')
+    const resolved = resolveStudyRequest({ intent: 'study', title: g.title, rejected: [], due: parseIsoToLocalMs(g.due) ?? undefined }, ev.current, tk.current, now)
+    const due = resolved?.due ?? parseIsoToLocalMs(g.due) ?? existing?.due
+    if (!due || due <= now) return palSay(say(pal, 'studyWhich'))
     const perDay = g.perDay && g.perDay > 0 ? Math.min(g.perDay, 8) : undefined
+    const earliest = Math.max(now, opts.notBefore ?? now)
     // Days with room to study before the due time; today only if a full day's share still fits before 11pm
     let days = 0
-    for (let d = startOfDay(now); at(d, 7) < due; d = addDays(d, 1)) if (d !== startOfDay(now) || at(d, 23) - now >= (perDay ?? 0) * HOUR) days++
+    for (let d = startOfDay(earliest); at(d, 7) < due; d = addDays(d, 1)) if (d !== startOfDay(earliest) || at(d, 23) - earliest >= (perDay ?? 0) * HOUR) days++
     const hours = perDay ? perDay * Math.max(1, days) : g.hours || 2
-    const existing = matchTask(g.title ?? '')
     if (existing) {
       const base = ev.current.filter((e) => !(e.taskId === existing.id && e.status === 'proposed'))
-      return offer(existing, perDay ? hours : g.hours || Math.max(0.5, existing.hours - existing.doneHours), base, lead, { perDay })
+      const replaces = opts.replace ? base.filter((e) => e.taskId === existing.id && e.kind === 'work' && e.status === 'planned' && e.start > now).map((e) => e.id) : undefined
+      return offer({ ...existing, due }, perDay ? hours : g.hours || Math.max(0.5, existing.hours - existing.doneHours), base, lead, { perDay, replaces, notBefore: opts.notBefore })
     }
-    createTask({ title: g.title?.trim() || 'Study', kind: 'assignment', due, hours }, lead, perDay)
+    if (resolved?.exam) {
+      const task: Task = { id: uid(), title: resolved.exam.title, kind: 'exam', due, hours, doneHours: 0 }
+      setTasks((tasks) => [...tasks, task])
+      return offer(task, hours, ev.current, lead, { perDay, notBefore: opts.notBefore })
+    }
+    createTask({ title: g.title?.trim() || 'Study', kind: 'assignment', due, hours }, lead, perDay, opts.notBefore)
+  }
+
+  /* ---------- Study library ---------- */
+  const [studySection, setStudySectionState] = useState<'focus' | 'library'>(() => { try { return localStorage.getItem('paldo.study') === 'library' ? 'library' : 'focus' } catch { return 'focus' } })
+  const setStudySection = (s: 'focus' | 'library') => { setStudySectionState(s); try { localStorage.setItem('paldo.study', s) } catch {} }
+  const [libraryTarget, setLibraryTarget] = useState<LibraryTarget | null>(null)
+  function openInLibrary(t: LibraryTarget) {
+    setStudySection('library')
+    setLibraryTarget(t)
+    setView('study')
+    if (mobile) setChatOpen(false)
+  }
+
+  /** "Plan study" on a reviewer: its length sets the hours, its subject's exam the deadline (asked for if there's none) */
+  function planFromFile(file: LibraryFile, folder: Folder) {
+    setCollapsed(false)
+    if (mobile) setChatOpen(true)
+    const hours = studyHours(file.pages)
+    const title = titleFromFileName(file.name)
+    const subject = new Set(terms(folder.name))
+    const task = tk.current.filter((t) => t.due > nowRef.current && terms(t.title).some((w) => subject.has(w))).sort((a, b) => a.due - b.due)[0]
+    const topics = topicsOf(file.chunks, 4)
+    if (task) {
+      palSay(say(pal, 'planFromFile', { file: title, h: fmtHours(hours), topics: topics.length ? ` It covers ${topics.join(', ')}.` : '' }))
+      return findTime({ type: 'findTime', title: task.title, hours, due: toLocalIso(task.due) }, '')
+    }
+    // No exam on the calendar for this subject yet: the usual "when's it due?" question, with the hours filled in.
+    // Whatever event the chat was on before is done, so "friday 9am" answers this, not that.
+    saveConversation(emptyFocus())
+    setDraft({ title: `${folder.name} exam`, kind: 'exam', hours })
+    setAwaiting('due')
+    palSay(say(pal, 'planNeedsDate', { file: title, h: fmtHours(hours), what: `${folder.name} exam` }))
+  }
+
+  /** The paperclip: file it under its subject (a new folder if there's none), then offer what Pal can do with it */
+  async function attachFile(file: File) {
+    setMsgs((m) => [...m, { id: uid(), from: 'me', text: `📎 ${file.name}` }])
+    setTyping(true)
+    try {
+      const folders = await listFolders()
+      const exams = tk.current.filter((t) => t.due > nowRef.current).map((t) => t.title)
+      const pick = suggestFolder(file.name, folders, exams)
+      let folder = folders.find((f) => f.id === pick.id)
+      const created = !folder
+      if (!folder) { folder = newFolder(pick.name, folders); await saveFolder(folder) }
+      const r = await importFile(file, folder.id)
+      if (typeof r === 'string') {
+        if (created) await deleteFolder(folder.id)
+        return palSay(say(pal, r === 'too-big' ? 'fileTooBig' : r === 'unsupported' ? 'fileUnsupported' : 'fileUnreadable', { file: file.name }))
+      }
+      palSay(say(pal, r.scanned ? 'fileScanned' : 'fileSaved', { file: titleFromFileName(file.name), folder: folder.name }), { card: { type: 'file', fileId: r.id, name: titleFromFileName(r.name), folderName: folder.name, scanned: r.scanned } }, 'happy')
+    } catch {
+      palSay(say(pal, 'fileUnreadable', { file: file.name }))
+    } finally {
+      setTyping(false)
+    }
+  }
+
+  /** "Quiz me on osmosis", "flashcards for bio", "read my reviewer aloud": the file that best matches, opened in that mode */
+  async function openStudyAid(mode: LibraryMode, topic: string) {
+    const files = (await listFiles()).filter((f) => !f.scanned)
+    if (!files.length) return palSay(say(pal, 'noFilesYet'))
+    const folders = await listFolders()
+    const want = new Set(terms(topic))
+    const score = (f: LibraryFile) => {
+      const name = terms(`${f.name} ${folders.find((x) => x.id === f.folderId)?.name ?? ''}`)
+      const body = terms(f.chunks.map((c) => `${c.heading ?? ''} ${c.text}`).join(' '))
+      return name.filter((w) => want.has(w)).length * 5 + body.filter((w) => want.has(w)).length
+    }
+    const best = want.size ? [...files].sort((a, b) => score(b) - score(a))[0] : files[0]
+    palSay(say(pal, mode === 'cards' ? 'openCards' : mode === 'quiz' ? 'openQuiz' : 'openRead', { file: titleFromFileName(best.name) }))
+    // A topic that's just the subject ("quiz me on bio") means the whole file
+    const subjectOnly = !!topic && terms(topic).every((w) => terms(best.name).includes(w) || terms(folders.find((x) => x.id === best.folderId)?.name ?? '').includes(w))
+    openInLibrary({ fileId: best.id, mode, topic: subjectOnly ? undefined : topic || undefined })
   }
 
   /* ---------- chat input ---------- */
@@ -786,25 +924,31 @@ export default function App() {
 
   /** Show one event as a confirm card (Add it / Never mind). Older unanswered event cards are marked replaced. */
   function previewEvent(text: string, e: { title: string; kind: string; start: number; end: number; days?: number[]; until?: number }) {
+    saveConversation({ intent: 'event', title: e.title, kind: e.kind as ConversationFocus['kind'], day: startOfDay(e.start), start: e.start, end: e.end, rejected: [] })
     const slots = e.days?.length ? occurrences(e.start, e.end, e.days, nowRef.current, e.until) : [{ start: e.start, end: e.end }]
     // A task's study blocks under it get new times on add; anything else it overlaps is a clash Pal asks about
     const conflicts = ev.current.filter((x) => x.kind === 'work' && x.taskId && (x.status === 'planned' || x.status === 'proposed') && slots.some((s) => x.start < s.end && x.end > s.start)).length
     const hit = clashes(slots, ev.current)
     const first = slots[0] ?? { start: e.start, end: e.end }
-    const alt = hit.length ? nearestFree(slots, ev.current, nowRef.current) ?? undefined : undefined
+    const alt = hit.length && e.kind !== 'exam' ? nearestFree(slots, ev.current, nowRef.current) ?? undefined : undefined
     const clash = hit.length ? [...new Map(hit.map((x) => [x.title, `${x.title}, ${fmtTime(x.start)}–${fmtTime(x.end)}`])).values()].slice(0, 2) : undefined
+    // A bus ride can move, an exam can't: offer to shift the ride instead of stacking the two
+    const aside = slots.length === 1 ? moveAside(first, hit, ev.current, nowRef.current) : null
+    const moveOther = aside ? { id: aside.event.id, title: aside.event.title, to: aside.to } : undefined
+    const move = aside ? say(pal, 'moveOther', { other: aside.event.title, to: `${fmtTime(aside.to.start)}–${fmtTime(aside.to.end)}` }) : ''
     setMsgs((ms) => ms.map((m) => (m.card?.type === 'event' && !m.resolved ? { ...m, resolved: 'Changed' } : m)))
     // A clash is the app's line, never the model's ("free ka pa!" over a 4–5am commute).
     // Hands-free: they may not be looking, so the card is asked out loud as a yes/no question.
     const line = clash
-      ? say(pal, alt ? 'overlapAsk' : 'overlapAskNoAlt', { clash: clash.join(' and '), alt: alt ? `${fmtTime(alt.start)}–${fmtTime(alt.end)}` : '' })
+      ? e.kind === 'exam' ? say(pal, 'examOverlap', { range: `${fmtTime(first.start)}–${fmtTime(first.end)}`, clash: clash.join(' and '), move }) : say(pal, alt ? 'overlapAsk' : 'overlapAskNoAlt', { clash: clash.join(' and '), alt: alt ? `${fmtTime(alt.start)}–${fmtTime(alt.end)}` : '' }) + move
       : isHandsFreeOn() ? say(pal, 'voiceAddAsk', { what: `${e.title}, ${fmtDay(first.start).replace(/,.*/, '')} ${fmtTime(first.start)}` }) : text
-    palSay(line, { card: { type: 'event', title: e.title, kind: e.kind, start: first.start, end: first.end, conflicts, whatIf: true, days: e.days, until: e.until, clash, alt } }, conflicts || clash ? 'alarmed' : 'talking')
+    palSay(line, { card: { type: 'event', title: e.title, kind: e.kind, start: first.start, end: first.end, conflicts, whatIf: true, days: e.days, until: e.until, clash, alt, moveOther } }, conflicts || clash ? 'alarmed' : 'talking')
     showWeekOf(first.start)
   }
 
   /** Remove or move something already on the calendar: a card first, nothing changes until the user says yes */
-  function previewChange(text: string, mode: 'remove' | 'move', e: CalEvent, to?: { start: number; end: number }) {
+  function previewChange(text: string, mode: 'remove' | 'move', e: CalEvent, to?: { start: number; end: number }, targets?: CalEvent[]) {
+    setMsgs((ms) => ms.map((m) => m.card?.type === 'change' && !m.resolved ? { ...m, resolved: 'Superseded by a newer selection' } : m))
     // The same slot on other days (a class, a daily session), so "remove all" is one tap
     const tod = (t: number) => t - startOfDay(t)
     const series = mode === 'remove'
@@ -814,7 +958,7 @@ export default function App() {
     const line = isHandsFreeOn() ? say(pal, mode === 'remove' ? 'voiceRemoveAsk' : 'voiceMoveAsk', { what }) : text
     const hit = to ? clashes([to], ev.current, e.id) : []
     const clash = hit.length ? hit.slice(0, 2).map((x) => `${x.title}, ${fmtTime(x.start)}–${fmtTime(x.end)}`) : undefined
-    palSay(line, { card: { type: 'change', mode, eventId: e.id, title: e.title, kind: e.kind, start: e.start, end: e.end, to, seriesIds: series.length > 1 ? series : undefined, clash } }, clash ? 'alarmed' : 'talking')
+    palSay(targets ? `Remove these ${targets.length} review blocks? The actual exam stays on your calendar.` : line, { card: { type: 'change', mode, eventId: e.id, title: e.title, kind: e.kind, start: e.start, end: e.end, to, targets: targets?.map((target) => ({ id: target.id, title: target.title, start: target.start, end: target.end })), seriesIds: targets ? undefined : series.length > 1 ? series : undefined, clash } }, clash ? 'alarmed' : 'talking')
     showWeekOf(to?.start ?? e.start)
     flash([e.id])
   }
@@ -830,9 +974,9 @@ export default function App() {
     const c = m.card
     if (!c) return { type: m.rule?.includes('redirected') ? 'redirect' : 'none' }
     // Just enough to remember what it offered: every field here is paid for on every message
-    if (c.type === 'event') return { type: 'addEvent', title: c.title, start: toLocalIso(c.start) }
-    if (c.type === 'proposal') return { type: 'findTime', title: tk.current.find((t) => t.id === c.taskId)?.title }
-    if (c.type === 'readback') return { type: 'createTask', title: c.draft.title, due: c.draft.due ? toLocalIso(c.draft.due) : undefined }
+    if (c.type === 'event') return { type: 'addEvent', title: c.title, kind: c.kind as AiAction['kind'], start: toLocalIso(c.start), end: toLocalIso(c.end) }
+    if (c.type === 'proposal') { const task = tk.current.find((t) => t.id === c.taskId); return { type: 'findTime', title: task?.title, hours: c.blockIds.reduce((h, id) => h + (ev.current.find((e) => e.id === id) ? hoursOf(ev.current.find((e) => e.id === id)!) : 0), 0), due: task ? toLocalIso(task.due) : undefined } }
+    if (c.type === 'readback') return { type: 'createTask', title: c.draft.title, due: c.draft.due ? toLocalIso(c.draft.due) : undefined, hours: c.draft.hours }
     if (c.type === 'change') return { type: c.mode === 'remove' ? 'removeEvent' : 'moveEvent', title: c.title }
     return { type: 'none' }
   }
@@ -909,6 +1053,18 @@ export default function App() {
   const queue = useRef<Promise<void>>(Promise.resolve())
   const unanswered = useRef<{ id: string; text: string; voice: boolean }[]>([])
   const [thinking, setThinking] = useState(0)
+  function cancelReply() {
+    aiRequests.current.cancel()
+    unanswered.current.splice(0)
+    setThinking(0); setTyping(false)
+  }
+  useEffect(() => {
+    const changed = () => cancelReply()
+    const hidden = () => { if (document.hidden) cancelReply() }
+    window.addEventListener(AI_MODE_EVENT, changed)
+    document.addEventListener('visibilitychange', hidden)
+    return () => { aiRequests.current.cancel(); window.removeEventListener(AI_MODE_EVENT, changed); document.removeEventListener('visibilitychange', hidden) }
+  }, [])
   const runRef = useRef(runTurn)
   runRef.current = runTurn
   const sendRef = useRef(send)
@@ -916,7 +1072,15 @@ export default function App() {
   /** voice: said out loud (hands-free), so Pal answers in one short spoken sentence */
   function send(text: string, voice = false) {
     const id = uid()
+    if (!voice) playSound('send')
     setMsgs((m) => [...m, { id, from: 'me', text }])
+    // "Hi Jhyvie" to Rei: Rei says who it is, then still handles whatever came after the name
+    const wrong = wrongPal(text, pal, settings.userName)
+    if (wrong) {
+      palSay(say(pal, 'wrongPal', { wrong: wrong.wrong, me: PALS[pal].name }))
+      if (!wrong.rest || /^[\s.!?,]*$/.test(wrong.rest)) return
+      text = wrong.rest
+    }
     // A ringing timer: "stop", "okay", "tama na" turns it off
     if (ringingRef.current && /^\W*(stop|ok(ay)?|tama na|got it|tigil|sige|thanks|salamat|done)\b/i.test(text)) {
       stopRinging()
@@ -925,6 +1089,12 @@ export default function App() {
     // Timers, reminders, the Study session, "what's next" and "what's my name": rules, instant and exact,
     // so they never wait behind an AI reply
     const s = sessionRef.current
+    // Study aids from their own reviewers: rules, so they work offline and don't use the cloud quota
+    const aid = text.match(/\b(quiz me|practice quiz|flash ?cards?|read (?:it|this|my [\w-]+|the [\w-]+) (?:aloud|out loud))\b(?:\s+(?:on|about|for|from|sa)\s+(.+?))?[.!?]*$/i)
+    if (aid) {
+      setLastIntent('study aid')
+      return void openStudyAid(/^quiz|practice/i.test(aid[1]) ? 'quiz' : /^flash/i.test(aid[1]) ? 'cards' : 'read', (aid[2] ?? '').trim())
+    }
     const cmd = parseCommand(text, nowRef.current, {
       timers: !!newestTimer(alarmsRef.current),
       study: s.phase === 'idle' ? 'idle' : isPaused(s) ? 'paused' : 'running',
@@ -946,7 +1116,7 @@ export default function App() {
         if (batch.length) return runRef.current(batch.map((b) => b.text).join('\n'), batch.some((b) => b.voice), batch[0].id)
       })
       .catch((e) => console.warn('[chat] turn failed', e))
-      .finally(() => setThinking((n) => n - 1))
+      .finally(() => setThinking(unanswered.current.length))
   }
 
   /**
@@ -954,16 +1124,21 @@ export default function App() {
    * it waited is the one an "oo" answers), but never the user's own later lines.
    */
   async function runTurn(text: string, voice: boolean, id: string) {
+    setThinking(1)
+    const lease = aiRequests.current.begin()
+    const provider = chooseProvider()
     const idx = msgs.findIndex((m) => m.id === id)
     const { recent, waitMsg, waitIsLatest, lastEvent } = chatState(idx < 0 ? msgs : msgs.filter((m, i) => i < idx || m.from === 'pal'))
     // Pal's past lines carry the action they really sent (the card), so the model remembers what it proposed
     // (last 6 lines: every one is paid for again on each message)
-    const history: ChatTurn[] = recent.filter((m) => m.text).slice(-6).map((m) => (m.from === 'me' ? { role: 'user', content: m.text } : { role: 'assistant', content: m.text, action: cardAction(m) }))
+    const history: ChatTurn[] = recent.filter((m) => m.text).slice(-6).map((m) => (m.from === 'me' ? { role: 'user', content: m.text } : { role: 'assistant', content: m.text, action: cardAction(m), outcome: m.resolved ?? (m.card ? 'Waiting for confirmation' : undefined) }))
 
     // "Add anyway" / "ok lang" to an overlap card: the asked time, no AI needed
     const wc = waitMsg?.card
     if (wc?.type === 'event' && wc.clash && ADD_ANYWAY.test(text) && text.split(/\s+/).length <= 8) return answerCard(waitMsg!, true, '', 'orig')
+    const update = updateConversationFocus(conversationRef.current, text, nowRef.current)
     const snap = buildContext(nowRef.current, ev.current, tk.current, weather, settings.prefs, {
+      focusTitle: update.focus.title,
       card: openCardOf(waitMsg),
       cardIsLatest: waitIsLatest,
       draft: draft && awaiting && awaiting !== 'confirm' ? draft : null,
@@ -984,16 +1159,71 @@ export default function App() {
     // psychiatric diagnosis, or prompt injection, bypass AI entirely and use the safe refusal.
     // Off-topic is NOT a safety block: let the AI write its own warm redirect.
     const isSafetyFilterTriggered = Boolean(t.rule && !/off-topic/.test(t.rule))
+    saveConversation(update.focus)
+    if (!isSafetyFilterTriggered) {
+      if (update.directive === 'greeting') return palSay(greetLine(pal, settings.userName))
+      if (update.directive === 'newRequest' || (update.directive === 'correct' && !update.focus.title)) {
+        setDraft(null); setAwaiting(null); setPending(null)
+        if (waitMsg) resolve(waitMsg.id, 'Superseded by a new request')
+        return palSay(say(pal, 'newEventAsk'))
+      }
+      if (update.directive === 'decline') {
+        setDraft(null); setAwaiting(null); setPending(null)
+        return waitMsg ? answerCard(waitMsg, false, '') : palSay(say(pal, 'declineOk'))
+      }
+      const plans = msgs.flatMap((m) => m.card?.type === 'proposal' ? [m.card.blockIds] : [])
+      if (update.focus.intent === 'remove') {
+        const group = selectStudyGroup(text, ev.current, plans)
+        if (group) return previewChange('', 'remove', group[0], undefined, group)
+        const clock = parseWhen(text, nowRef.current)
+        if (clock?.hadTime && /\b(ung|yung|mga|the|one|at)\b/i.test(text)) {
+          const matches = ev.current.filter((e) => (e.status === 'planned' || e.status === 'proposed') && e.kind !== 'deadline' && e.start === clock.t)
+          if (matches.length === 1) return previewChange(say(pal, 'removeAsk'), 'remove', matches[0])
+          return palSay(say(pal, 'removeWhichTime'))
+        }
+        if (/\b(\d+|apat|four|previous|old|dati|mga)\b/i.test(text) && /\b(remove|remoce|delete|tanggal\w*|alisin|bura\w*)\b/i.test(text)) return palSay(say(pal, 'removeWhichPlan'))
+      }
+      if (update.focus.intent === 'study' && (!waitMsg || (!!parseWhen(text, nowRef.current) && waitMsg.card?.type === 'proposal')) && (/\b(study|review|aral\w*|hours?|hrs?|oras)\b/i.test(text) || isYes(text) || !!parseHours(text) || !!parseWhen(text, nowRef.current))) {
+        const study = resolveStudyRequest(update.focus, ev.current, tk.current, nowRef.current)
+        if (!study) return palSay(say(pal, 'studyWhich'))
+        if (study.exam && update.focus.due && update.focus.due > study.exam.start) return palSay(say(pal, 'examStill', { what: `${study.exam.title} on ${fmtDay(study.exam.start)} at ${fmtTime(study.exam.start)}` }))
+        if (!study.hours) return palSay(say(pal, 'studyHours', { what: study.title }))
+        return findTime({ type: 'findTime', title: study.title, hours: study.hours, perDay: study.perDay, due: toLocalIso(study.due) }, '', { replace: study.replace, notBefore: study.notBefore })
+      }
+      const focusEvent = eventFromFocus(update.focus)
+      const hasUserTime = !!(parseRange(text, nowRef.current) || parseWhen(text, nowRef.current)?.hadTime)
+      if (update.focus.intent === 'event' && update.focus.awaitingEnd && update.focus.start != null) return palSay(say(pal, 'askEnd', { what: update.focus.title ?? '', when: `${fmtDay(update.focus.start)} at ${fmtTime(update.focus.start)}` }))
+      if (focusEvent && hasUserTime && !/\b(every|tuwing|daily|araw-araw|weekdays)\b/i.test(text)) {
+        setDraft(null); setAwaiting(null)
+        return previewEvent(say(pal, 'addAsk', { what: `${focusEvent.title}, ${fmtDay(focusEvent.start)} ${fmtTime(focusEvent.start)}–${fmtTime(focusEvent.end)}` }), focusEvent)
+      }
+      // "May exam ako bukas", or just the day ("bukas pa naman") after Pal asked the time: the day is noted, the time is still needed
+      if (update.focus.intent === 'event' && update.focus.title && !update.focus.start && !waitMsg && (/\b(i have|may|meron|later|mamaya)\b/i.test(text) || namedDay(text, nowRef.current) != null))
+        return palSay(say(pal, 'askStart', { what: `${update.focus.title}${update.focus.day != null ? ` on ${fmtDay(update.focus.day)}` : ''}` }))
+    }
+    snap.full += `\n${describeFocus(update.focus)}`
+    // The phone's own model is slow (20s+) and often wrong, so on it the rules answer whatever they understood,
+    // and the model only gets what they didn't ("unknown")
+    const phoneTurn = phoneModelAnswers(provider)
+    if (phoneTurn && !isSafetyFilterTriggered && update.focus.intent === 'event' && update.focus.title && update.focus.start == null && !waitMsg && t.key === 'unknown')
+      return palSay(say(pal, 'askStart', { what: `${update.focus.title}${update.focus.day != null ? ` on ${fmtDay(update.focus.day)}` : ''}` }))
+    // "friday 9am" to "when is it?", "3 hours" to "how long?": filling the question Pal just asked is the rules' alone
+    // (a model took "friday 9am" for a reminder)
+    const slotFill = !!draft && text.split(/\s+/).length <= 6 && ((awaiting === 'due' && !!parseWhen(text, nowRef.current)) || (awaiting === 'hours' && !!parseHours(text)))
+    const rulesAnswered = (phoneTurn && t.key !== 'unknown') || slotFill
+    // Why no model answered, said instead of the rules' "didn't catch that" (one bubble, not two)
+    let explain: string | null = null
 
     // Any model (Groq online, or Ollama on your PC) answers every safe message, mid-task too.
     // A new day or time for the waiting card, or a short "oo" / "wag na" to it, is the rules' alone:
     // no waiting ~10s on your PC's model for an answer that's already decided.
-    if (!isSafetyFilterTriggered && a?.type !== 'reviseEvent' && a?.type !== 'confirmEvent' && a?.type !== 'skipEvent') {
+    if (!isSafetyFilterTriggered && !rulesAnswered && a?.type !== 'reviseEvent' && a?.type !== 'confirmEvent' && a?.type !== 'skipEvent') {
       setTyping(true)
       const t0 = performance.now()
       try {
         const groqKey = getGroqApiKey()
-        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!waitMsg, { voice })
+        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!waitMsg, { voice, focus: update.focus, provider, signal: lease.signal })
+        if (!lease.isCurrent()) return
         if (ai?.text) {
           // A reply claiming it already changed something it can't: point at the real way instead
           // "Nasa calendar mo na" about something this chat really added is true, not a claim: keep the model's words
@@ -1004,7 +1234,8 @@ export default function App() {
           groqAction = ai.action && alignToMessage(ai.action, text, nowRef.current)
           // Pal talked an event through in words ("i-lock ko na!") but sent no card: recover it from the chat as a card
           if (ai.claimed === 'add' && !trueClaim && !waitMsg && (!ai.action || ai.action.type === 'none') && a?.type !== 'addEvent') {
-            const found = await recoverEvent([...history, { role: 'user', content: text }, { role: 'assistant', content: ai.text }], nowRef.current, groqKey)
+            const found = await recoverEvent([...history, { role: 'user', content: text }, { role: 'assistant', content: ai.text }], nowRef.current, groqKey, provider)
+            if (!lease.isCurrent()) return
             if (found) {
               groqAction = found
               groqText = say(pal, 'confirmHint')
@@ -1020,10 +1251,18 @@ export default function App() {
           }
           usedModel = ai.modelUsed
           setLastLatency(Math.round(performance.now() - t0))
-        } else failed = aiFailure()
+        } else {
+          failed = aiFailure()
+          const nativeIssue = getNativeFailure()
+          // Setup problems (no model, can't load) say how to fix it; a missed or turned-down reply is just a friendly retry
+          if (nativeIssue && NATIVE_SETUP_ISSUES.includes(nativeIssue)) explain = nativeErrorMessage(nativeIssue)
+          else if (nativeIssue && nativeIssue !== 'CANCELLED') explain = say(pal, 'phoneModelMissed')
+          else if (provider === 'cloud' && !hasCloudAi()) explain = say(pal, 'cloudNotSet')
+        }
       } catch {}
       setTyping(false)
     }
+    if (!lease.isCurrent()) return
     // A "redirect" is only trusted when the rules engine also saw nothing to plan (e.g. "math exam tuesday" is in scope)
     if (groqAction?.type === 'redirect' && (a || t.draft)) {
       groqText = null
@@ -1063,7 +1302,7 @@ export default function App() {
     // Say once why replies just got simpler or slower, instead of switching voice silently
     const viaCloud = !!usedModel && CLOUD_CHAIN.includes(usedModel)
     const ci = cloudIssue()
-    const notice = viaCloud ? null
+    const notice = viaCloud || (explain && t.key === 'unknown') ? null
       : modelLed ? (ci?.kind === 'quota' ? 'quotaLocal' : null) // your PC's model stood in for the cloud
       : failed === 'quota' ? 'quotaOut' : failed === 'rate' ? 'busy' : failed // 'timeout' / 'error' → slowNet, 'offline' below
     if (viaCloud) noticeRef.current = null
@@ -1077,6 +1316,7 @@ export default function App() {
     // The reply lands before the next queued turn starts, so that turn sees it
     await new Promise<void>((done) => setTimeout(() => { try { respond() } finally { done() } }, modelLed ? 0 : 380 + Math.random() * 380))
     function respond() {
+      if (!lease.isCurrent()) return
       // 0. A correction to the waiting card is deterministic; it wins over whatever the AI guessed
       if (a?.type === 'reviseEvent') return previewEvent(t.text, a)
       if (a?.type === 'pref') {
@@ -1107,6 +1347,12 @@ export default function App() {
           })
         }
         if (g.type === 'removeEvent' || g.type === 'moveEvent') {
+          if (g.type === 'removeEvent' && g.ids?.length) {
+            const ids = [...new Set(g.ids.map((id) => snap.refs[id]))]
+            const targets = ids.map((id) => ev.current.find((e) => e.id === id && e.kind === 'work' && e.taskId)).filter((e): e is CalEvent => !!e)
+            if (targets.length !== ids.length) return palSay(say(pal, 'removeWhichBlocks'))
+            return previewChange('', 'remove', targets[0], undefined, targets)
+          }
           const e = removeTarget ?? ev.current.find((x) => x.id === snap.refs[g.id ?? ''])
           if (e && g.type === 'removeEvent') return previewChange(groqText || say(pal, 'removeAsk'), 'remove', e)
           const s = parseIsoToLocalMs(g.start)
@@ -1123,7 +1369,7 @@ export default function App() {
           return palSay(groqText || say(pal, 'readback'), { card: { type: 'readback', draft: d } }, 'talking')
         }
         // The model picks the intent; the app does the math (slots, free time) so nothing is hallucinated
-        if (g.type === 'findTime') return findTime(g, groqText || say(pal, 'proposal'))
+        if (g.type === 'findTime') return findTime(g, groqText || say(pal, 'proposal'), { replace: update.focus.replace, notBefore: update.focus.notBefore })
         if (g.type === 'analyzeWeek') return palSay(groqText || `${summary()} ${snap.insight}`)
         // Free-form timer/reminder/focus wording the rules didn't catch: the app runs it and says exactly what it did
         if (g.type === 'setTimer' && g.seconds) return runCommand({ type: 'setTimer', seconds: Math.round(g.seconds), warnSeconds: g.warnSeconds ? Math.round(g.warnSeconds) : undefined })
@@ -1143,7 +1389,7 @@ export default function App() {
       const justAdded = !waitMsg && REMOVE_ASK.test(text) && (!modelLed || (!g || g.type === 'none') && /\b(yan|iyan|yun|iyon|ito|that|it|this)\b/i.test(text))
         ? lastAddedEvent(recent) : undefined
       if (justAdded) return previewChange(say(pal, 'removeAsk'), 'remove', justAdded)
-      const replyText = groqText ?? t.text
+      const replyText = groqText ?? (explain && t.key === 'unknown' ? explain : t.text)
       if (!a) return palSay(replyText, modelLed ? {} : { card: t.card, chips: t.chips, rule: t.rule })
       if (a.type === 'confirmEvent' || a.type === 'skipEvent' || a.type === 'confirmDraft') {
         if (a.type === 'confirmDraft' && !modelLed) return createTask(a.draft)
@@ -1160,11 +1406,12 @@ export default function App() {
       if (a.type === 'summary') return palSay(groqText || `${summary()} ${snap.insight}`)
       if (a.type === 'weather') {
         setTyping(true)
-        return void refreshWeather().then((w) => {
+        const result = provider === 'native' ? Promise.resolve(getCachedWeather()) : refreshWeather()
+        return void result.then((w) => lease.commit(() => {
           setTyping(false)
           if (w) setWeather(w)
           palSay(w ? weatherReply(w) : say(pal, 'weatherNone'))
-        })
+        }))
       }
       if (a.type === 'freeTime') return palSay(freeTimeReply(a.day))
       // The model only talked, but the message had a concrete time: still a card, so "lagay mo 3pm" never dead-ends
@@ -1212,6 +1459,7 @@ export default function App() {
   function onCard(id: string, action: string, arg?: string, line?: string) {
     const m = msgs.find((x) => x.id === id)
     const c = m?.card
+    if (m?.resolved && action !== 'chip' && action !== 'commute') return
     if (action === 'chip') return setMsgs((ms) => ms.map((x) => (x.id === id ? { ...x, chips: undefined } : x)))
     if (c?.type === 'readback') {
       if (action === 'confirm') {
@@ -1225,20 +1473,29 @@ export default function App() {
     }
     if (c?.type === 'proposal') {
       if (action === 'accept') {
+        if (!c.blockIds.length || c.blockIds.some((blockId) => !ev.current.some((e) => e.id === blockId && e.status === 'proposed'))) {
+          resolve(id, 'Plan changed; please request new times')
+          return palSay('That plan has changed. Ask me for new review times so I can show a current plan.')
+        }
+        saveConversation({ ...conversationRef.current, intent: 'none' })
+        playSound('added')
         const ids = new Set(c.blockIds)
         // Blocks this plan replaces (they overlapped something new) go only now, on Accept
         const gone = new Set(c.replaces ?? [])
         const before = ev.current
+        const beforeTasks = tk.current
         setEvents(before.filter((e) => !gone.has(e.id)).map((e) => (ids.has(e.id) && e.status === 'proposed' ? { ...e, status: 'planned' } : e)))
+        if (c.taskUpdate) setTasks(beforeTasks.map((task) => task.id === c.taskId ? { ...task, ...c.taskUpdate } : task))
         resolve(id, 'Added to your calendar')
         palSay(line || say(pal, 'accepted'))
         setTimeout(() => feel('happy', 1600), 60)
-        toast({ text: `${c.blockIds.length} block${c.blockIds.length > 1 ? 's' : ''} added`, action: { label: 'Undo', fn: () => { setEvents(before); resolve(id, '') } } })
+        toast({ text: `${c.blockIds.length} block${c.blockIds.length > 1 ? 's' : ''} added`, action: { label: 'Undo', fn: () => { setEvents(before); setTasks(beforeTasks); resolve(id, '') } } })
         if (!settings.notifyAsked) {
           setSettings((s) => ({ ...s, notifyAsked: true }))
           setTimeout(() => palSay(say(pal, 'notify'), { card: { type: 'notify' } }), 1400)
         }
       } else if (action === 'decline') {
+        saveConversation(emptyFocus())
         const ids = new Set(c.blockIds)
         setEvents(ev.current.filter((e) => !(ids.has(e.id) && e.status === 'proposed')))
         resolve(id, 'Kept your calendar as is')
@@ -1254,7 +1511,16 @@ export default function App() {
       return
     }
     if (c?.type === 'checkin' && arg) return answerCheckin(arg, action as 'done' | 'partly' | 'notyet')
+    if (c?.type === 'file') {
+      if (action !== 'plan') return openInLibrary({ fileId: c.fileId, mode: action as LibraryMode })
+      return void (async () => {
+        const f = await getFile(c.fileId)
+        const folder = f && (await listFolders()).find((x) => x.id === f.folderId)
+        if (f && folder) planFromFile(f, folder)
+      })()
+    }
     if (c?.type === 'event') {
+      saveConversation(action === 'skipEvent' ? emptyFocus() : { ...conversationRef.current, intent: 'none' })
       if (action === 'skipEvent') return resolve(id, 'Not added')
       // "Use 5:15am": the free time Pal suggested instead of the clash; "Add anyway" keeps the asked time
       const use = action === 'useAlt' && c.alt ? c.alt : { start: c.start, end: c.end }
@@ -1262,15 +1528,18 @@ export default function App() {
       const slots = repeats.length ? repeats : [use]
       const added: CalEvent[] = slots.map((s) => ({ id: uid(), title: c.title, kind: c.kind as CalEvent['kind'], start: s.start, end: s.end, status: 'planned' }))
       const hit = ev.current.filter((e) => e.kind === 'work' && e.taskId && (e.status === 'planned' || e.status === 'proposed') && added.some((a) => e.start < a.end && e.end > a.start))
+      // "Move Bus home to 6pm": the ride shifts out of the way, the asked time stays
+      const shift = action === 'moveOther' ? c.moveOther : undefined
       // Unaccepted suggestions under it go now. Accepted study blocks stay until the user accepts new times for them.
-      const base = [...ev.current.filter((e) => !(hit.includes(e) && e.status === 'proposed')), ...added]
+      const base = [...ev.current.filter((e) => !(hit.includes(e) && e.status === 'proposed')).map((e) => (shift && e.id === shift.id ? { ...e, ...shift.to } : e)), ...added]
       // Study blocks under it (accepted or still suggested) mean a re-plan card follows
       const replan = hit.length > 0
       showWeekOf(added[0].start)
       setView('week')
       // Keep the chat open when a re-plan card is coming, so its Accept button is in reach
       if (mobile && !replan) setChatOpen(false)
-      const moved = use === c.alt ? ` at ${fmtTime(use.start)}` : ''
+      const moved = use === c.alt ? ` at ${fmtTime(use.start)}` : shift ? `, ${shift.title} moved to ${fmtTime(shift.to.start)}` : ''
+      playSound('added')
       resolve(id, replan ? `Added${moved}. New times for the overlap below` : added.length > 1 ? `Added ${added.length} sessions${moved}${c.until ? ` until ${fmtDay(c.until)}` : ' over the next 8 weeks'}` : `Added${moved}`)
       setTimeout(() => feel('happy', 1400), 60)
       const affected = [...new Set(hit.map((e) => e.taskId).filter(Boolean))] as string[]
@@ -1289,17 +1558,26 @@ export default function App() {
         return palSay(line || say(pal, 'kept'))
       }
       const before = ev.current
-      const ids = new Set(action === 'removeAll' && c.seriesIds?.length ? c.seriesIds : [c.eventId])
+      const ids = new Set(c.targets ? c.targets.map((target) => target.id) : action === 'removeAll' && c.seriesIds?.length ? c.seriesIds : [c.eventId])
       if (!before.some((e) => ids.has(e.id))) return resolve(id, 'Already gone')
       const undo = { label: 'Undo', fn: () => { setEvents(before); resolve(id, '') } }
       if (c.mode === 'remove') {
-        setEvents(before.filter((e) => !ids.has(e.id)))
+        const targets = c.targets ?? before.filter((e) => ids.has(e.id)).map((e) => e.id === c.eventId ? { id: c.eventId, title: c.title, start: c.start, end: c.end } : e)
+        const next = removePreviewedEvents(before, targets)
+        if (!next) {
+          resolve(id, 'Calendar changed; please select the blocks again')
+          return palSay('Those blocks have changed since this preview. Please select them again before removing them.')
+        }
+        setEvents(next)
+        saveConversation(emptyFocus())
+        playSound('removed')
         resolve(id, ids.size > 1 ? `Removed ${ids.size}` : 'Removed')
         toast({ text: `Removed “${c.title}”${ids.size > 1 ? ` ×${ids.size}` : ''}`, action: undo })
         palSay(line || say(pal, 'removed', { what: c.title }), {}, 'happy')
       } else if (c.to) {
         const to = c.to
         setEvents(before.map((e) => (e.id === c.eventId ? { ...e, start: to.start, end: to.end } : e)))
+        playSound('added')
         resolve(id, 'Moved')
         showWeekOf(to.start)
         flash([c.eventId])
@@ -1414,7 +1692,7 @@ export default function App() {
     }
     if (!settings.voiceOn) setSettings((s) => ({ ...s, voiceOn: true })) // talking to it → it talks back
     window.speechSynthesis?.cancel()
-    stopKokoro()
+    stopKokoro(); stopNative()
     const r = new SR()
     r.lang = navigator.language?.startsWith('en') ? navigator.language : 'en-US'
     r.interimResults = true
@@ -1484,6 +1762,7 @@ export default function App() {
   }
 
   function clearAllPlans() {
+    saveConversation(emptyFocus())
     const beforeEv = ev.current, beforeTk = tk.current
     setEvents([])
     setTasks([])
@@ -1493,6 +1772,7 @@ export default function App() {
   }
 
   function resetDemo() {
+    saveConversation(emptyFocus())
     const s = seedWeek(Date.now())
     setEvents(s.events)
     setTasks(s.tasks)
@@ -1516,11 +1796,13 @@ export default function App() {
     <Chat
       msgs={msgs} bubble={bubble} pal={pal} palName={name} palState={palState} events={events}
       onSend={send} onCard={onCard} onHover={setHover} onTyping={setTyping} thinking={thinking > 0}
+      onCancelReply={cancelReply}
+      onAttach={(f) => void attachFile(f)}
       voiceOn={settings.voiceOn}
       setVoiceOn={(v) => {
         setSettings((s) => ({ ...s, voiceOn: v }))
         if (v) speak(say(pal, 'voiceOn'), true)
-        else { window.speechSynthesis?.cancel(); stopKokoro() }
+        else { window.speechSynthesis?.cancel(); stopKokoro(); stopNative() }
       }}
       micOn={micOn} toggleMic={toggleMic} micSupported={!!SR || !!navigator.mediaDevices?.getUserMedia} interim={interim} compact={mobile} noPal={(view === 'home' || view === 'study') && !chatOpen}
       handsFree={{ on: !!settings.handsFree, state: hf.state, progress: hf.progress, toggle: () => setHandsFree(!settings.handsFree) }}
@@ -1577,6 +1859,47 @@ export default function App() {
     </div>
   )
 
+  // On a phone: just the pal you're with; tap it for the others (four avatars pushed Settings off a 360px screen)
+  const [palMenu, setPalMenu] = useState(false)
+  const palChip = (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setPalMenu((o) => !o)}
+        aria-haspopup="true"
+        aria-expanded={palMenu}
+        aria-label={`${PALS[pal].name}. Switch pal`}
+        className="press flex h-10 items-center gap-1.5 rounded-full bg-ink py-1 pr-3 pl-1 text-paper shadow-[var(--edge)]"
+      >
+        <span className="grid size-8 place-items-center overflow-hidden rounded-full" style={{ background: PALS[pal].swatch }}>
+          <Pal id={pal} size={30} state={palState} animate />
+        </span>
+        <span className="text-[13px] font-semibold">{PALS[pal].name}</span>
+      </button>
+      {palMenu && (
+        <>
+          <button aria-label="Close" className="fixed inset-0 z-40 cursor-default" onClick={() => setPalMenu(false)} />
+          <div className="pop liquid-solid absolute top-full right-0 z-50 mt-2 flex gap-1 rounded-full p-1 shadow-[var(--shadow-lg)]" role="radiogroup" aria-label="Switch pal">
+            {(Object.keys(PALS) as PalId[]).map((id) => (
+              <button
+                key={id}
+                role="radio"
+                aria-checked={id === pal}
+                title={PALS[id].name}
+                aria-label={PALS[id].name}
+                onClick={() => { switchPal(id); setPalMenu(false) }}
+                className={`press grid size-10 place-items-center rounded-full ${id === pal ? 'bg-ink' : 'hover:bg-ink/[0.05]'}`}
+              >
+                <span className="grid size-8 place-items-center overflow-hidden rounded-full" style={{ background: PALS[id].swatch }}>
+                  <Pal id={id} size={30} state="idle" />
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+
   const openPop = (e: CalEvent, rect: DOMRect) => setPop({ ev: e, rect })
   const openTasks = tasks.filter((t) => t.due > now && t.doneHours < t.hours).length
   const goWeek = (i: number) => {
@@ -1612,6 +1935,13 @@ export default function App() {
         onSkip={studySkip}
         onStop={studyStop}
         onEnableAlarms={turnOnAlarms}
+        tasks={tasks}
+        section={studySection}
+        onSection={setStudySection}
+        libraryTarget={libraryTarget}
+        onLibraryTargetDone={() => setLibraryTarget(null)}
+        onPlanFile={planFromFile}
+        onToast={(text) => toast({ text })}
       />
     ) : view === 'tasks' ? (
       <Tasks now={now} tasks={tasks} events={events} onPlan={planTask} onAdd={(t) => { send(t); if (mobile) setChatOpen(true) }} />
@@ -1650,8 +1980,8 @@ export default function App() {
       {mobile ? (
         <>
           <header className="flex shrink-0 items-center gap-2 px-2 pt-1">
-            <Wordmark className="text-[18px]" />
-            <div className="flex-1" />
+            <Wordmark className="shrink-0 text-[18px]" />
+            <div className="min-w-0 flex-1" />
             {settings.advancedMode && (
               <StatusBadge
                 isOnline={isOnline}
@@ -1663,26 +1993,53 @@ export default function App() {
                 onOpenSettings={() => setEditing(true)}
               />
             )}
-            {palSwitch}
-            {themeBtn}
+            {palChip}
             <button
               onClick={() => setEditing(true)}
-              className="press grid size-10 place-items-center rounded-full text-ink-2"
+              className="press grid size-10 shrink-0 place-items-center rounded-full text-ink-2"
               aria-label="Pal and preferences"
               title="Pal and preferences"
             >
               <Gear className="size-[18px]" />
             </button>
           </header>
-          <main key={view} className="under-dock view-in liquid min-h-0 flex-1 overflow-hidden rounded-[28px]">{content}</main>
+          <main key={view} className={`${dockMin && !chatOpen ? 'under-dock-min' : 'under-dock'} view-in liquid min-h-0 flex-1 overflow-hidden rounded-[28px]`}>{content}</main>
           {/* Floating composer + pal above the tab bar; tap expands into the full conversation */}
           {chatOpen && <button aria-label="Close chat" onClick={() => setChatOpen(false)} className="fixed inset-0 z-30 bg-ink/10 backdrop-blur-[2px]" />}
-          <div
-            className="liquid-solid fixed inset-x-3 z-40 flex flex-col rounded-[30px] transition-[top] duration-[420ms] [transition-timing-function:var(--ease-drawer)]"
-            style={{ top: chatOpen ? 'calc(max(44px, env(safe-area-inset-top)) + 56px)' : 'auto', bottom: chatOpen ? 'max(12px, env(safe-area-inset-bottom))' : 'calc(max(12px, env(safe-area-inset-bottom)) + 60px)' }}
-          >
-            {chat}
-          </div>
+          {dockMin && !chatOpen ? (
+            // Minimized: just the pal, bottom right. Tap brings the text box and mic back.
+            <button
+              type="button"
+              onClick={() => setDockMin(false)}
+              aria-label={`Show the chat with ${name}${unseen ? ', new message' : ''}`}
+              className="pop press liquid-solid fixed right-4 z-40 grid size-14 place-items-center rounded-full"
+              style={{ bottom: 'calc(max(12px, env(safe-area-inset-bottom)) + 70px)' }}
+            >
+              <span className="grid size-11 place-items-center overflow-hidden rounded-full" style={{ background: PALS[pal].swatch }}>
+                <Pal id={pal} size={40} state={palState} animate />
+              </span>
+              {settings.handsFree && hf.state !== 'off' && <span className="absolute inset-0 rounded-full ring-2 ring-tangerine/60" aria-hidden />}
+              {unseen && <span className="absolute top-0.5 right-0.5 size-3 rounded-full bg-tangerine ring-2 ring-paper" aria-hidden />}
+            </button>
+          ) : (
+            <div
+              className="liquid-solid fixed inset-x-3 z-40 flex flex-col rounded-[30px] transition-[top] duration-[420ms] [transition-timing-function:var(--ease-drawer)]"
+              style={{ top: chatOpen ? 'calc(max(44px, env(safe-area-inset-top)) + 56px)' : 'auto', bottom: chatOpen ? 'max(12px, env(safe-area-inset-bottom))' : 'calc(max(12px, env(safe-area-inset-bottom)) + 60px)' }}
+            >
+              {!chatOpen && (
+                <button
+                  type="button"
+                  onClick={() => setDockMin(true)}
+                  aria-label="Minimize the chat"
+                  title="Minimize"
+                  className="press absolute -top-3.5 right-4 z-50 grid h-7 w-10 place-items-center rounded-full bg-paper text-ink-2 shadow-[var(--edge),0_4px_12px_-4px_rgb(0_0_0/0.25)] hover:text-ink"
+                >
+                  <ChevronD className="size-4" />
+                </button>
+              )}
+              {chat}
+            </div>
+          )}
           <div className="fixed inset-x-3 z-30" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}>
             <TabBar view={view} setView={(v) => { setView(v); setChatOpen(false) }} taskCount={openTasks} studying={session.phase !== 'idle'} />
           </div>
@@ -1753,6 +2110,7 @@ export default function App() {
             deviceOnly: !!settings.sttDeviceOnly,
             setDeviceOnly: (v) => setSettings((s) => ({ ...s, sttDeviceOnly: v })),
           }}
+          extras={mobile && settings.onboarded ? { dark, toggleDark: () => setDark((d) => !d), onSyllabus: () => { setEditing(false); setSyllabus(true) } } : undefined}
         />
       )}
       {editing && (

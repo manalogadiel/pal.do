@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeDraft, type Card } from '../lib/agent'
 import { fmtDay, fmtHours, fmtTime, type CalEvent, type PalId, type PalState } from '../lib/core'
 import { Pal } from '../pals/Pal'
-import { ChevronL, Glyph, Mic, Send, Speaker, SpeakerOff, Waves, X } from './Icons'
+import { Calendar, Cards, ChevronL, Clip, Glyph, Mic, Quiz, Send, Speaker, SpeakerOff, Waves, X } from './Icons'
 import type { HandsFreeState } from '../lib/handsfree'
 
 /** The pal's current line: greeting or latest reply. Lives only in the speech bubble. */
@@ -59,6 +59,9 @@ interface Props {
   handsFree?: { on: boolean; state: HandsFreeState; progress?: number; toggle: () => void }
   /** The AI is working on a reply: "• • •" in the log, so nobody types the same thing twice */
   thinking?: boolean
+  onCancelReply?: () => void
+  /** The paperclip: a reviewer, handout or notes for the Study library */
+  onAttach?: (file: File) => void
 }
 
 /** What the hands-free chip says, and its dot */
@@ -98,6 +101,7 @@ export function Chat(p: Props) {
   const feedRef = useRef<HTMLDivElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const speech = useSpeech(p.bubble)
 
   useEffect(() => {
@@ -261,6 +265,7 @@ export function Chat(p: Props) {
                     {[0, 160, 320].map((d) => (
                       <span key={d} className="size-1.5 rounded-full bg-ink-3 motion-safe:animate-bounce" style={{ animationDelay: `${d}ms` }} />
                     ))}
+                    {p.onCancelReply && <button type="button" aria-label="Cancel reply" onClick={p.onCancelReply} className="ml-2 text-[12px] text-ink-2">Cancel</button>}
                   </div>
                 </div>
               )}
@@ -302,7 +307,15 @@ export function Chat(p: Props) {
             )
           })()}
           {!voiceMode ? (
-            <div className="relative flex items-end gap-1.5 rounded-[28px] bg-ink/[0.05] p-1.5 pl-5 transition-[background-color,box-shadow] duration-200 focus-within:bg-ink/[0.07]">
+            <div className={`relative flex items-end gap-1.5 rounded-[28px] bg-ink/[0.05] p-1.5 transition-[background-color,box-shadow] duration-200 focus-within:bg-ink/[0.07] ${p.onAttach ? 'pl-1.5' : 'pl-5'}`}>
+              {p.onAttach && (
+                <>
+                  <button type="button" onClick={() => fileRef.current?.click()} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover:text-ink" aria-label="Attach a reviewer or notes" title="Attach a reviewer or notes">
+                    <Clip className="size-[18px]" />
+                  </button>
+                  <input ref={fileRef} type="file" accept=".pdf,.txt,.md,image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onAttach!(f); e.target.value = '' }} />
+                </>
+              )}
               <textarea
                 ref={inputRef}
                 value={text}
@@ -596,6 +609,27 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
     )
   }
 
+  if (c.type === 'file') {
+    return (
+      <div className={wrap}>
+        <div className="inline-flex min-h-10 max-w-full items-center gap-2.5 rounded-full bg-ink/[0.04] pr-4 pl-3 text-[13.5px]">
+          <Clip className="size-4 shrink-0 text-ink-2" />
+          <span className="truncate font-semibold">{c.name}</span>
+          <span className="shrink-0 text-ink-2">{c.folderName}</span>
+        </div>
+        {!c.scanned && (
+          <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
+            <Btn primary onClick={() => onCard(m.id, 'plan')}><span className="inline-flex items-center gap-1.5"><Calendar className="size-3.5" /> Plan study</span></Btn>
+            <Btn onClick={() => onCard(m.id, 'cards')}><span className="inline-flex items-center gap-1.5"><Cards className="size-3.5" /> Flashcards</span></Btn>
+            <Btn onClick={() => onCard(m.id, 'quiz')}><span className="inline-flex items-center gap-1.5"><Quiz className="size-3.5" /> Quiz me</span></Btn>
+            <Btn onClick={() => onCard(m.id, 'read')}><span className="inline-flex items-center gap-1.5"><Speaker className="size-3.5" /> Read aloud</span></Btn>
+          </div>
+        )}
+        {c.scanned && <div className="mt-2.5 -ml-1"><Btn onClick={() => onCard(m.id, 'read')}>Open it</Btn></div>}
+      </div>
+    )
+  }
+
   if (c.type === 'event') {
     const G = Glyph[(c.kind as keyof typeof Glyph) ?? 'shift'] ?? Glyph.shift
     return (
@@ -621,8 +655,9 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
         )}
         {done ? <Done t={done} /> : (
           <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
+            {c.moveOther && <Btn primary onClick={() => onCard(m.id, 'moveOther')}>Move {c.moveOther.title} to {fmtTime(c.moveOther.to.start)}</Btn>}
             {c.alt && <Btn primary onClick={() => onCard(m.id, 'useAlt')}>Use {fmtTime(c.alt.start)}</Btn>}
-            <Btn primary={!c.alt} onClick={() => onCard(m.id, 'addEvent')}>{c.clash?.length ? 'Add anyway' : c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
+            <Btn primary={!c.alt && !c.moveOther} onClick={() => onCard(m.id, 'addEvent')}>{c.clash?.length ? 'Add anyway' : c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
             <Btn onClick={() => onCard(m.id, 'skipEvent')}>Never mind</Btn>
           </div>
         )}
@@ -642,10 +677,11 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
           <span className={`tnum text-ink-2 ${c.to ? 'line-through decoration-ink-3/60' : ''}`}>{when(c.start, c.end)}</span>
           {c.to && <span className="tnum font-medium">→ {when(c.to.start, c.to.end)}</span>}
         </div>
+        {c.targets && <ul className="mt-2 space-y-1 text-[13px] text-ink-2">{c.targets.map((target) => <li key={target.id}>{target.title} · {when(target.start, target.end)}</li>)}</ul>}
         {c.clash?.length ? <p className="mt-2.5 text-[13.5px] leading-snug text-amber">The new time overlaps {c.clash.join(' and ')}.</p> : null}
         {done ? <Done t={done} /> : (
           <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
-            <Btn primary onClick={() => onCard(m.id, 'apply')}>{removing ? (c.seriesIds ? 'Remove this one' : 'Remove') : 'Move it'}</Btn>
+            <Btn primary onClick={() => onCard(m.id, 'apply')}>{removing ? (c.targets ? `Remove ${c.targets.length} blocks` : c.seriesIds ? 'Remove this one' : 'Remove') : 'Move it'}</Btn>
             {removing && c.seriesIds && <Btn onClick={() => onCard(m.id, 'removeAll')}>Remove all {c.seriesIds.length}</Btn>}
             <Btn onClick={() => onCard(m.id, 'keep')}>Keep it</Btn>
           </div>
