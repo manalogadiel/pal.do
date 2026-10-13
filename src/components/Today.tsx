@@ -50,13 +50,11 @@ interface Props {
   onWeek: (dayIdx: number) => void
   onTasks: () => void
   pal: PalId
-  palName: string
   palState: PalState
   onPoke: () => void
-  onTalk: () => void
 }
 
-export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName, palState, onPoke, onTalk, onTasks }: Props) {
+export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palState, onPoke, onTasks }: Props) {
   const day = startOfDay(now)
   const todays = events
     .filter((e) => startOfDay(e.start) === day && e.kind !== 'deadline' && e.status !== 'proposed')
@@ -83,11 +81,12 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
             <span className="-mt-3 h-4 w-36 rounded-[50%] bg-ink/10 blur-[4px]" aria-hidden />
           </div>
         </div>
-        <button onClick={onTalk} className="today-talk press mt-2 h-11 rounded-full bg-ink/[0.05] px-4 text-[13px] font-medium text-ink-2 hover-lift hover:text-ink">Talk to {palName}</button>
-        <div className="today-weekday mt-3 text-[13px] font-medium text-accent">{d.toLocaleDateString('en-US', { weekday: 'long' })}</div>
-        <h1 className="today-date mt-1 font-serif tracking-[-0.025em]">
-          {d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-        </h1>
+        <div className="today-date-block">
+          <div className="today-weekday text-[13px] font-medium text-accent">{d.toLocaleDateString('en-US', { weekday: 'long' })}</div>
+          <h1 className="today-date mt-1 font-serif tracking-[-0.025em]">
+            {d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+          </h1>
+        </div>
         <p className="today-summary mt-3 text-sm text-ink-2">
           {left.length
             ? <>{left.length} thing{left.length > 1 ? 's' : ''} left today · about <span className="tnum font-medium text-ink">{fmtHours(hoursLeft)}</span> booked</>
