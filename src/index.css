@@ -1,44 +1,50 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700&family=Silkscreen&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Silkscreen&display=swap');
 @import 'tailwindcss';
 
 :root {
-  /* Soft Liquid — warm mist canvas, apricot voice */
-  --paper: #f4f1ec;
-  --paper-2: #ece8e1;
-  --paper-3: #e4dfd6;
-  --ink: #2a2826;
-  --ink-2: #66615a;
-  --ink-3: #8c867d;
-  --hair: rgb(42 40 38 / 0.06);
-  --tangerine: #e8794d;
-  --tangerine-soft: #fbe6da;
-  --amber: #9a6514;
-  --amber-soft: #f8edd8;
-  --glass: rgb(250 248 245 / 0.62);
-  --tint-a: #f6d9c8;
-  --tint-b: #dcd9ea;
+  /* Chronos — Time of Day Palette (Rich Periwinkle & Lilac Canvas, Dusk Indigo & Twilight Mauve) */
+  --paper: #e4dce8;
+  --paper-2: #f8f6fb;
+  --paper-3: #eee7f2;
+  --ink: #232538;
+  --ink-2: #54597d;
+  --ink-3: #757b9c;
+  --hair: rgb(35 37 56 / 0.09);
 
-  --ev-class: #e3eaf5;
-  --ev-class-rule: #7f97c2;
-  --ev-class-ink: #34496e;
-  --ev-shift: #e6eddf;
-  --ev-shift-rule: #93a47a;
-  --ev-shift-ink: #46552f;
-  --ev-exam: #f6e1de;
-  --ev-exam-rule: #d58c7f;
-  --ev-exam-ink: #7a3a2e;
-  --ev-sand: #efe6d6;
-  --ev-sand-rule: #c4a978;
-  --ev-sand-ink: #6b5530;
-  --ev-sage: #e0ede6;
-  --ev-sage-rule: #87b39b;
-  --ev-sage-ink: #345a46;
-  --ev-lilac: #ebe8f6;
-  --ev-lilac-rule: #9d93cf;
-  --ev-lilac-ink: #463d7a;
+  /* Primary Accent: Twilight Mauve (#a285a8) */
+  --tangerine: #9b7a9f;
+  --tangerine-soft: #f2e7f1;
+  --accent-mauve: #9b7a9f;
+  --periwinkle: #b4c4ec;
+  --periwinkle-soft: #edf2fc;
+  --amber: #755f88;
+  --amber-soft: #ede6f2;
+  --glass: rgb(249 247 252 / 0.64);
+  --tint-a: #b4c4ec;
+  --tint-b: #a285a8;
 
-  --shadow-lg: 0 24px 60px -24px rgb(60 44 30 / 0.28), 0 4px 14px -6px rgb(60 44 30 / 0.1);
-  --edge: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 -1px 0 rgb(42 40 38 / 0.04);
+  /* Harmonized Time of Day Event Categories (Clear Pill Fills) */
+  --ev-class: #dbe5f8;
+  --ev-class-rule: #6f8fd4;
+  --ev-class-ink: #1f3560;
+  --ev-shift: #eae1ed;
+  --ev-shift-rule: #9c83a4;
+  --ev-shift-ink: #46314c;
+  --ev-exam: #f2dbe4;
+  --ev-exam-rule: #c27a98;
+  --ev-exam-ink: #5d233e;
+  --ev-sand: #e6e2ee;
+  --ev-sand-rule: #8b7ea3;
+  --ev-sand-ink: #3c3450;
+  --ev-sage: #dae9e3;
+  --ev-sage-rule: #69a394;
+  --ev-sage-ink: #20483d;
+  --ev-lilac: #e5ddf5;
+  --ev-lilac-rule: #9382c2;
+  --ev-lilac-ink: #3c2e5e;
+
+  --shadow-lg: 0 20px 50px -20px rgb(45 42 66 / 0.16), 0 4px 14px -6px rgb(45 42 66 / 0.08);
+  --edge: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 -1px 0 rgb(35 37 56 / 0.05);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -47,40 +53,43 @@
 
 :root.dark {
     color-scheme: dark;
-    --paper: #171615;
-    --paper-2: #1f1e1c;
-    --paper-3: #2a2826;
-    --ink: #eeeae3;
-    --ink-2: #b3ada3;
-    --ink-3: #847e74;
-    --hair: rgb(238 234 227 / 0.07);
-    --tangerine: #f0936b;
-    --tangerine-soft: rgb(240 147 107 / 0.16);
-    --amber: #e5b061;
-    --amber-soft: rgb(229 176 97 / 0.12);
-    --glass: rgb(34 32 30 / 0.58);
-    --tint-a: #4a2f22;
-    --tint-b: #2c2a3d;
-    --ev-class: #232a37;
-    --ev-class-rule: #8ea3cc;
-    --ev-class-ink: #c8d4ec;
-    --ev-shift: #262a20;
-    --ev-shift-rule: #a9b78a;
-    --ev-shift-ink: #d4dcc2;
-    --ev-exam: #352421;
-    --ev-exam-rule: #e39a8c;
-    --ev-exam-ink: #f0cdc6;
-    --ev-sand: #2d281f;
-    --ev-sand-rule: #cdb282;
-    --ev-sand-ink: #e8d8b8;
-    --ev-sage: #1e2a24;
-    --ev-sage-rule: #93c0a6;
-    --ev-sage-ink: #cbe3d5;
-    --ev-lilac: #26233a;
-    --ev-lilac-rule: #ada3df;
-    --ev-lilac-ink: #d9d4f2;
+    --paper: #11121d;
+    --paper-2: #181a29;
+    --paper-3: #22253a;
+    --ink: #f1eef3;
+    --ink-2: #b3b7d1;
+    --ink-3: #787c9b;
+    --hair: rgb(241 238 243 / 0.08);
+    --tangerine: #bfa2c5;
+    --tangerine-soft: rgb(191 162 197 / 0.18);
+    --accent-mauve: #bfa2c5;
+    --periwinkle: #b4c4ec;
+    --periwinkle-soft: rgb(180 196 236 / 0.18);
+    --amber: #cca8d4;
+    --amber-soft: rgb(204 168 212 / 0.14);
+    --glass: rgb(23 25 39 / 0.70);
+    --tint-a: #232d4e;
+    --tint-b: #32213d;
+    --ev-class: #1c2438;
+    --ev-class-rule: #7e98d4;
+    --ev-class-ink: #d2def8;
+    --ev-shift: #241e2a;
+    --ev-shift-rule: #9b8b9f;
+    --ev-shift-ink: #e0d7e6;
+    --ev-exam: #2e1e26;
+    --ev-exam-rule: #c4849e;
+    --ev-exam-ink: #f0d3df;
+    --ev-sand: #222030;
+    --ev-sand-rule: #908ba6;
+    --ev-sand-ink: #ddd8ec;
+    --ev-sage: #1a2622;
+    --ev-sage-rule: #78a69a;
+    --ev-sage-ink: #cde2dc;
+    --ev-lilac: #231f38;
+    --ev-lilac-rule: #9e93c9;
+    --ev-lilac-ink: #ddd7f5;
     --shadow-lg: 0 24px 60px -20px rgb(0 0 0 / 0.65), 0 4px 14px -6px rgb(0 0 0 / 0.4);
-    --edge: inset 0 1px 0 rgb(255 255 255 / 0.07), inset 0 -1px 0 rgb(0 0 0 / 0.2);
+    --edge: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 -1px 0 rgb(0 0 0 / 0.3);
 }
 
 @theme inline {
@@ -93,9 +102,11 @@
   --color-hair: var(--hair);
   --color-tangerine: var(--tangerine);
   --color-tangerine-soft: var(--tangerine-soft);
+  --color-periwinkle: var(--periwinkle);
+  --color-periwinkle-soft: var(--periwinkle-soft);
   --color-amber: var(--amber);
   --color-amber-soft: var(--amber-soft);
-  --font-serif: 'Instrument Serif', ui-serif, Georgia, serif;
+  --font-serif: 'Inter Tight', system-ui, -apple-system, sans-serif;
   --font-sans: 'Inter Tight', system-ui, -apple-system, sans-serif;
   --font-pixel: 'Silkscreen', ui-monospace, monospace;
 }
@@ -107,7 +118,13 @@
     height: 100%;
   }
   body {
-    background: var(--paper);
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(circle at 10% 12%, color-mix(in srgb, #b4c4ec 65%, transparent) 0%, transparent 50%),
+      radial-gradient(circle at 90% 88%, color-mix(in srgb, #a285a8 55%, transparent) 0%, transparent 55%),
+      radial-gradient(circle at 85% 15%, color-mix(in srgb, #b4c4ec 45%, transparent) 0%, transparent 45%),
+      radial-gradient(circle at 15% 85%, color-mix(in srgb, #e8dbe2 80%, transparent) 0%, transparent 50%);
+    background-attachment: fixed;
     color: var(--ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -126,21 +143,32 @@
   }
 }
 
-/* Canvas: two slow tint fields give the glass something to refract */
+/* Canvas: vibrant atmospheric drift of periwinkle dawn and twilight mauve */
 .mist {
   position: fixed;
   inset: -20%;
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(38% 42% at 18% 28%, var(--tint-a), transparent 70%),
-    radial-gradient(40% 45% at 82% 72%, var(--tint-b), transparent 70%);
-  opacity: 0.75;
+    radial-gradient(50% 55% at 15% 20%, #b4c4ec, transparent 70%),
+    radial-gradient(55% 60% at 85% 80%, #a285a8, transparent 72%),
+    radial-gradient(42% 46% at 80% 18%, #c3d3f5, transparent 65%),
+    radial-gradient(46% 50% at 20% 82%, #d7c5dc, transparent 65%);
+  opacity: 0.85;
+  filter: blur(44px);
   animation: drift 40s linear infinite alternate;
 }
+:root.dark .mist {
+  background:
+    radial-gradient(50% 55% at 15% 20%, #232d4e, transparent 70%),
+    radial-gradient(55% 60% at 85% 80%, #32213d, transparent 72%),
+    radial-gradient(42% 46% at 80% 18%, #1d2745, transparent 65%),
+    radial-gradient(46% 50% at 20% 82%, #2d1e37, transparent 65%);
+  opacity: 0.9;
+}
 @keyframes drift {
-  from { transform: translate3d(0, 0, 0) rotate(0deg); }
-  to { transform: translate3d(4%, -3%, 0) rotate(8deg); }
+  from { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  to { transform: translate3d(3%, -2%, 0) rotate(6deg) scale(1.04); }
 }
 
 .grain::before {
@@ -333,11 +361,11 @@
   background: radial-gradient(55% 60% at 50% 62%, var(--spot, var(--tangerine-soft)), transparent 72%);
   opacity: 0.9;
 }
-.stage[data-time='morning'] { --spot: #fdebd9; }
-.stage[data-time='afternoon'] { --spot: #fbe3d6; }
-.stage[data-time='night'] { --spot: #e2def0; }
-.dark .stage[data-time] { --spot: rgb(232 121 77 / 0.14); }
-.dark .stage[data-time='night'] { --spot: rgb(150 140 210 / 0.16); }
+.stage[data-time='morning'] { --spot: #d8e3fb; }
+.stage[data-time='afternoon'] { --spot: #ebdce7; }
+.stage[data-time='night'] { --spot: #d8d2ea; }
+.dark .stage[data-time] { --spot: rgb(180 196 236 / 0.16); }
+.dark .stage[data-time='night'] { --spot: rgb(162 133 168 / 0.18); }
 
 /* Same glow as .stage, anchored to the composer. Stays inside its box so it never bleeds over the feed or the pal */
 .input-glow {

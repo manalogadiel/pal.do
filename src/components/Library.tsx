@@ -45,7 +45,7 @@ function FolderArt({ folder, count, due, onOpen }: { folder: Folder; count: numb
       <span className="folder-face relative flex min-h-[132px] flex-col justify-between rounded-[18px] p-3.5 shadow-[var(--edge),0_10px_24px_-14px_rgb(60_44_30/0.35)]" data-pattern={folder.style.pattern}>
         <span className="folder-sticker inline-block self-start rotate-[-3deg] px-2 py-1 text-[13px] leading-none">{initials(folder.name)}</span>
         <span>
-          <span className="block font-serif text-[22px] leading-[1.05]">{folder.name}</span>
+          <span className="block font-sans text-[18px] font-bold leading-tight tracking-tight">{folder.name}</span>
           <span className="mt-1 block text-[11.5px] opacity-80">
             {count ? `${count} file${count === 1 ? '' : 's'}` : 'Empty'}{due ? `, ${due.kind === 'exam' ? 'exam' : 'due'} ${fmtDay(due.due).replace(/,.*/, '')}` : ''}
           </span>
@@ -117,7 +117,7 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
         <div className="folder-face mt-2 flex items-end justify-between gap-3 rounded-[22px] p-4" data-pattern={folder.style.pattern}>
           <div className="min-w-0">
             <span className="folder-sticker inline-block rotate-[-3deg] px-2 py-1 text-[13px] leading-none">{initials(folder.name)}</span>
-            <h2 className="mt-3 font-serif text-[34px] leading-none">{folder.name}</h2>
+            <h2 className="mt-3 font-sans text-[26px] font-bold leading-tight tracking-tight text-ink">{folder.name}</h2>
             {due && <p className="mt-2 flex items-center gap-1.5 text-[12.5px] opacity-85"><Calendar className="size-3.5" />{due.title}, {fmtDay(due.due)}</p>}
           </div>
           <button type="button" disabled={busy} onClick={() => input.current?.click()} className="press flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-ink px-4 text-[13.5px] font-medium text-paper disabled:opacity-60">
@@ -127,18 +127,18 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
         </div>
 
         {inFolder.length === 0 ? (
-          <div className="mt-8 max-w-[340px] self-center text-center text-[14px] leading-relaxed text-ink-2">
-            Add a reviewer, handout or notes. Pal can plan study time from it, make flashcards and a practice quiz, and read it to you.
+          <div className="mt-8 max-w-[320px] self-center text-center text-[13.5px] leading-relaxed text-ink-2">
+            Drop notes, reviewers, or handouts here.
           </div>
         ) : (
           <ul className="mt-4 space-y-2">
             {inFolder.map((f) => (
-              <li key={f.id} className="rounded-[18px] bg-paper/80 p-3.5 shadow-[var(--edge)]">
+              <li key={f.id} className="rounded-2xl bg-paper/90 p-3.5 shadow-[var(--edge)]">
                 <div className="flex items-start gap-3">
                   <button type="button" onClick={() => setOpen({ file: f, mode: 'read' })} className="min-w-0 flex-1 text-left">
                     <span className="block truncate text-[14.5px] font-medium text-ink">{titleFromFileName(f.name)}</span>
                     <span className="block text-[12px] text-ink-3">
-                      {f.kind === 'image' ? 'Image' : `${f.pages.length} page${f.pages.length === 1 ? '' : 's'}`}{f.scanned && f.kind !== 'image' ? ', scanned (no text to read)' : ''}
+                      {f.kind === 'image' ? 'Image' : `${f.pages.length} page${f.pages.length === 1 ? '' : 's'}`}{f.scanned && f.kind !== 'image' ? ', scanned' : ''}
                     </span>
                   </button>
                   <button type="button" onClick={() => { if (confirm(`Delete ${f.name}?`)) void deleteFile(f.id) }} className="press grid size-8 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-ink/[0.05]" aria-label={`Delete ${f.name}`}><Trash className="size-3.5" /></button>
@@ -147,8 +147,8 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
                   <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
                     <Chip onClick={() => onPlan(f, folder)}><Calendar className="size-3.5" /> Plan study</Chip>
                     <Chip onClick={() => setOpen({ file: f, mode: 'cards' })}><Cards className="size-3.5" /> Flashcards</Chip>
-                    <Chip onClick={() => setOpen({ file: f, mode: 'quiz' })}><QuizIcon className="size-3.5" /> Quiz me</Chip>
-                    <Chip onClick={() => setOpen({ file: f, mode: 'read' })}><Speaker className="size-3.5" /> Read aloud</Chip>
+                    <Chip onClick={() => setOpen({ file: f, mode: 'quiz' })}><QuizIcon className="size-3.5" /> Quiz</Chip>
+                    <Chip onClick={() => setOpen({ file: f, mode: 'read' })}><Speaker className="size-3.5" /> Listen</Chip>
                   </div>
                 )}
               </li>
@@ -164,21 +164,21 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
     <div className="h-full overflow-y-auto px-4 pt-5 pb-10 sm:px-6">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="font-serif text-[40px] leading-none">Library</h2>
-          <p className="mt-1.5 text-[13px] text-ink-3">Your reviewers and notes, by subject. Kept on this device.</p>
+          <h2 className="font-sans text-[32px] font-bold tracking-tight text-ink">Library</h2>
+          <p className="mt-0.5 text-[13px] text-ink-3">Your subjects and reviewers</p>
         </div>
-        {naming == null && <button type="button" onClick={() => setNaming('')} className="press flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-ink px-4 text-[13.5px] font-medium text-paper"><Plus /> Folder</button>}
+        {naming == null && <button type="button" onClick={() => setNaming('')} className="press flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-paper"><Plus /> Folder</button>}
       </div>
       {naming != null && (
         <form onSubmit={(e) => { e.preventDefault(); if (naming.trim()) void createFolder(naming) }} className="pop mt-4 flex gap-2">
-          <input autoFocus value={naming} onChange={(e) => setNaming(e.target.value)} placeholder="Subject, like Bio 101" className="min-w-0 flex-1 rounded-full bg-ink/[0.05] px-4 py-2.5 text-[14px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]" />
-          <button type="submit" disabled={!naming.trim()} className="press h-10 rounded-full bg-ink px-4 text-[13.5px] font-medium text-paper disabled:opacity-40">Create</button>
-          <button type="button" onClick={() => setNaming(null)} className="press h-10 rounded-full px-3 text-[13.5px] text-ink-2">Cancel</button>
+          <input autoFocus value={naming} onChange={(e) => setNaming(e.target.value)} placeholder="Subject (e.g. Bio 101)" className="min-w-0 flex-1 rounded-full bg-ink/[0.05] px-4 py-2 text-[13.5px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]" />
+          <button type="submit" disabled={!naming.trim()} className="press h-9 rounded-full bg-ink px-4 text-[13px] font-medium text-paper disabled:opacity-40">Create</button>
+          <button type="button" onClick={() => setNaming(null)} className="press h-9 rounded-full px-3 text-[13px] text-ink-2">Cancel</button>
         </form>
       )}
       {folders.length === 0 && naming == null ? (
-        <div className="mt-10 max-w-[360px] text-[14px] leading-relaxed text-ink-2">
-          Make a folder for each subject, or attach a reviewer in the chat with the <Clip className="inline size-3.5 align-[-2px]" /> button and Pal files it for you.
+        <div className="mt-8 max-w-[320px] text-[13.5px] leading-relaxed text-ink-2">
+          Create a folder for each subject, or drop reviewer files directly here.
         </div>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4">
@@ -190,7 +190,7 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
 }
 
 const Chip = ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) => (
-  <button type="button" onClick={onClick} className="press flex h-8 items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 text-[12.5px] font-medium text-ink hover:bg-ink/[0.09]">{children}</button>
+  <button type="button" onClick={onClick} className="press flex h-7.5 items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 text-[12px] font-medium text-ink hover:bg-ink/[0.09]">{children}</button>
 )
 
 /* ---------- One file: read it (and hear it), flip its flashcards, or take its quiz ---------- */
@@ -199,12 +199,12 @@ function FileView({ file, folder, mode, topic, pal, onMode, onBack, onPlan }: { 
   return (
     <div className="folder flex h-full flex-col overflow-hidden" data-tone={folder.style.tone}>
       <div className="flex shrink-0 items-center gap-2 px-4 pt-4 sm:px-6">
-        <button type="button" onClick={onBack} className="press -ml-2 flex h-9 shrink-0 items-center gap-1 rounded-full pr-3 pl-2 text-[13px] text-ink-2 hover:bg-ink/[0.05]"><ChevronL /> {folder.name}</button>
+        <button type="button" onClick={onBack} className="press -ml-2 flex h-8 shrink-0 items-center gap-1 rounded-full pr-3 pl-2 text-[12.5px] text-ink-2 hover:bg-ink/[0.05]"><ChevronL /> {folder.name}</button>
         <div className="flex-1" />
-        {!file.scanned && <button type="button" onClick={onPlan} className="press flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] text-ink-2 hover:bg-ink/[0.05]"><Calendar className="size-3.5" /> Plan study</button>}
+        {!file.scanned && <button type="button" onClick={onPlan} className="press flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12.5px] text-ink-2 hover:bg-ink/[0.05]"><Calendar className="size-3.5" /> Plan study</button>}
       </div>
       <div className="shrink-0 px-4 sm:px-6">
-        <h2 className="mt-1 truncate font-serif text-[28px] leading-tight">{titleFromFileName(file.name)}</h2>
+        <h2 className="mt-1 truncate font-sans text-[22px] font-bold tracking-tight text-ink">{titleFromFileName(file.name)}</h2>
         {tabs.length > 1 && (
           <div className="mt-2 inline-flex rounded-full bg-ink/[0.05] p-1" role="tablist">
             {tabs.map(([m, label]) => (
@@ -335,7 +335,7 @@ function Flashcards({ file, pal, topic }: { file: LibraryFile; pal: PalId; topic
       <button type="button" onClick={() => setFlipped((f) => !f)} className="block w-full [perspective:1200px]" aria-label={flipped ? 'Show the term' : 'Show the answer'}>
         <div className="flip relative min-h-[220px]" data-flipped={flipped}>
           <div className="folder-face absolute inset-0 flex flex-col items-center justify-center rounded-[22px] p-6 text-center shadow-[var(--edge),var(--shadow-lg)]" data-pattern="lines">
-            <span className="font-serif text-[30px] leading-tight">{card.front}</span>
+            <span className="font-sans text-[24px] font-bold leading-snug tracking-tight text-ink">{card.front}</span>
             <span className="mt-3 text-[12px] opacity-70">Tap to flip</span>
           </div>
           <div className="flip-back absolute inset-0 flex items-center justify-center rounded-[22px] bg-paper p-6 text-center text-[16px] leading-relaxed text-ink shadow-[var(--edge),var(--shadow-lg)]">{card.back}</div>
@@ -386,7 +386,7 @@ function QuizPlayer({ file, topic }: { file: LibraryFile; topic?: string }) {
   if (!quiz) return <p className="max-w-[360px] text-[14px] leading-relaxed text-ink-2">This file needs at least four "term: definition" lines for a quiz, or the cloud AI to write one. Try again when you're online.</p>
   if (i >= quiz.items.length) return (
     <div className="mx-auto max-w-[460px] text-center">
-      <p className="font-serif text-[44px] leading-none">{score} of {quiz.items.length}</p>
+      <p className="font-sans text-[36px] font-bold leading-none tracking-tight text-ink">{score} of {quiz.items.length}</p>
       <p className="mt-2 text-[14px] text-ink-2">{score === quiz.items.length ? 'Every one. Nice.' : 'Review the ones you missed, then try a fresh set.'}</p>
       <div className="mt-5 flex justify-center gap-2">
         <button type="button" onClick={() => { setI(0); setPicked(null); setScore(0) }} className="press h-10 rounded-full bg-ink/[0.05] px-4 text-[13.5px]">Same questions</button>
@@ -398,7 +398,7 @@ function QuizPlayer({ file, topic }: { file: LibraryFile; topic?: string }) {
   return (
     <div className="mx-auto max-w-[520px]">
       <p className="tnum text-[12.5px] text-ink-3">Question {i + 1} of {quiz.items.length}{q.page ? `, from page ${q.page}` : ''}</p>
-      <p className="mt-1.5 font-serif text-[24px] leading-snug">{q.question}</p>
+      <p className="mt-1.5 font-sans text-[20px] font-bold leading-snug tracking-tight text-ink">{q.question}</p>
       <ul className="mt-4 space-y-2">
         {q.choices.map((c, n) => {
           const state = picked == null ? '' : n === q.answer ? 'right' : n === picked ? 'wrong' : 'dim'

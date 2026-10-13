@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.paldo.app',
-  appName: 'pal.do',
+  appName: 'Chronos',
   webDir: process.env.PALDO_ANDROID_PREVIEW === '1' ? 'dist-android' : 'dist',
   loggingBehavior: process.env.PALDO_ANDROID_PREVIEW === '1' ? 'none' : 'debug',
   plugins: {

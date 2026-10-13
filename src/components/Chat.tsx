@@ -219,16 +219,16 @@ export function Chat(p: Props) {
       <div className={`grid min-h-0 overflow-hidden ${p.compact ? 'drawer' : 'flex-1 grid-rows-[minmax(0,1fr)]'}`} style={p.compact ? { gridTemplateRows: p.open ? '1fr' : '0fr', flex: p.open ? '1 1 0%' : '0 0 auto' } : undefined}>
         <div ref={feedRef} className={`fade-top min-h-0 overflow-y-auto overscroll-contain px-6 ${logOpen ? 'pt-4 pb-2' : 'invisible'}`} role="log" aria-live="polite">
           {firstRun ? (
-            <div className="land pt-[6vh] pb-6">
-              <div className="text-[13px] font-medium text-ink-3">{greetingTime()}</div>
-              <h2 className="mt-1 max-w-[16ch] font-serif text-[38px] leading-[1.02] tracking-[-0.02em]">
-                Tell {p.palName} what your week looks like.
+            <div className="land pt-[4vh] pb-6">
+              <div className="text-[11.5px] font-semibold tracking-[0.06em] uppercase text-ink-3">{greetingTime()}</div>
+              <h2 className="mt-1 font-sans text-[26px] font-bold tracking-[-0.03em] text-ink">
+                What's on your plate?
               </h2>
-              <p className="mt-3 max-w-[38ch] text-[14.5px] leading-[1.55] text-ink-2">
-                Classes, shifts, deadlines. Type it or say it. {p.palName} asks about anything missing and suggests times. You decide.
+              <p className="mt-1.5 max-w-[32ch] text-[13.5px] leading-relaxed text-ink-2">
+                Add classes, exams, or shifts. {p.palName} will propose a balanced plan.
               </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {['Bio exam Friday', 'Shift Sat 2-8pm', "How's my week?", 'Paste my syllabus'].map((c, i) => (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {['Bio exam Friday', 'Shift Sat 2-8pm', "How's my week?", 'Import syllabus'].map((c, i) => (
                   <Chip key={c} i={i} onClick={() => p.onSend(c)}>{c}</Chip>
                 ))}
               </div>

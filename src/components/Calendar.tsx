@@ -84,8 +84,8 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
                 {new Date(d).toLocaleDateString('en-US', { weekday: 'short' })}
               </div>
               <div className="mt-0.5 flex items-center gap-1.5">
-                <span className={`font-serif text-[26px] leading-none tracking-[-0.02em] ${d < today ? 'text-ink-3' : ''}`}>{new Date(d).getDate()}</span>
-                {isToday && <span className="size-1.5 rounded-[2px] bg-tangerine" />}
+                <span className={`font-sans text-[20px] font-bold leading-none tracking-tight ${d < today ? 'text-ink-3' : 'text-ink'}`}>{new Date(d).getDate()}</span>
+                {isToday && <span className="size-1.5 rounded-full bg-tangerine" />}
               </div>
             </div>
           )

@@ -49,8 +49,8 @@ export function PalStage({ pal, hello, onPick }: { pal: PalId; hello: PalId | nu
         <button onClick={() => go(1)} aria-label="Next pal" className="press absolute top-1/2 right-0 z-10 grid size-12 -translate-y-1/2 place-items-center rounded-full bg-ink/[0.05] text-ink-2 hover-lift hover:text-ink"><ChevronR /></button>
       </div>
       <div key={pal + 't'} className="view-in mt-3 text-center">
-        <div className="font-serif text-[40px] leading-none tracking-[-0.02em]">{PALS[pal].name}</div>
-        <div className="mt-1.5 text-[14px] text-ink-2">{PALS[pal].line} · <span className="text-ink-3">{PALS[pal].tone}</span></div>
+        <div className="font-sans text-[32px] font-bold leading-none tracking-tight text-ink">{PALS[pal].name}</div>
+        <div className="mt-1.5 text-[13.5px] text-ink-2">{PALS[pal].line} · <span className="text-ink-3">{PALS[pal].tone}</span></div>
       </div>
       <div className="mt-4 flex gap-1.5">
         {IDS.map((id, j) => (
@@ -259,16 +259,16 @@ export function Onboarding({
 
         {step === 0 ? (
           <div className="px-7 pt-3 pb-7">
-            <h1 className="font-serif text-[40px] leading-[1.02] tracking-[-0.02em] sm:text-[48px]">Pick your pal.</h1>
+            <h1 className="font-sans text-[32px] font-bold leading-[1.05] tracking-tight sm:text-[36px] text-ink">Choose your pal.</h1>
             <PalStage pal={pal} hello={hello} onPick={(id) => { setPal(id); setName(PALS[id].name); setHello(id) }} />
             <div className="mt-5 flex justify-end">
-              <button onClick={() => setStep(1)} className="press h-11 rounded-full bg-ink px-6 text-[15px] font-medium text-paper">Continue with {PALS[pal].name}</button>
+              <button onClick={() => setStep(1)} className="press h-10 rounded-full bg-ink px-6 text-[14px] font-medium text-paper">Continue with {PALS[pal].name}</button>
             </div>
           </div>
         ) : (
           <div className="grid gap-6 px-7 pt-6 pb-7 sm:grid-cols-[1fr_200px]">
             <div>
-              <h1 className="font-serif text-[40px] leading-[1.02] tracking-[-0.02em]">A few ground rules.</h1>
+              <h1 className="font-sans text-[32px] font-bold leading-[1.05] tracking-tight text-ink">Ground rules</h1>
               <p className="mt-2 text-[15px] text-ink-2">Your calendar stays on this device. When the AI Brain is on, {name || PALS[pal].name} sends a short summary of your schedule to answer you.</p>
               <div className="mt-5"><Boundary name={name || PALS[pal].name} /></div>
               <div className="mt-5">
@@ -441,8 +441,8 @@ export function SyllabusSheet({ now, onClose, onAdd }: { now: number; onClose: (
       <div className="pop w-full max-w-[520px] rounded-t-[32px] liquid-solid p-6 sm:rounded-[32px]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-serif text-[32px] leading-none tracking-[-0.02em]">Syllabus drop</h2>
-            <p className="mt-1.5 text-[14px] text-ink-2">Paste it in. You confirm every deadline before it's added.</p>
+            <h2 className="font-sans text-[26px] font-bold leading-none tracking-tight text-ink">Import Syllabus</h2>
+            <p className="mt-1.5 text-[13.5px] text-ink-2">Paste course deliverables. Review and confirm each item.</p>
           </div>
           <button onClick={onClose} className="press grid size-9 place-items-center rounded-full text-ink-2 hover:bg-paper-3" aria-label="Close"><X /></button>
         </div>
@@ -582,7 +582,7 @@ export function DeletePlansSheet({ count, onClose, onConfirm }: { count: number;
           <div className="grid size-11 place-items-center rounded-full bg-red-500/15 text-red-500"><Trash className="size-5" /></div>
           <button onClick={onClose} className="press grid size-9 place-items-center rounded-full text-ink-2 hover:bg-paper-3" aria-label="Close"><X /></button>
         </div>
-        <h2 className="mt-3 font-serif text-[30px] leading-none tracking-[-0.02em]">Delete all plans?</h2>
+        <h2 className="mt-3 font-sans text-[24px] font-bold leading-none tracking-tight text-ink">Delete all plans?</h2>
         <p className="mt-2 text-[14px] text-ink-2">This clears {count} calendar block{count === 1 ? '' : 's'} and every deadline from your planner. You can undo right after.</p>
         <label className="mt-4 block text-[12px] font-medium text-ink-3">
           Type <span className="font-semibold text-red-500">Delete</span> to confirm

@@ -2065,9 +2065,13 @@ export default function App() {
                     onOpenSettings={() => setEditing(true)}
                   />
                 )}
-                {/* All four pals when the panel has room; the one-pal chip (as on a phone) when it doesn't */}
-                <div className="hidden @[620px]:block">{palSwitch}</div>
-                <div className="@[620px]:hidden">{palChip}</div>
+                {/* Pals in header when not on the home stage to avoid duplicate avatars */}
+                {view !== 'home' && (
+                  <>
+                    <div className="hidden @[620px]:block">{palSwitch}</div>
+                    <div className="@[620px]:hidden">{palChip}</div>
+                  </>
+                )}
               </div>
             </header>
             <div key={view} className="view-in min-h-0 flex-1">{content}</div>

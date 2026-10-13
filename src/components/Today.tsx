@@ -11,32 +11,32 @@ const TONE: Record<Kind, string> = {
   work: 'bg-tangerine-soft text-ink [--rule:var(--tangerine)]',
   commute: 'bg-[var(--ev-sand)] text-[var(--ev-sand-ink)] [--rule:var(--ev-sand-rule)]',
   protected: 'bg-[var(--ev-sage)] text-[var(--ev-sage-ink)] [--rule:var(--ev-sage-rule)]',
-  deadline: 'bg-ink/[0.05] text-ink [--rule:var(--ink)]',
+  deadline: 'bg-ink/[0.04] text-ink [--rule:var(--ink)]',
 }
 
 /** Progress ring. The stroke eases to its value so a check-off visibly fills it. */
-export function Ring({ value, size = 40, label }: { value: number; size?: number; label?: string }) {
+export function Ring({ value, size = 36, label }: { value: number; size?: number; label?: string }) {
   const r = (size - 5) / 2
   const c = 2 * Math.PI * r
   const v = Math.max(0, Math.min(1, value))
   return (
     <div className="relative grid shrink-0 place-items-center" style={{ width: size, height: size }} role="img" aria-label={label ?? `${Math.round(v * 100)}% done`}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth="4" className="text-ink/[0.07]" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeWidth="3" className="text-ink/[0.08]" />
         <circle
-          cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="4" strokeLinecap="round"
+          cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="3" strokeLinecap="round"
           className="ring-arc stroke-tangerine"
           strokeDasharray={c} strokeDashoffset={c * (1 - v)}
         />
       </svg>
-      <span className="tnum absolute text-[10.5px] font-semibold text-ink-2">{Math.round(v * 100)}</span>
+      <span className="tnum absolute text-[10px] font-semibold text-ink-2">{Math.round(v * 100)}</span>
     </div>
   )
 }
 
 function countdown(ms: number) {
   const m = Math.round(ms / MIN)
-  if (m < 60) return `${Math.max(1, m)} min`
+  if (m < 60) return `${Math.max(1, m)}m`
   const h = Math.floor(m / 60)
   return m % 60 ? `${h}h ${m % 60}m` : `${h}h`
 }
@@ -72,30 +72,30 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
   const st = () => ({ '--i': i++ } as React.CSSProperties)
 
   return (
-    <div className="mx-auto h-full max-w-[680px] overflow-y-auto overscroll-contain px-6 pt-5 pb-10 sm:px-8 min-[900px]:pt-[72px]">
-      {/* Mascot hero: the pal stands centre stage, date beneath */}
+    <div className="mx-auto h-full max-w-[680px] overflow-y-auto overscroll-contain px-6 pt-5 pb-10 sm:px-8 min-[900px]:pt-[56px]">
+      {/* Mascot hero: quiet, modern header */}
       <header className="slide-in flex flex-col items-center text-center" style={st()}>
-        <div className="stage relative flex w-full justify-center pt-2 min-[900px]:pt-8" data-time={d.getHours() < 12 ? 'morning' : d.getHours() < 18 ? 'afternoon' : 'night'}>
+        <div className="stage relative flex w-full justify-center pt-1 min-[900px]:pt-4" data-time={d.getHours() < 12 ? 'morning' : d.getHours() < 18 ? 'afternoon' : 'night'}>
           <div className="relative flex flex-col items-center">
-            <Pal id={pal} state={palState} size={220} float onPoke={onPoke} className="relative z-10" />
-            <span className="-mt-3 h-4 w-36 rounded-[50%] bg-ink/10 blur-[4px]" aria-hidden />
+            <Pal id={pal} state={palState} size={180} float onPoke={onPoke} className="relative z-10" />
+            <span className="-mt-2.5 h-3.5 w-32 rounded-[50%] bg-ink/10 blur-[3px]" aria-hidden />
           </div>
         </div>
-        <button onClick={onTalk} className="press mt-3 min-[900px]:mt-2 h-9 rounded-full bg-ink/[0.05] px-4 text-[13px] font-medium text-ink-2 hover-lift hover:text-ink">Talk to {palName}</button>
-        <div className="mt-6 min-[900px]:mt-4 text-[13px] font-medium text-tangerine">{d.toLocaleDateString('en-US', { weekday: 'long' })}</div>
-        <h1 className="mt-0.5 font-serif text-[56px] leading-[0.95] tracking-[-0.025em]">
-          {d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+        <button onClick={onTalk} className="press mt-2.5 h-8 rounded-full bg-ink/[0.05] px-3.5 text-[12.5px] font-medium text-ink-2 hover-lift hover:text-ink">Chat with {palName}</button>
+        <h1 className="mt-4 font-sans text-[36px] min-[900px]:text-[42px] font-bold leading-tight tracking-[-0.035em] text-ink">
+          <span className="font-normal text-ink-3">{d.toLocaleDateString('en-US', { weekday: 'short' })}, </span>
+          {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
         </h1>
-        <p className="mt-2.5 text-[14.5px] text-ink-2">
+        <p className="mt-1 text-[13.5px] text-ink-2">
           {left.length
-            ? <>{left.length} thing{left.length > 1 ? 's' : ''} left today · about <span className="tnum font-medium text-ink">{fmtHours(hoursLeft)}</span> booked</>
-            : 'Nothing else booked today. The evening is yours.'}
+            ? <><span className="tnum font-semibold text-ink">{left.length}</span> event{left.length > 1 ? 's' : ''} left · about <span className="tnum font-medium text-ink">{fmtHours(hoursLeft)}</span></>
+            : 'All clear today. Rest and recharge.'}
         </p>
       </header>
 
-      {/* Now / Next */}
+      {/* Now / Next focus cards */}
       {(current || next) && (
-        <section className="mt-7 min-[900px]:mt-5 grid gap-2.5 sm:grid-cols-2">
+        <section className="mt-6 grid gap-2 sm:grid-cols-2">
           {[current && { e: current, tag: 'Now', sub: `${countdown(current.end - now)} left` }, next && { e: next, tag: 'Next', sub: `in ${countdown(next.start - now)}` }]
             .filter(Boolean)
             .map((x) => {
@@ -106,20 +106,20 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
                   key={e.id}
                   onClick={(ev) => onOpen(e, ev.currentTarget.getBoundingClientRect())}
                   style={st()}
-                  className={`slide-in press relative overflow-hidden rounded-[24px] p-4 pl-5 text-left hover-lift ${TONE[e.kind]}`}
+                  className={`slide-in press relative overflow-hidden rounded-2xl p-3.5 pl-4 text-left hover-lift shadow-[0_2px_8px_-2px_rgba(35,37,56,0.06)] ${TONE[e.kind]}`}
                 >
-                  <div className="flex items-center gap-2 text-[11.5px] font-semibold tracking-[0.04em] uppercase opacity-80">
+                  <div className="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.06em] uppercase opacity-80">
                     {tag === 'Now' && <span className="pulse-dot size-1.5 rounded-full bg-[var(--rule)]" />}
                     {tag}
                     <span className="tnum ml-auto font-medium tracking-normal normal-case">{sub}</span>
                   </div>
-                  <div className="mt-3 flex items-center gap-2">
+                  <div className="mt-2 flex items-center gap-2">
                     <G className="size-4 shrink-0 opacity-80" />
-                    <span className="truncate text-[19px] leading-tight font-semibold tracking-[-0.01em]">{e.title}</span>
+                    <span className="truncate text-[17px] leading-snug font-semibold tracking-[-0.015em]">{e.title}</span>
                   </div>
-                  <div className="tnum mt-1 text-[13px] opacity-75">{fmtTime(e.start)} – {fmtTime(e.end)}</div>
+                  <div className="tnum mt-0.5 text-[12.5px] opacity-75">{fmtTime(e.start)} – {fmtTime(e.end)}</div>
                   {tag === 'Now' && (
-                    <div className="relative mt-3 h-1 overflow-hidden rounded-full">
+                    <div className="relative mt-2.5 h-1 overflow-hidden rounded-full">
                       <div className="absolute inset-0 bg-[var(--rule)] opacity-20" />
                       <div className="relative h-full rounded-full bg-[var(--rule)] transition-[width] duration-700" style={{ width: `${((now - e.start) / (e.end - e.start)) * 100}%` }} />
                     </div>
@@ -130,9 +130,9 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
         </section>
       )}
 
-      {/* Agenda */}
-      <section className="mt-8">
-        <h2 className="slide-in text-[22px] font-semibold tracking-[-0.015em]" style={st()}>Today</h2>
+      {/* Timeline */}
+      <section className="mt-7">
+        <h2 className="slide-in text-[11.5px] font-semibold tracking-[0.08em] uppercase text-ink-3" style={st()}>Schedule</h2>
         {todays.length ? (
           <ol className="relative mt-3">
             <span className="absolute top-3 bottom-3 left-[59px] w-px bg-ink/[0.07]" aria-hidden />
@@ -145,7 +145,7 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
                   <span className={`relative z-10 size-2.5 shrink-0 rounded-full ring-4 ring-[var(--paper)] ${past ? 'bg-ink/15' : e.start <= now ? 'bg-tangerine' : 'bg-ink/40'}`} />
                   <button
                     onClick={(ev) => onOpen(e, ev.currentTarget.getBoundingClientRect())}
-                    className={`press flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full px-4 py-2 text-left text-[14px] transition-opacity hover-lift ${TONE[e.kind]} ${past ? 'opacity-45' : ''}`}
+                    className={`press flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full px-4 py-2 text-left text-[14px] transition-opacity hover-lift shadow-[0_1px_3px_rgba(35,37,56,0.04)] ${TONE[e.kind]} ${past ? 'opacity-45' : ''}`}
                   >
                     <G className="size-3.5 shrink-0 opacity-75" />
                     <span className="truncate font-medium">{e.title}</span>
@@ -162,19 +162,19 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
       </section>
 
       {/* Week glance */}
-      <section className="slide-in mt-8" style={st()}>
+      <section className="slide-in mt-7" style={st()}>
         <div className="flex items-baseline justify-between">
-          <h2 className="text-[22px] font-semibold tracking-[-0.015em]">This week</h2>
-          <button onClick={() => onWeek((d.getDay() + 6) % 7)} className="press -mr-2 h-9 rounded-full px-3 text-[13px] font-medium text-ink-2 hover-lift hover:text-ink">Open week</button>
+          <h2 className="text-[11.5px] font-semibold tracking-[0.08em] uppercase text-ink-3">Week Glance</h2>
+          <button onClick={() => onWeek((d.getDay() + 6) % 7)} className="press -mr-2 h-8 rounded-full px-3 text-[12px] font-medium text-ink-2 hover-lift hover:text-ink">Open calendar</button>
         </div>
-        <div className="mt-3 rounded-[22px] bg-ink/[0.035] px-4 py-3.5">
+        <div className="mt-2.5 rounded-2xl bg-ink/[0.03] px-3.5 py-3">
           <LoadStrip weekStart={ws} events={events} active={(d.getDay() + 6) % 7} onPick={onWeek} />
         </div>
       </section>
 
       {/* Deadlines */}
-      <section className="mt-8">
-        <h2 className="slide-in text-[22px] font-semibold tracking-[-0.015em]" style={st()}>Coming up</h2>
+      <section className="mt-7">
+        <h2 className="slide-in text-[11.5px] font-semibold tracking-[0.08em] uppercase text-ink-3" style={st()}>Upcoming Deadlines</h2>
         {deadlines.length ? (
           <ul className="mt-3 space-y-1">
             {deadlines.map((t) => {

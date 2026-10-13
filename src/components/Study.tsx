@@ -83,22 +83,22 @@ function Focus({ session, pal, palState, todayMinutes, palLine, alarmsOn, onStar
   const paused = isPaused(session)
   const left = idle ? FOCUS_MS : remaining(session, now)
   const label = idle ? 'Ready when you are' : paused ? `${phaseLabel(session)} · paused` : phaseLabel(session)
-  const primary = 'press h-11 rounded-full bg-ink px-6 text-[15px] font-medium text-paper'
-  const secondary = 'press h-11 rounded-full px-5 text-[15px] text-ink-2 hover:bg-paper-3'
+  const primary = 'press h-10 rounded-full bg-ink px-6 text-[14px] font-medium text-paper hover-lift'
+  const secondary = 'press h-10 rounded-full px-5 text-[14px] text-ink-2 hover:bg-paper-3'
 
   return (
     // my-auto (not justify-center) so an overflowing column stays scrollable from the top on short phone screens
     <div className="flex h-full flex-col overflow-y-auto px-4 pt-6 pb-10">
       <div className="my-auto flex w-full max-w-[420px] flex-col items-center self-center">
-        <div className="text-[13px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
-        <div className="tnum mt-2 text-[64px] font-semibold leading-none tracking-[-0.02em]" role="timer" aria-live="off">{mmss(left)}</div>
+        <div className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-ink-3">{label}</div>
+        <div className="tnum mt-3 text-[72px] font-bold leading-none tracking-[-0.04em] text-ink" role="timer" aria-live="off">{mmss(left)}</div>
 
         <div className="mt-4 flex gap-2" aria-label={`Round ${session.round} of ${LONG_EVERY}`}>
           {Array.from({ length: LONG_EVERY }, (_, i) => {
             const r = i + 1
             const done = !idle && r < session.round
             const current = !idle && r === session.round
-            return <span key={r} className={`size-2.5 rounded-full ${done ? 'bg-tangerine' : current ? 'ring-2 ring-tangerine ring-offset-2 ring-offset-paper' : 'bg-ink/15'}`} />
+            return <span key={r} className={`size-2 rounded-full ${done ? 'bg-tangerine' : current ? 'ring-2 ring-tangerine ring-offset-2 ring-offset-paper' : 'bg-ink/15'}`} />
           })}
         </div>
 
@@ -120,21 +120,21 @@ function Focus({ session, pal, palState, todayMinutes, palLine, alarmsOn, onStar
         </div>
 
         {!alarmsOn && (
-          <button type="button" onClick={onEnableAlarms} className="press mt-3 rounded-full px-3 py-1.5 text-[13px] text-tangerine hover:bg-tangerine-soft">
-            Turn on alarms so you hear when a round ends
+          <button type="button" onClick={onEnableAlarms} className="press mt-3 rounded-full px-3 py-1 text-[12px] font-medium text-tangerine hover:bg-tangerine-soft">
+            Enable completion chimes
           </button>
         )}
 
         <div className="mt-6 flex flex-col items-center">
           {palLine && (
-            <p key={palLine} className="pop mb-2 max-w-[300px] rounded-[20px] rounded-bl-[6px] bg-paper px-3.5 py-2 text-center text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(60_44_30/0.35)]" aria-live="polite">
+            <p key={palLine} className="pop mb-2 max-w-[300px] rounded-2xl rounded-bl-[4px] bg-paper px-3.5 py-2 text-center text-[13px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(35_37_56/0.2)]" aria-live="polite">
               {palLine}
             </p>
           )}
-          <Pal id={pal} state={palState} size={120} />
+          <Pal id={pal} state={palState} size={110} />
         </div>
 
-        <div className="mt-4 text-[13px] text-ink-3">Today: {todayMinutes} min focused</div>
+        <div className="mt-4 text-[12.5px] text-ink-3">Today: {todayMinutes}m focused</div>
       </div>
     </div>
   )
