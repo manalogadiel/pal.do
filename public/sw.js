@@ -1,5 +1,19 @@
-// Chronos PWA Service Worker
-const CACHE_NAME = 'chronos-pwa-v4'
+// Pal.do PWA Service Worker
+const CACHE_NAME = 'paldo-pwa-v2'
+
+// On a dev server (this computer or the local network) the cache served old copies of the source files, so changes
+// never showed. There this worker clears everything, removes itself, and reloads the open tabs onto the real files.
+const DEV_HOST = /^(localhost|127\.0\.0\.1|\[::1\]|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(self.location.hostname)
+if (DEV_HOST) {
+  self.addEventListener('install', () => self.skipWaiting())
+  self.addEventListener('activate', (event) => {
+    event.waitUntil((async () => {
+      await Promise.all((await caches.keys()).map((key) => caches.delete(key)))
+      await self.registration.unregister()
+      for (const client of await self.clients.matchAll({ type: 'window' })) client.navigate(client.url)
+    })())
+  })
+}
 const SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -8,27 +22,26 @@ const SHELL_ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon.svg',
-  '/icons/apple-touch-icon.png',
-  '/fonts/manrope-600.woff2'
+  '/icons/apple-touch-icon.png'
 ]
 
-self.addEventListener('install', (event) => {
+if (!DEV_HOST) self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)).then(() => self.skipWaiting())
   )
 })
 
-self.addEventListener('activate', (event) => {
+if (!DEV_HOST) self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys.filter((key) => /^(paldo|chronos)-pwa-/.test(key) && key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       )
     ).then(() => self.clients.claim())
   )
 })
 
-self.addEventListener('fetch', (event) => {
+if (!DEV_HOST) self.addEventListener('fetch', (event) => {
   const req = event.request
   const url = new URL(req.url)
 

@@ -32,7 +32,22 @@ public class ModelStoreTest {
         assertEquals(prior.sha256, store.selected().sha256);
     }
     @Test public void oversizeRejectedBeforeReading() throws Exception {
-        expectError("INVALID_MODEL", () -> store().importStream(new ByteArrayInputStream(valid()), (1L<<30)+1, () -> 4L<<30, () -> false, file -> {}));
+        expectError("INVALID_MODEL", () -> store().importStream(new ByteArrayInputStream(valid()), (2L<<30)+1, () -> 5L<<30, () -> false, file -> {}));
+    }
+    @Test public void importKeepsEarlierModelsToSwitchBack() throws Exception {
+        ModelStore store = store(); ModelStore.Model first = store.importStream(new ByteArrayInputStream(valid()), 1024, () -> 3L<<30, () -> false, file -> {});
+        byte[] other = valid(); other[100]=1; ModelStore.Model second = store.importStream(new ByteArrayInputStream(other), 1024, () -> 3L<<30, () -> false, file -> {});
+        assertEquals(second.sha256, store.selected().sha256); assertEquals(2, store.list().size()); assertTrue(first.file.exists());
+        store.select(first.sha256); assertEquals(first.sha256, store.selected().sha256);
+    }
+    @Test public void removeDeletesOnlyModelsNotAnswering() throws Exception {
+        ModelStore store = store(); ModelStore.Model first = store.importStream(new ByteArrayInputStream(valid()), 1024, () -> 3L<<30, () -> false, file -> {});
+        byte[] other = valid(); other[100]=1; ModelStore.Model second = store.importStream(new ByteArrayInputStream(other), 1024, () -> 3L<<30, () -> false, file -> {});
+        store.setName(first.sha256, "Qwen small");
+        assertEquals("Qwen small", store.name(first.sha256)); assertEquals("Imported model", store.name(second.sha256));
+        expectError("BUSY", () -> store.remove(second.sha256));
+        store.remove(first.sha256); assertFalse(first.file.exists()); assertEquals(1, store.list().size());
+        expectError("MISSING_MODEL", () -> store.select(first.sha256));
     }
     @Test public void reserveCannotBeConsumed() throws Exception {
         expectError("INSUFFICIENT_SPACE", () -> store().importStream(new ByteArrayInputStream(valid()), 1024, () -> 1L<<30, () -> false, file -> {}));

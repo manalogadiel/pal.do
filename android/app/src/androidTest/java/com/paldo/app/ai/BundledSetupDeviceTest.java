@@ -42,7 +42,7 @@ public class BundledSetupDeviceTest {
                     @Override public void resolve(JSObject result){reused.countDown();}
                     @Override public void reject(String message,String code){failure.set(code);reused.countDown();}
                 });
-                assertTrue(reused.await(3,TimeUnit.SECONDS));assertNull(failure.get());assertEquals(2,directory.list().length);
+                assertTrue(reused.await(3,TimeUnit.SECONDS));assertNull(failure.get());assertEquals(1,directory.list((d,n)->n.endsWith(".gguf")).length);assertTrue(new File(directory,"selected.properties").isFile());
                 android.os.Bundle report=new android.os.Bundle();report.putString("stream","PALDO_BUNDLE pass fresh setup from APK, verified SHA, local generation, reuse; setupMs="+setupMs+"\n");InstrumentationRegistry.getInstrumentation().sendStatus(0,report);
             } finally {
                 engine.unload();if(original.get()!=null)scenario.onActivity(activity->{try{Field store=LocalAiPlugin.class.getDeclaredField("store");store.setAccessible(true);store.set(pluginRef.get(),original.get());}catch(Exception error){throw new RuntimeException(error);}});

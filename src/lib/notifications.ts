@@ -276,3 +276,5 @@ const SOUNDS_KEY = 'paldo.sounds'
 export const soundsOn = () => { try { return localStorage.getItem(SOUNDS_KEY) !== 'off' } catch { return true } }
 export const setSoundsOn = (on: boolean) => { try { localStorage.setItem(SOUNDS_KEY, on ? 'on' : 'off') } catch {} }
 export const playSound = (name: SoundName) => { if (soundsOn()) chime.sound(name) }
+/** The mic opening or closing for hands-free: always heard, like alarms, so you know when it's listening to you */
+export const playMicSound = (open: boolean) => chime.sound(open ? 'micOpen' : 'micClose')

@@ -8,7 +8,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 public final class ModelStore {
-    static final long MAX_BYTES=1L<<30, RESERVE=1L<<30;
+    static final long MAX_BYTES=2L<<30, RESERVE=1L<<30;
     final File directory;
     public static final class Failure extends IOException {
         public final String code;
@@ -20,6 +20,48 @@ public final class ModelStore {
     public static final class Model {
         public final File file; public final long bytes; public final String sha256;
         Model(File file,long bytes,String sha256){this.file=file;this.bytes=bytes;this.sha256=sha256;}
+    }
+    /** Every model kept on the phone (the bundled one and any imported), for the Settings picker */
+    public List<Model> list(){
+        List<Model> models=new ArrayList<>();
+        File[] files=directory.listFiles((dir,name)->name.matches("[a-f0-9]{64}\\.gguf"));
+        if(files!=null)for(File file:files)if(file.length()<=MAX_BYTES)models.add(new Model(file,file.length(),file.getName().substring(0,64)));
+        models.sort(Comparator.comparing(m->m.sha256));
+        return models;
+    }
+    public boolean has(String sha256){return sha256.matches("[a-f0-9]{64}") && new File(directory,sha256+".gguf").isFile();}
+    /** Make a kept model the one that answers */
+    public Model select(String sha256) throws IOException {
+        if(!has(sha256)) throw new Failure("MISSING_MODEL");
+        File file=new File(directory,sha256+".gguf");
+        if(file.length()<24 || file.length()>MAX_BYTES) throw new Failure("INVALID_MODEL");
+        File metadata=new File(directory,"selected.properties.partial");
+        Properties properties=new Properties();properties.setProperty("sha256",sha256);properties.setProperty("bytes",Long.toString(file.length()));
+        try(FileOutputStream output=new FileOutputStream(metadata)){properties.store(output,"Local model");output.getFD().sync();}
+        Files.move(metadata.toPath(),new File(directory,"selected.properties").toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
+        return new Model(file,file.length(),sha256);
+    }
+    /** Delete a kept model; the one answering can't be removed */
+    public void remove(String sha256) throws IOException {
+        Model selected=selected();
+        if(selected!=null && selected.sha256.equals(sha256)) throw new Failure("BUSY");
+        if(!has(sha256)) throw new Failure("MISSING_MODEL");
+        new File(directory,sha256+".gguf").delete();
+        Properties names=names();names.remove(sha256);storeNames(names);
+    }
+    /** Models earlier builds bundled, so they keep a real name after an update */
+    static final String OLD_BUNDLE="74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db";
+    public String name(String sha256){String fallback=OLD_BUNDLE.equals(sha256)?"Qwen2.5 0.5B Instruct":"Imported model";try{return names().getProperty(sha256,fallback);}catch(IOException e){return fallback;}}
+    public void setName(String sha256,String name) throws IOException {Properties names=names();names.setProperty(sha256,name);storeNames(names);}
+    private Properties names() throws IOException {
+        Properties names=new Properties();File file=new File(directory,"models.properties");
+        if(file.isFile())try(InputStream input=new FileInputStream(file)){names.load(input);}
+        return names;
+    }
+    private void storeNames(Properties names) throws IOException {
+        File partial=new File(directory,"models.properties.partial");
+        try(FileOutputStream output=new FileOutputStream(partial)){names.store(output,"Model names");output.getFD().sync();}
+        Files.move(partial.toPath(),new File(directory,"models.properties").toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);
     }
     public ModelStore(File directory) throws IOException {
         this.directory=directory;
@@ -79,7 +121,6 @@ public final class ModelStore {
             try(FileOutputStream output=new FileOutputStream(metadata)){properties.store(output,"Local model");output.getFD().sync();}
             gate.commit(()->Files.move(metadata.toPath(),new File(directory,"selected.properties").toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE));
             committed=true;
-            if(prior!=null && !prior.sha256.equals(hash)) prior.file.delete();
             return new Model(activated,total,hash);
         } finally {
             temporary.delete();metadata.delete();

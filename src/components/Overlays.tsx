@@ -6,11 +6,12 @@ import type { Energy } from '../lib/schedule'
 import { Pal, PALS } from '../pals/Pal'
 import { Boundary } from './Chat'
 import { ChevronL, ChevronR, Glyph, SyllabusArt, Trash, Wordmark, X } from './Icons'
-import { DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, getLocalAiModel, hasCloudAi, getLocalAiUrl, getSavedGroqKey, isGroqDisabled, listOllamaModels, preloadOllama, setGroqApiKey, setGroqDisabled, setLocalAiModel, setLocalAiUrl } from '../lib/groq'
+import { CLOUD_MODELS, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, getCloudModel, getLocalAiModel, hasCloudAi, getLocalAiUrl, getSavedGroqKey, isGroqDisabled, listOllamaModels, preloadOllama, setCloudModel, setGroqApiKey, setGroqDisabled, setLocalAiModel, setLocalAiUrl } from '../lib/groq'
 import { playSound, setSoundsOn, soundsOn, testAlarm } from '../lib/notifications'
 import AndroidAiSettings from './AndroidAiSettings'
 import AiModeSelector from './AiModeSelector'
 import { isPhoneAiPlatform } from '../lib/ai-mode'
+import { HEARD_EVENT, lastHeard, wakeDetector } from '../lib/handsfree'
 
 /* ---------- Pal stage: one character at a time, swipe or arrows ---------- */
 const IDS = Object.keys(PALS) as PalId[]
@@ -88,9 +89,9 @@ function LocalAiRow() {
   }, [on, url])
   const status = !on ? 'Unlimited replies from Ollama on this computer when the free cloud AI runs out.'
     : models === undefined ? 'Checking…'
-    : models === null ? "Ollama isn't running at this address. Start it, then reopen settings."
+    : models === null ? `Ollama isn't reachable here. Start it${location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? '' : ' with OLLAMA_ORIGINS="*" ollama serve'}, then reopen settings.`
     : !models.length ? `Connected, but no models yet. Run: ollama pull ${DEFAULT_OLLAMA_MODEL}`
-    : `Connected · ${model}. Takes over when the cloud AI runs out.`
+    : `Connected · ${model}. Takes over when the cloud AI runs out.${models.includes(DEFAULT_OLLAMA_MODEL) ? '' : ` Recommended: ollama pull ${DEFAULT_OLLAMA_MODEL}`}`
   const field = 'rounded-[12px] bg-ink/[0.045] px-3 py-1.5 font-mono text-[13px] outline-none focus:bg-ink/[0.08]'
   return (
     <div className="mt-4 rounded-[16px] bg-ink/[0.035] p-3">
@@ -102,7 +103,7 @@ function LocalAiRow() {
         <button
           type="button"
           onClick={() => { setOn(!on); setLocalAiUrl(on ? '' : url) }}
-          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-action-text' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
+          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-accent/15 text-accent' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
         >
           {on ? 'On' : 'Turn on'}
         </button>
@@ -126,6 +127,33 @@ function LocalAiRow() {
   )
 }
 
+/* ---------- Reset app: back to a fresh install, after a second tap to be sure ---------- */
+function ResetRow() {
+  const [sure, setSure] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!sure) return
+    const t = setTimeout(() => setSure(false), 6000)
+    return () => clearTimeout(t)
+  }, [sure])
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-rose-500/[0.06] p-3">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium text-ink">Reset app</div>
+        <div className="text-[11.5px] text-ink-3">{sure ? 'This erases your calendar, tasks, chats, study files and settings on this device.' : 'Start over like a fresh install. Downloaded AI models are kept.'}</div>
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => { if (!sure) return setSure(true); setBusy(true); void import('../lib/reset').then((m) => m.resetApp()) }}
+        className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium disabled:opacity-50 ${sure ? 'bg-rose-600 text-white' : 'bg-paper text-rose-600 shadow-sm hover:bg-paper-2'}`}
+      >
+        {busy ? 'Resetting…' : sure ? 'Erase everything' : 'Reset'}
+      </button>
+    </div>
+  )
+}
+
 /* ---------- Sounds: little blips for send, reply, added; alarms always ring ---------- */
 function SoundsRow() {
   const [on, setOn] = useState(soundsOn)
@@ -135,7 +163,7 @@ function SoundsRow() {
         <div className="text-[13px] font-medium text-ink">Sounds</div>
         <div className="text-[11.5px] text-ink-3">Soft blips when you send, Pal replies, and plans are added. Timers and reminders always ring.</div>
       </div>
-      <button type="button" onClick={() => { setSoundsOn(!on); setOn(!on); if (!on) playSound('added') }} className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-action-text' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}>
+      <button type="button" onClick={() => { setSoundsOn(!on); setOn(!on); if (!on) playSound('added') }} className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-accent/15 text-accent' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}>
         {on ? 'On' : 'Off'}
       </button>
     </div>
@@ -143,30 +171,30 @@ function SoundsRow() {
 }
 
 /* ---------- Hands-free "Hi {pal}": privacy in plain words, and the device-only switch ---------- */
-function HandsFreeRow({ palName, on, toggle, deviceOnly, setDeviceOnly }: { palName: string; on: boolean; toggle: () => void; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }) {
+function HandsFreeRow({ palName, on, deviceOnly, setDeviceOnly }: { palName: string; on: boolean; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }) {
+  const [heard, setHeard] = useState(lastHeard)
+  useEffect(() => {
+    const update = () => setHeard(lastHeard())
+    window.addEventListener(HEARD_EVENT, update)
+    return () => window.removeEventListener(HEARD_EVENT, update)
+  }, [])
   return (
     <div className="mt-4 rounded-[16px] bg-ink/[0.035] p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[13px] font-medium text-ink">Hands-free <span className="font-normal text-ink-3">("Hi {palName}")</span></div>
           <div className="text-[11.5px] text-ink-3">
-            {on
-              ? `Listening on this device. Only what you say after "Hi ${palName}" leaves it, to be written out${deviceOnly ? ': with device-only on, nothing does' : ''}.`
-              : `Say "Hi ${palName}" and talk, no tapping. Downloads an ~80 MB listener the first time (Wi-Fi recommended).${isPhoneAiPlatform() ? ' Listens while the app is open.' : ''}`}
+            {`Always on: just say "Hi ${palName}". You'll hear a sound when the mic opens. It listens on this device; only what you say after "Hi ${palName}" leaves it${deviceOnly ? ' (with device-only on, nothing does)' : ''}.${isPhoneAiPlatform() ? ' Listens while the app is open.' : ''}`}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={toggle}
-          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-action-text' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
-        >
-          {on ? 'On' : 'Turn on'}
-        </button>
+        <span className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium ${on ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-ink/[0.06] text-ink-3'}`}>{on ? 'Listening' : 'Starting…'}</span>
       </div>
       <label className="mt-2.5 flex cursor-pointer items-start gap-2 text-[12px] text-ink-2">
-        <input type="checkbox" checked={deviceOnly} onChange={(e) => setDeviceOnly(e.target.checked)} className="mt-0.5 accent-[var(--tangerine)]" />
+        <input type="checkbox" checked={deviceOnly} onChange={(e) => setDeviceOnly(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
         <span>Write out what I say on this device only <span className="text-ink-3">(most private, but weaker with Taglish)</span></span>
       </label>
+      {on && <div className="mt-2 text-[11.5px] text-ink-3">{wakeDetector() === 'engine' ? `Instant wake word: on (catches "Hi ${palName}" as you say it)` : 'Instant wake word: not loaded, the speech model listens for the name (a little slower)'}</div>}
+      {on && heard && <div className="mt-1 text-[11.5px] text-ink-3">Last heard: <span className="font-mono text-ink-2">"{heard}"</span></div>}
     </div>
   )
 }
@@ -181,6 +209,7 @@ export function Onboarding({
   onClearPrefs,
   handsFree,
   extras,
+  onDemoWeek,
 }: {
   initial?: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean; userName?: string }
   onDone: (v: { pal: PalId; name: string; energy: Energy; advancedMode: boolean; userName?: string }) => void
@@ -191,9 +220,11 @@ export function Onboarding({
   prefsLabel?: string
   onClearPrefs?: () => void
   /** Hands-free "Hi {pal}" switch and its device-only setting */
-  handsFree?: { on: boolean; toggle: () => void; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }
+  handsFree?: { on: boolean; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }
   /** On a phone the header has no room for these, so Settings holds them */
   extras?: { dark: boolean; toggleDark: () => void; onSyllabus: () => void }
+  /** Advanced: put the sample week back */
+  onDemoWeek?: () => void
 }) {
   const isEditing = Boolean(initial)
   const [step, setStep] = useState(isEditing ? 1 : 0)
@@ -205,6 +236,7 @@ export function Onboarding({
   const [userName, setUserName] = useState(initial?.userName ?? '')
   const [hello, setHello] = useState<PalId | null>(null)
   const [groqKey, setGroqKey] = useState(getSavedGroqKey)
+  const [cloudModel, setCloudModelState] = useState(getCloudModel)
   const [groqOff, setGroqOff] = useState(() => isGroqDisabled())
   const [alarmTesting, setAlarmTesting] = useState(false)
   const hasEnvKey = Boolean(import.meta.env.DEV && import.meta.env.VITE_GROQ_API_KEY)
@@ -306,11 +338,11 @@ export function Onboarding({
                     {!isPhoneAiPlatform() && <button
                       type="button"
                       onClick={() => { setGroqOff(!groqOff); setGroqDisabled(!groqOff) }}
-                      className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-tangerine/15 text-action-text'}`}
+                      className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-accent/15 text-accent'}`}
                     >
                       {groqOff ? 'Off (local only)' : 'On'}
                     </button>}
-                    <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-action-text hover:underline">Free API key ↗</a>
+                    <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-accent hover:underline">Free API key ↗</a>
                   </div>
                 </div>
                 <input
@@ -324,29 +356,44 @@ export function Onboarding({
                   placeholder={hasEnvKey ? "Using key from .env (paste here to override)" : hasCloudAi() ? "gsk_… (blank = Pal's shared free AI)" : "gsk_… (blank = simple offline rules)"}
                   className="mt-1.5 w-full rounded-[14px] bg-ink/[0.045] px-3.5 py-2 text-[13px] outline-none placeholder:text-ink-3 focus:bg-ink/[0.08]"
                 />
+                {!groqKey && !hasCloudAi() && !hasEnvKey && (
+                  <div className="mt-2 rounded-[12px] bg-accent/10 px-3 py-2 text-[12px] leading-snug text-ink-2">
+                    <span className="font-medium text-ink">Want fast, smart replies?</span> Paste a free Groq key above: answers in 1–2 seconds instead of waiting on this device's AI.{' '}
+                    <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="font-medium text-accent underline">Get a key</a>
+                  </div>
+                )}
                 <div className="mt-1 text-[11px] text-ink-3">
-                  {groqKey ? 'Your key: no daily limit from Pal. ' : hasCloudAi() ? "Without a key, Pal's free cloud AI is shared by everyone and has a daily limit. " : ''}Cloud: <span className="font-mono text-ink-2">qwen3.8-27b → gpt-oss → {groqKey ? '' : 'Gemini Flash-Lite → '}</span>{isPhoneAiPlatform() ? 'this phone (Auto)' : "your PC's AI · then simple rules"}
+                  {groqKey ? 'Your key: no daily limit from Pal. ' : hasCloudAi() ? "Without a key, Pal's free cloud AI is shared by everyone and has a daily limit. " : ''}Cloud: <span className="font-mono text-ink-2">{cloudModel === 'auto' ? `qwen3.8-27b → gpt-oss → ${groqKey ? '' : 'Gemini Flash-Lite → '}` : `${CLOUD_MODELS.find((m) => m.id === cloudModel)?.label} only → `}</span>{isPhoneAiPlatform() ? 'this phone (Auto)' : "your PC's AI · then simple rules"}
                 </div>
+                <select
+                  value={cloudModel}
+                  onChange={(e) => { setCloudModelState(e.target.value); setCloudModel(e.target.value) }}
+                  aria-label="Cloud model"
+                  className="mt-1.5 w-full rounded-[12px] bg-ink/[0.045] px-3 py-1.5 text-[12px] outline-none focus:bg-ink/[0.08]"
+                >
+                  <option value="auto">Cloud model: Auto (best available, falls back when one runs out)</option>
+                  {CLOUD_MODELS.filter((m) => !groqKey || m.id !== 'gemini').map((m) => <option key={m.id} value={m.id}>Only {m.label} (for testing, no fallback)</option>)}
+                </select>
               </div>
 
               {isPhoneAiPlatform() ? <AndroidAiSettings /> : <><div className="mt-5 rounded-[18px] bg-ink/[0.035] p-4"><AiModeSelector /></div><LocalAiRow /></>}
               {handsFree && <HandsFreeRow palName={name || PALS[pal].name} {...handsFree} />}
               <SoundsRow />
               {extras && (
-                <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="mt-4 grid grid-cols-1 gap-2 min-[400px]:grid-cols-2">
                   <button type="button" onClick={extras.toggleDark} className="press flex items-center justify-between gap-2 rounded-[16px] bg-ink/[0.035] p-3 text-left">
                     <span className="min-w-0">
                       <span className="block text-[13px] font-medium text-ink">Appearance</span>
                       <span className="block text-[11.5px] text-ink-3">{extras.dark ? 'Dark' : 'Light'}</span>
                     </span>
-                    <span className="rounded-full bg-paper px-2.5 py-1 text-[11.5px] font-medium text-ink shadow-sm">{extras.dark ? 'Light' : 'Dark'}</span>
+                    <span className="shrink-0 whitespace-nowrap rounded-full bg-paper px-2.5 py-1 text-[11.5px] font-medium text-ink shadow-sm">{extras.dark ? 'Light' : 'Dark'}</span>
                   </button>
                   <button type="button" onClick={extras.onSyllabus} className="press flex items-center justify-between gap-2 rounded-[16px] bg-ink/[0.035] p-3 text-left">
                     <span className="min-w-0">
                       <span className="block text-[13px] font-medium text-ink">Syllabus</span>
                       <span className="block text-[11.5px] text-ink-3">Pull out deadlines</span>
                     </span>
-                    <span className="rounded-full bg-paper px-2.5 py-1 text-[11.5px] font-medium text-ink shadow-sm">Paste</span>
+                    <span className="shrink-0 whitespace-nowrap rounded-full bg-paper px-2.5 py-1 text-[11.5px] font-medium text-ink shadow-sm">Paste</span>
                   </button>
                 </div>
               )}
@@ -366,11 +413,11 @@ export function Onboarding({
               )}
 
               {/* Advanced Mode Toggle */}
-              <div className="mt-4 flex items-center justify-between rounded-[16px] bg-ink/[0.035] p-3">
-                <div>
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
+                <div className="min-w-0">
                   <div className="text-[13px] font-medium text-ink flex items-center gap-1.5">
                     <span>Advanced Mode</span>
-                    <span className="rounded-full bg-tangerine/15 px-1.5 py-0.5 text-[10px] font-semibold text-action-text">HUD</span>
+                    <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">HUD</span>
                   </div>
                   <div className="text-[11.5px] text-ink-3">Show live AI model, online/offline status, and response latency on interface</div>
                 </div>
@@ -388,8 +435,8 @@ export function Onboarding({
                 </button>
               </div>
 
-              <div className="mt-4 flex items-center justify-between rounded-[16px] bg-ink/[0.035] p-3">
-                <div>
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
+                <div className="min-w-0">
                   <div className="text-[13px] font-medium text-ink">Offline Alarm Check</div>
                   <div className="text-[11.5px] text-ink-3">Schedule a 5-second test alarm</div>
                 </div>
@@ -401,11 +448,21 @@ export function Onboarding({
                     setTimeout(() => setAlarmTesting(false), 5500)
                   }}
                   disabled={alarmTesting}
-                  className="press h-8 rounded-full bg-paper px-3 text-[12px] font-medium text-ink shadow-sm hover:bg-paper-2 disabled:opacity-50"
+                  className="press h-8 shrink-0 whitespace-nowrap rounded-full bg-paper px-3 text-[12px] font-medium text-ink shadow-sm hover:bg-paper-2 disabled:opacity-50"
                 >
                   {alarmTesting ? 'Ringing in 5s...' : 'Test Alarm'}
                 </button>
               </div>
+              {advancedMode && onDemoWeek && (
+                <div className="mt-4 flex items-center justify-between gap-3 rounded-[16px] bg-ink/[0.035] p-3">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-ink">Sample week</div>
+                    <div className="text-[11.5px] text-ink-3">Replace your calendar with the demo week</div>
+                  </div>
+                  <button type="button" onClick={onDemoWeek} className="press h-8 shrink-0 rounded-full bg-paper px-3 text-[12px] font-medium text-ink shadow-sm hover:bg-paper-2">Load</button>
+                </div>
+              )}
+              <ResetRow />
             </div>
             <div className="flex flex-col items-center justify-end gap-4">
               <Pal id={pal} size={130} state="cheer" />
@@ -424,25 +481,36 @@ export function Onboarding({
 /* ---------- Syllabus paste ---------- */
 export interface SyllabusItem { title: string; kind: TaskKind; due: number; hours: number; on: boolean }
 
-export function SyllabusSheet({ now, onClose, onAdd }: { now: number; onClose: () => void; onAdd: (items: SyllabusItem[]) => void }) {
-  const [text, setText] = useState('')
-  const [items, setItems] = useState<SyllabusItem[] | null>(null)
-  const scan = () => {
-    const found: SyllabusItem[] = []
-    for (const line of text.split(/\n|;/)) {
-      const k = taskKind(line)
-      const w = parseWhen(line, now)
-      if (k && w) found.push({ title: extractTitle(line, k === 'exam' ? 'Exam' : 'Assignment'), kind: k, due: w.t, hours: defaultHours(k), on: true })
-    }
-    setItems(found.sort((a, b) => a.due - b.due))
+/** The dated deadlines in a syllabus, course outline or timeline: one per line ("Quiz 2 on Oct 20", "Paper due Nov 3") */
+export function scanDeadlines(text: string, now: number): SyllabusItem[] {
+  const found: SyllabusItem[] = []
+  const seen = new Set<string>()
+  for (const line of text.split(/\n|;|•/)) {
+    if (line.length > 160) continue // a paragraph, not a timeline entry
+    const k = taskKind(line) ?? (/\b(due|deadline|submit|submission|presentation|defen[cs]e|report|project|paper)\b/i.test(line) ? 'assignment' : null)
+    const w = parseWhen(line, now)
+    if (!k || !w) continue
+    const title = extractTitle(line, k === 'exam' ? 'Exam' : 'Assignment')
+    const key = `${title.toLowerCase()}|${w.t}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    found.push({ title, kind: k, due: w.t, hours: defaultHours(k), on: true })
   }
+  return found.sort((a, b) => a.due - b.due)
+}
+
+export function SyllabusSheet({ now, onClose, onAdd, initialText, source }: { now: number; onClose: () => void; onAdd: (items: SyllabusItem[]) => void; initialText?: string; source?: string }) {
+  const [text, setText] = useState(initialText ?? '')
+  // A file's text arrives already scanned: straight to the checklist
+  const [items, setItems] = useState<SyllabusItem[] | null>(() => (initialText ? scanDeadlines(initialText, now) : null))
+  const scan = () => setItems(scanDeadlines(text, now))
   return (
     <div className="fixed inset-0 z-50 grid place-items-end bg-ink/25 sm:place-items-center sm:p-4" onClick={onClose}>
       <div className="pop w-full max-w-[520px] rounded-t-[32px] liquid-solid p-6 sm:rounded-[32px]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-serif text-[32px] leading-none tracking-[-0.02em]">Syllabus drop</h2>
-            <p className="mt-1.5 text-[14px] text-ink-2">Paste it in. You confirm every deadline before it's added.</p>
+            <h2 className="font-serif text-[32px] leading-none tracking-[-0.02em]">{source ? 'Dates found' : 'Syllabus drop'}</h2>
+            <p className="mt-1.5 text-[14px] text-ink-2">{source ? <>From <span className="font-medium text-ink">{source}</span>. Tick the ones to add to your schedule.</> : "Paste it in. You confirm every deadline before it's added."}</p>
           </div>
           <button onClick={onClose} className="press grid size-9 place-items-center rounded-full text-ink-2 hover:bg-paper-3" aria-label="Close"><X /></button>
         </div>
@@ -464,13 +532,13 @@ export function SyllabusSheet({ now, onClose, onAdd }: { now: number; onClose: (
         ) : (
           <>
             <ul className="mt-4 max-h-[50vh] space-y-1 overflow-y-auto">
-              {items.length === 0 && <li className="py-6 text-center text-[14px] text-ink-3">No dated deadlines found. Each line needs a task and a date.</li>}
+              {items.length === 0 && <li className="py-6 text-center text-[14px] text-ink-3">{source ? 'No dated deadlines in this file. You can paste them instead.' : 'No dated deadlines found. Each line needs a task and a date.'}</li>}
               {items.map((it, i) => {
                 const G = it.kind === 'exam' ? Glyph.exam : Glyph.work
                 return (
                   <li key={i}>
                     <label className="flex cursor-pointer items-center gap-3 rounded-[12px] px-2 py-2.5 hover:bg-paper-2">
-                      <input type="checkbox" checked={it.on} onChange={() => setItems(items.map((x, j) => (j === i ? { ...x, on: !x.on } : x)))} className="size-4 accent-[var(--tangerine)]" />
+                      <input type="checkbox" checked={it.on} onChange={() => setItems(items.map((x, j) => (j === i ? { ...x, on: !x.on } : x)))} className="size-4 accent-[var(--accent)]" />
                       <G className="size-4 text-ink-3" />
                       <span className="flex-1 truncate text-[14px] font-medium">{it.title}</span>
                       <span className="tnum text-[12.5px] text-ink-2">{fmtDay(it.due)}</span>
@@ -523,7 +591,7 @@ export function BlockPopover({ ev, rect, onClose, onDone, onAccept, onDelete }: 
         <div className="tnum mt-1 text-[13px] text-ink-2">
           {fmtDay(ev.start)} · {ev.kind === 'deadline' ? `due ${fmtTime(ev.start)}` : `${fmtTime(ev.start)} – ${fmtTime(ev.end)} (${fmtHours(hoursOf(ev))})`}
         </div>
-        {ev.note && <div className="mt-2 text-[13px] font-medium text-action-text">{ev.note}</div>}
+        {ev.note && <div className="mt-2 text-[13px] font-medium text-accent">{ev.note}</div>}
         {ev.why && (
           <div className="mt-3 rounded-[12px] bg-paper-2 p-2.5 text-[12.5px] leading-snug text-ink-2">
             <span className="font-medium text-ink">Why here: </span>{ev.why}
@@ -560,7 +628,7 @@ function ToastItem({ t, dismiss }: { t: Toast; dismiss: (id: string) => void }) 
   }, [t.id, dismiss])
   return (
     <div className="pop pointer-events-auto flex items-center gap-3 rounded-full bg-ink py-1.5 pr-1.5 pl-2 text-[13.5px] text-paper shadow-[var(--shadow-lg)]">
-      {t.pal ? <Pal id={t.pal} size={24} state="alert" /> : <span className="ml-1.5 size-1.5 rounded-[2px] bg-tangerine" />}
+      {t.pal ? <Pal id={t.pal} size={24} state="alert" /> : <span className="ml-1.5 size-1.5 rounded-[2px] bg-accent" />}
       <span className="pr-1">{t.text}</span>
       {t.action ? (
         <button onClick={() => { t.action!.fn(); dismiss(t.id) }} className="press h-7 rounded-full bg-paper/15 px-3 text-[12.5px] font-medium">{t.action.label}</button>

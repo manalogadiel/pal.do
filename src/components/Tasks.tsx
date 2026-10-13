@@ -39,7 +39,7 @@ export function Tasks({ now, tasks, events, onPlan, onAdd }: Props) {
           {blocks[0] && <div className="tnum mt-0.5 text-[12.5px] text-ink-3">Next block {fmtDay(blocks[0].start).replace(/,.*/, '')} {fmtTime(blocks[0].start)} · {blocks.length} planned</div>}
         </div>
         {remaining > 0.25 && !blocks.length && (
-          <button onClick={() => onPlan(t)} className="press h-10 shrink-0 rounded-full bg-tangerine px-4 text-[13.5px] font-medium text-white shadow-[0_6px_14px_-8px_var(--tangerine)]">Plan it</button>
+          <button onClick={() => onPlan(t)} className="press h-10 shrink-0 rounded-full bg-accent px-4 text-[13.5px] font-medium text-white shadow-[0_6px_14px_-8px_var(--accent)]">Plan it</button>
         )}
         {remaining > 0.25 && blocks.length > 0 && (
           <button onClick={() => onPlan(t)} className="press h-10 shrink-0 rounded-full px-3 text-[13px] font-medium text-ink-2 hover-lift hover:text-ink">Re-plan</button>

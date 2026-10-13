@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { ToolInstrument, type ToolId } from './ToolInstrument'
+import { useEffect, useState, useRef } from 'react'
 import type { PalId, PalState } from '../lib/core'
-import { isPaused, LONG_EVERY, phaseLabel, remaining, FOCUS_MS, type Session } from '../lib/session'
+import { active, running, countUp, isPaused, phaseLabel, remaining, DEFAULT_CONFIG, type StudyConfig, type Session } from '../lib/session'
+import { METHODS, ToolGallery, ToolSetup, RhythmBand, StudyDialog } from './StudyTools'
 import { Pal } from '../pals/Pal'
 import Library, { type LibraryTarget } from './Library'
 import type { Task } from '../lib/core'
-import type { Folder, LibraryFile } from '../lib/library'
+import { listFolders, LIBRARY_EVENT, type Folder, type LibraryFile } from '../lib/library'
 
 interface Props {
   session: Session
@@ -15,10 +17,16 @@ interface Props {
   palLine?: string
   alarmsOn: boolean
   onStart: () => void
+  onConfigure: (c: StudyConfig) => void
+  onNext: (minutes?: number) => void
+  onRecover: (include: boolean) => void
+  onBrowse: (id: string) => void
+  browseFolderId?: string | null
+  onBrowseDone?: () => void
   onPause: () => void
   onResume: () => void
   onSkip: () => void
-  onStop: () => void
+  onStop: (done?: boolean) => void
   onEnableAlarms: () => void
   /** Library: reviewers and notes in folders */
   tasks: Task[]
@@ -36,7 +44,7 @@ interface Props {
 export function StudyTabs({ section, onSection }: { section: 'focus' | 'library'; onSection: (s: 'focus' | 'library') => void }) {
   return (
     <div className="inline-flex rounded-full bg-ink/[0.05] p-1" role="tablist" aria-label="Study">
-      {(['focus', 'library'] as const).map((s) => (
+      {(['library', 'focus'] as const).map((s) => (
         <button key={s} role="tab" aria-selected={section === s} type="button" onClick={() => onSection(s)} className={`press h-8 rounded-full px-4 text-[13px] ${section === s ? 'bg-paper font-medium shadow-sm' : 'text-ink-2'}`}>
           {s === 'focus' ? 'Focus' : 'Library'}
         </button>
@@ -53,6 +61,11 @@ const mmss = (ms: number) => {
 /** Study: the focus timer, and the library of reviewers. The session lives in App so switching tabs never stops it. */
 export function Study(props: Props) {
   const { section, onSection } = props
+  const [screen, setScreen] = useState<'gallery' | 'workspace'>(() => active(props.session) ? 'workspace' : 'gallery')
+  const wasActive = useRef(active(props.session))
+  useEffect(() => { const current = active(props.session); if (current && !wasActive.current) setScreen('workspace'); wasActive.current = current }, [props.session.phase])
+  const [pending, setPending] = useState<StudyConfig | null>(null)
+  const configureTool = (c: StudyConfig) => { if (active(props.session)) setPending(c); else { props.onConfigure(c); setScreen('workspace'); onSection('focus') } }
   return (
     <div className="flex h-full flex-col">
       {!props.tabsInHeader && (
@@ -60,84 +73,65 @@ export function Study(props: Props) {
           <StudyTabs section={section} onSection={onSection} />
         </div>
       )}
+      <button className="press mx-4 mt-2 h-9 self-start rounded-full px-3 text-sm text-accent" hidden={!active(props.session)} onClick={() => { setScreen('workspace'); onSection('focus') }}>{isPaused(props.session) ? 'Focus paused' : props.session.phase === 'waiting' ? 'Next round ready' : 'Focus session active'}</button>
+      {pending && <StudyDialog title="You already have a focus session" onClose={() => setPending(null)}><p className="mt-3 text-sm text-ink-2">Keep your current session, or finish it before preparing a new one.</p><button className="mt-5 h-11 w-full rounded-full bg-accent text-white dark:text-paper" onClick={() => { setPending(null); setScreen('workspace'); onSection('focus') }}>Resume current session</button><button className="mt-2 h-11 w-full rounded-full bg-paper-2" onClick={() => { props.onStop(); props.onConfigure(pending); setPending(null); setScreen('workspace'); onSection('focus') }}>Finish current and open new</button></StudyDialog>}
       <div className="min-h-0 flex-1">
-        {section === 'focus' ? <Focus {...props} /> : <Library pal={props.pal} tasks={props.tasks} now={Date.now()} target={props.libraryTarget} onTargetDone={props.onLibraryTargetDone} onPlan={props.onPlanFile} onToast={props.onToast} />}
+        {section === 'focus' ? <Focus {...props} onConfigure={configureTool} screen={screen} onScreen={setScreen} /> : <Library pal={props.pal} tasks={props.tasks} now={Date.now()} target={props.libraryTarget} onTargetDone={props.onLibraryTargetDone} onPlan={props.onPlanFile} onToast={props.onToast} onStudy={configureTool} browseFolderId={props.browseFolderId} onBrowseDone={props.onBrowseDone} />}
       </div>
     </div>
   )
 }
 
-/** Pomodoro screen */
-function Focus({ session, pal, palState, todayMinutes, palLine, alarmsOn, onStart, onPause, onResume, onSkip, onStop, onEnableAlarms }: Props) {
-  const running = session.phase !== 'idle' && !isPaused(session)
-  // Display-only clock; correctness comes from the session's timestamps
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    if (!running) return
-    setNow(Date.now())
-    const i = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(i)
-  }, [running])
-
-  const idle = session.phase === 'idle'
-  const paused = isPaused(session)
-  const left = idle ? FOCUS_MS : remaining(session, now)
-  const label = idle ? 'Ready when you are' : paused ? `${phaseLabel(session)} · paused` : phaseLabel(session)
-  const primary = 'press h-11 rounded-full bg-ink px-6 text-[15px] font-medium text-paper'
-  const secondary = 'press h-11 rounded-full px-5 text-[15px] text-ink-2 hover:bg-paper-3'
-
-  return (
-    // my-auto (not justify-center) so an overflowing column stays scrollable from the top on short phone screens
-    <div className="flex h-full flex-col overflow-y-auto px-4 pt-6 pb-10">
-      <div className="my-auto flex w-full max-w-[420px] flex-col items-center self-center">
-        <div className="text-[13px] font-medium uppercase tracking-[0.08em] text-ink-3">{label}</div>
-        <div className="tnum mt-2 text-[64px] font-semibold leading-none tracking-[-0.02em]" role="timer" aria-live="off">{mmss(left)}</div>
-
-        <div className="mt-4 flex gap-2" aria-label={`Round ${session.round} of ${LONG_EVERY}`}>
-          {Array.from({ length: LONG_EVERY }, (_, i) => {
-            const r = i + 1
-            const done = !idle && r < session.round
-            const current = !idle && r === session.round
-            return <span key={r} className={`size-2.5 rounded-full ${done ? 'bg-tangerine' : current ? 'ring-2 ring-tangerine ring-offset-2 ring-offset-paper' : 'bg-ink/15'}`} />
-          })}
-        </div>
-
-        {/* Controls sit right under the time so they stay above the fold on phones */}
-        <div className="mt-6 flex gap-2">
-          {idle && <button type="button" onClick={onStart} className={primary}>Start</button>}
-          {running && (
-            <>
-              <button type="button" onClick={onPause} className={primary}>Pause</button>
-              <button type="button" onClick={onSkip} className={secondary}>Skip</button>
-            </>
-          )}
-          {paused && (
-            <>
-              <button type="button" onClick={onResume} className={primary}>Resume</button>
-              <button type="button" onClick={onStop} className={secondary}>Stop</button>
-            </>
-          )}
-        </div>
-
-        {!alarmsOn && (
-          <button type="button" onClick={onEnableAlarms} className="press mt-3 rounded-full px-3 py-1.5 text-[13px] text-action-text hover:bg-tangerine-soft">
-            Turn on alarms so you hear when a round ends
-          </button>
-        )}
-
-        <div className="mt-6 flex flex-col items-center">
-          {palLine && (
-            <p key={palLine} className="pop mb-2 max-w-[300px] rounded-[20px] rounded-bl-[6px] bg-paper px-3.5 py-2 text-center text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(23_43_77/0.35)]" aria-live="polite">
-              {palLine}
-            </p>
-          )}
-          <Pal id={pal} state={palState} size={120} />
-        </div>
-
-        <div className="mt-4 text-[13px] text-ink-3">Today: {todayMinutes} min focused</div>
+export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen: (screen: 'gallery' | 'workspace') => void }) {
+  const { session, onConfigure, onStart, onPause, onResume, onSkip, onStop, onNext, onRecover } = props
+  const [editing, setEditing] = useState(false)
+  const [choice, setChoice] = useState<ToolId | null>(null), [now, setNow] = useState(Date.now()), [breakMinutes, setBreakMinutes] = useState(5)
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id) }, [])
+  useEffect(() => { setBreakMinutes((session.breakMs ?? 300_000) / 60_000) }, [session.breakMs])
+  const [folderExists, setFolderExists] = useState(true)
+  useEffect(() => { let alive = true; const check = () => { if (!session.config?.folderId) { setFolderExists(true); return } void listFolders().then(folders => { if (alive) setFolderExists(folders.some(f => f.id === session.config?.folderId)) }).catch(() => { if (alive) setFolderExists(false) }) }; check(); window.addEventListener(LIBRARY_EVENT, check); return () => { alive = false; window.removeEventListener(LIBRARY_EVENT, check) } }, [session.config?.folderId])
+  const config = session.config ?? DEFAULT_CONFIG
+  const ready = session.phase === 'idle' || session.phase === 'ready', finished = session.phase === 'finished'
+  const tool: ToolId = config.preparation === 'frog' ? 'frog' : config.method
+  const toGallery = () => { setEditing(false); setChoice(null); props.onScreen('gallery') }
+  const primary = 'press h-11 rounded-full bg-accent px-6 text-sm font-semibold text-white dark:text-paper'
+  const secondary = 'press h-11 rounded-full bg-paper-2 px-5 text-sm text-ink'
+  if (props.screen === 'gallery') return <div className="focus-scroll tool-container">{choice ? <ToolSetup key={choice} choice={choice} initialConfig={editing ? config : undefined} tasks={props.tasks} onBack={() => setChoice(null)} onOpen={c => { setChoice(null); onConfigure(c) }}/> : <ToolGallery onSelect={tool => { setEditing(false); setChoice(tool) }} onContinue={active(session) ? () => props.onScreen('workspace') : undefined}/>}</div>
+  const clock = mmss(finished ? session.completedFocusMs : session.phase === 'breakReady' ? session.breakMs ?? 300_000 : ready || session.phase === 'waiting' ? (config.method === 'flowtime' || config.method === 'task' ? 0 : config.method === '52-17' ? 52 : config.method === 'pomodoro' ? 25 : config.focusMinutes) * 60_000 : remaining(session, now))
+  const duration = (session.phase === 'break' ? session.breakMs ? session.breakMs / 60_000 : config.method === 'pomodoro' ? session.round === 4 ? 15 : 5 : config.method === '52-17' ? 17 : config.breakMinutes : config.method === 'pomodoro' ? 25 : config.method === '52-17' ? 52 : config.focusMinutes) * 60_000
+  const progress = !['focus', 'break'].includes(session.phase) || countUp(session) || !duration ? 0 : Math.max(0, Math.min(1, 1 - remaining(session, now) / duration))
+  return <div className="focus-scroll tool-container">
+    <section className="tool-workspace" data-workspace={tool}>
+      <div className="tool-workspace-heading"><div><h2 className="text-[28px] font-semibold tracking-[-0.025em]">{METHODS[tool].name}</h2><p className="mt-1 text-sm text-ink-2">{config.folderName ?? 'Independent focus'}</p></div><button className="tool-back" onClick={toGallery}>← All tools</button></div>
+      <p className="mt-4 text-sm text-ink-2" aria-live="polite">{ready ? 'Ready when you are' : isPaused(session) ? `${phaseLabel(session)} · paused` : phaseLabel(session)}</p>
+      {config.goal && <p className={`tool-goal ${tool === 'task' || tool === 'frog' ? 'is-prominent' : ''}`}>{config.goal}</p>}
+      <div className={`tool-scene scene-${tool}`}>
+        {tool === 'pomodoro' ? <div className="pomodoro-dial"><ToolInstrument tool={tool} progress={progress} resting={session.phase === 'break'}/><span className="tool-time dial-time" role="timer" aria-live="off">{clock}</span></div> : <>
+          {tool !== '52-17' && <ToolInstrument tool={tool}/>}
+          <div className="tool-time-block">{tool === '52-17' && <RhythmBand resting={session.phase === 'break'}/>}<span className="tool-time" role="timer" aria-live="off">{clock}</span>{tool === 'custom' && <div className="custom-session-values"><span>{config.focusMinutes} min focus</span><span>{config.breakMinutes ? `${config.breakMinutes} min break` : 'No break'}</span><span>{config.rounds} round{config.rounds === 1 ? '' : 's'}</span>{ready && <button onClick={() => { setEditing(true); setChoice('custom'); props.onScreen('gallery') }} className="tool-back">Adjust timer</button>}</div>}<p className="mt-2 text-sm text-ink-2">{finished ? 'Focused time recorded' : session.phase === 'breakReady' ? 'Suggested break' : session.phase === 'waiting' ? 'Next focus block' : countUp(session) || ready && ['flowtime', 'task'].includes(config.method) ? 'Time focused' : 'Time remaining'}</p></div>
+        </>}
       </div>
-    </div>
-  )
-}
+      {config.method === 'pomodoro' && <div className="tool-rounds" aria-label={`Round ${session.round} of four`}>{[1,2,3,4].map(n => <span key={n} className={n === session.round ? 'is-current' : n < session.round ? 'is-done' : ''}>{n}</span>)}</div>}
 
+      {finished && <p className="mt-4 text-sm text-ink-2">Your task progress stays yours to decide.</p>}
+      {session.awayAt !== undefined ? <div className="mt-5 rounded-[20px] bg-paper-2 p-4"><p className="font-medium">Were you still focusing while away?</p><div className="mt-3 flex flex-wrap justify-center gap-2"><button className={primary} onClick={() => onRecover(true)}>Include time away</button><button className={secondary} onClick={() => onRecover(false)}>Exclude time away</button></div></div> : <div className="mt-6 flex flex-wrap justify-center gap-2">
+        {ready && <button className={primary} onClick={config.method === 'task' && !config.goal ? () => { setChoice('task'); props.onScreen('gallery') } : onStart}>Start</button>}
+        {finished && <button className={primary} onClick={toGallery}>Choose another tool</button>}
+        {running(session) && <button className={primary} onClick={onPause}>Pause</button>}
+        {isPaused(session) && <button className={primary} onClick={onResume}>Resume</button>}
+        {session.phase === 'waiting' && <button className={primary} onClick={() => onNext()}>Start next round</button>}
+        {session.phase === 'breakReady' && <><label className="text-sm">Break minutes<input className="study-input mt-1 w-24" type="number" min={1} max={60} value={breakMinutes} onChange={e => setBreakMinutes(Number(e.target.value))} /></label><button className={primary} disabled={!Number.isFinite(breakMinutes) || breakMinutes < 1 || breakMinutes > 60} onClick={() => onNext(breakMinutes)}>Start break</button></>}
+        {session.phase === 'focus' && config.method !== 'task' && (config.method !== 'custom' || config.breakMinutes > 0) && <button className={secondary} onClick={onSkip}>Take a break</button>}
+        {session.phase === 'break' && <button className={secondary} onClick={onSkip}>Skip break</button>}
+        {session.phase === 'focus' && config.method === 'task' && <button className={primary} onClick={() => onStop(true)}>Goal done</button>}
+        {active(session) && <button className={secondary} onClick={() => onStop(false)}>{config.method === 'task' ? 'Finish for now' : 'Finish'}</button>}
+      </div>}
+      {config.folderId && <button className="press mt-3 h-11 rounded-full px-4 text-sm text-accent" disabled={!folderExists} title={!folderExists ? 'This folder is no longer available' : undefined} onClick={() => props.onBrowse(config.folderId!)}>{folderExists ? 'View materials' : 'Folder unavailable'}</button>}
+      {!props.alarmsOn && <button className="press mt-3 h-11 rounded-full px-4 text-sm text-accent" onClick={props.onEnableAlarms}>Enable session alarms</button>}
+      {props.palLine && <p className="mt-5 max-w-sm text-sm text-ink-2">{props.palLine}</p>}
+      <div className="tool-companion"><Pal id={props.pal} state={props.palState} size={104} className="mt-5" /><p className="text-sm text-ink-2">One session at a time.</p></div>
+      <p className="mt-3 text-sm text-ink-2">Today: {props.todayMinutes} min focused</p>
+    </section>
+  </div>
+}
 export default Study

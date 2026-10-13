@@ -21,3 +21,7 @@ logs/
 # beside it.
 /.plugins/
 /.opencode-skills/
+
+# Local Python runtime
+services/tts/.venv/
+services/tts/__pycache__/

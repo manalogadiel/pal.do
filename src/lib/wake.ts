@@ -7,10 +7,12 @@ const GREETING = String.raw`(?:hi|hii+|hey|hay|hai|hello|helo|hallo|uy|oy|hoy|ok
 const FILLER = String.raw`(?:(?:uh|um|uhm|ah|eh|oh|so)\s+)?`
 
 const NAMES: Record<PalId, string[]> = {
-  jhyvie: ['jhyvie', 'jhyvee', 'jhivie', 'jivie', 'jivi', 'jivee', 'jivy', 'jiv', 'jibi', 'jaivee', 'jayvee', 'jayvie', 'jaybee', 'jay vee', 'jay v', 'j v', 'jv', 'javi', 'javee', 'jeevie', 'jeevee', 'chivi', 'gv', 'jhy'],
-  jaypee: ['jaypee', 'jay pee', 'jaypi', 'jaipee', 'jeypee', 'jeepee', 'jay p', 'j p', 'jp'],
-  rei: ['rei', 'ray', 'rey', 'rae'],
-  diel: ['diel', 'deal', 'dial', 'deel', 'dyel', 'diehl', 'dil'],
+  // How Whisper writes them too ("Hi, TV" for JEE-vee, "Hello, GP", "Hi, DL", "Boy, Gel" for jel): measured on
+  // spoken wake clips
+  jhyvie: ['jhyvie', 'jhyvee', 'jhivie', 'jivie', 'jivi', 'jivee', 'jivy', 'jiv', 'jibi', 'jaivee', 'jayvee', 'jayvie', 'jaybee', 'jay vee', 'jay v', 'j v', 'jv', 'javi', 'javee', 'jeevie', 'jeevee', 'chivi', 'gv', 'jhy', 'tv', 't v', 'g v', 'gb'],
+  jaypee: ['jaypee', 'jay pee', 'jaypi', 'jaipee', 'jeypee', 'jeepee', 'jay p', 'j p', 'jp', 'gp', 'g p', 'jrp'],
+  rei: ['rei', 'ray', 'rey', 'rae', 'raye', 'reh', 'wray', 're'],
+  diel: ['diel', 'deal', 'dial', 'deel', 'dyel', 'diehl', 'dil', 'dale', 'dell', 'deil', 'dl', 'd l', 'dee yell', 'gel', 'jel', 'jell'],
 }
 
 // Apostrophes vanish ("what's" → "whats", which the command rules expect); other punctuation becomes a space
@@ -91,7 +93,7 @@ export function wrongPal(text: string, pal: PalId, userName?: string): { wrong: 
 }
 
 /** Sound-alikes that are everyday words: "okay deal" or "hey ray" is not someone calling Diel or Rei */
-const EVERYDAY = new Set(['deal', 'dial', 'ray', 'rey', 'rae', 'dil', 'deel', 'jay p', 'j p', 'gv', 'jay v', 'j v'])
+const EVERYDAY = new Set(['deal', 'dial', 'ray', 'rey', 'rae', 'raye', 'reh', 'wray', 're', 'dil', 'deel', 'dale', 'dell', 'deil', 'jay p', 'j p', 'gv', 'jay v', 'j v', 'tv', 't v', 'g v', 'gb', 'gp', 'g p', 'gel', 'jel', 'jell', 'dl', 'd l'])
 
 /**
  * "Hey Jhyvie" heard while Rei is listening: the other pal's name and what came after it, or null.
@@ -122,7 +124,16 @@ export function matchWake(heard: string, pal: PalId, userName?: string): { comma
   const user = userName ? norm(userName) : ''
   const names = NAMES[pal].filter((n) => n !== user).sort((a, b) => b.length - a.length)
   const head = new RegExp(String.raw`^${FILLER}${GREETING}\s+(.+)$`).exec(text)
-  if (!head) return null
+  if (!head) {
+    // Whisper glues or clips the greeting: "Hirei, add gym", "Heyray", "I, Ray. Set a timer". Only a known
+    // spelling counts here, never a sound-alike, so ordinary sentences starting with "I" don't wake Pal
+    const alt = (list: string[]) => list.map((n) => n.replace(/ /g, String.raw`\s*`)).join('|')
+    const glued = new RegExp(String.raw`^${FILLER}(?:hi|hey|hai|oy|uy)\s?(${alt(names)})(?:\s+|$)(.*)$`).exec(text)
+      // A bare "I" only with a real spelling: "I deal with it" is not "Hi Diel"
+      // ("I, Ray." with its comma is how Whisper writes a clipped "Hi Rei", so then any spelling counts)
+      ?? new RegExp(String.raw`^${FILLER}i\s(${alt(/^\W*i\s*,/i.test(heard) ? names : names.filter((n) => !EVERYDAY.has(n)))})(?:\s+|$)(.*)$`).exec(text)
+    return glued ? { command: glued[2].trim() } : null
+  }
   const rest = head[1]
   // Known spellings, longest first ("jay vee" before "jay")
   for (const n of names) {
@@ -139,3 +150,4 @@ export function matchWake(heard: string, pal: PalId, userName?: string): { comma
   }
   return null
 }
+

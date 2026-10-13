@@ -3,7 +3,7 @@ import type { ChatTurn } from './groq'
 
 export interface NativeMessage { role: 'system' | 'user' | 'assistant'; content: string; required: boolean; priority: number }
 export interface NativeStatus { available: boolean; loaded: boolean; architecture: string; model?: { name: string; bytes: number; sha256: string }; setup?: { bytes: number; total: number; stage: 'copying' | 'checking' } }
-export interface NativeReply { requestId: string; text: string; loadMs: number; firstTokenMs: number; generationMs: number; promptTokens: number; generatedTokens: number }
+export interface NativeReply { requestId: string; text: string; model?: string; loadMs: number; firstTokenMs: number; generationMs: number; promptTokens: number; generatedTokens: number }
 export interface NativePlugin {
   status(): Promise<NativeStatus>
   setupModel?(): Promise<NativeStatus>
@@ -12,9 +12,13 @@ export interface NativePlugin {
   generate(options: { requestId: string; messages: NativeMessage[]; maxTokens: number }): Promise<NativeReply>
   cancel(options: { requestId: string }): Promise<void>
   unload(): Promise<void>
+  listModels?(): Promise<{ models: NativeModel[] }>
+  selectModel?(options: { sha256: string }): Promise<NativeStatus>
+  removeModel?(options: { sha256: string }): Promise<NativeStatus>
 }
+export interface NativeModel { name: string; bytes: number; sha256: string; selected: boolean; bundled: boolean }
 export const LocalAi = registerPlugin<NativePlugin>('LocalAi')
-export interface NativeClient { generate(messages: NativeMessage[], signal?: AbortSignal): Promise<string>; prepare?(): Promise<NativeStatus | null> }
+export interface NativeClient { generate(messages: NativeMessage[], signal?: AbortSignal): Promise<string>; prepare?(): Promise<NativeStatus | null>; /** The model that wrote the last reply */ lastModel?(): string | undefined }
 export const nativeError = (code: string) => Object.assign(new Error(code), { code })
 const encodedSize = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 
@@ -38,12 +42,14 @@ export function prepareNativeMessages(system: string, history: ChatTurn[], user:
 
 export function createNativeClient(plugin: NativePlugin): NativeClient {
   let preparing: Promise<NativeStatus | null> | null = null
+  let lastModel: string | undefined
   const prepare = () => {
     if (!preparing) preparing = (plugin.setupModel ? plugin.setupModel() : Promise.resolve(null)).finally(() => { preparing = null })
     return preparing
   }
   return {
     prepare,
+    lastModel: () => lastModel,
     async generate(messages, signal) {
       if (signal?.aborted) throw nativeError('CANCELLED')
       await prepare()
@@ -55,6 +61,7 @@ export function createNativeClient(plugin: NativePlugin): NativeClient {
         const reply = await plugin.generate({ requestId, messages, maxTokens: 256 })
         if (signal?.aborted || reply.requestId !== requestId) throw nativeError('CANCELLED')
         if (typeof reply.text !== 'string' || reply.text.length > 32768) throw nativeError('INFERENCE_FAILED')
+        lastModel = reply.model
         return reply.text
       } finally { signal?.removeEventListener('abort', cancel) }
     },
@@ -78,7 +85,7 @@ export function nativeErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     MISSING_MODEL: 'Offline AI needs a model. Open Settings to import a model or retry automatic setup.',
     UNSUPPORTED_ARCH: 'This preview needs a phone with a 64-bit ARM processor.',
-    INVALID_MODEL: 'This model file could not be opened. Import the supported Qwen GGUF file.',
+    INVALID_MODEL: 'This model file could not be opened. Import a GGUF chat model of 2B parameters or less.',
     INSUFFICIENT_SPACE: 'There is not enough free space to import this model safely.',
     BUSY: 'The previous reply is still stopping. Please try again in a moment.',
     LOAD_FAILED: 'The offline model could not load. Close other apps and try again.',

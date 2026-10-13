@@ -8,7 +8,7 @@ type AudioCtor = new () => AudioContext
 type Note = [number, number, number]
 const C5 = 523.25, E5 = 659.25, G5 = 783.99, A5 = 880, C6 = 1046.5, G4 = 392, E4 = 329.63, C4 = 261.63, D5 = 587.33
 
-export type SoundName = 'send' | 'receive' | 'added' | 'removed' | 'wake' | 'focus' | 'break' | 'alarm' | 'error'
+export type SoundName = 'send' | 'receive' | 'added' | 'removed' | 'wake' | 'focus' | 'break' | 'alarm' | 'error' | 'micOpen' | 'micClose'
 const SOUNDS: Record<SoundName, { wave: OscillatorType; gain: number; notes: Note[] }> = {
   // a light tick going out
   send: { wave: 'triangle', gain: 0.07, notes: [[E5, 0, 0.05], [A5, 0.045, 0.06]] },
@@ -27,6 +27,10 @@ const SOUNDS: Record<SoundName, { wave: OscillatorType; gain: number; notes: Not
   // timers, reminders, the end of a round: the one meant to be heard across a room
   alarm: { wave: 'square', gain: 0.12, notes: [[A5, 0, 0.12], [A5, 0.2, 0.12], [D5, 0.4, 0.1], [A5, 0.52, 0.2]] },
   error: { wave: 'triangle', gain: 0.07, notes: [[E4, 0, 0.09], [C4, 0.1, 0.16]] },
+  // "Hi Rei" heard, the mic is open for you: a clear rising call, loud enough to hear from across a desk
+  micOpen: { wave: 'triangle', gain: 0.16, notes: [[C5, 0, 0.07], [G5, 0.07, 0.07], [C6, 0.14, 0.14]] },
+  // the mic closed (request sent, or no one spoke): soft and falling
+  micClose: { wave: 'triangle', gain: 0.1, notes: [[G5, 0, 0.07], [C5, 0.08, 0.12]] },
 }
 
 export function makeChime(getCtor: () => AudioCtor | undefined) {

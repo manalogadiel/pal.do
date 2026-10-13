@@ -13,7 +13,7 @@ public class ModelSetupTest {
         NativeEngine engine=new NativeEngine();
         try(InputStream input=new FileInputStream(inbox)){
             ModelStore.Model selected=store.importStream(input,inbox.length(),root::getUsableSpace,()->false,file->{try{engine.load(file.getAbsolutePath());}finally{engine.unload();}});
-            assertEquals("74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",selected.sha256);
+            assertEquals("6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",selected.sha256);
         } finally {engine.unload();}
         assertTrue(inbox.delete());
     }

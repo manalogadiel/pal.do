@@ -36,8 +36,10 @@ export const Glyph: Record<Kind, (p: P) => React.ReactElement> = {
 
 export function Wordmark({ className = '' }: { className?: string }) {
   return (
-    <span className={`inline-flex items-baseline leading-none select-none ${className}`} aria-label="Chronos">
-      <span className="font-serif text-[1.55em] tracking-[-0.02em] text-brand">Chronos</span>
+    <span className={`inline-flex items-baseline gap-[3px] leading-none select-none ${className}`} aria-label="Pal.Do">
+      <span className="font-serif text-[1.55em] tracking-[-0.02em]">Pal</span>
+      <span className="mb-[0.08em] inline-block size-[0.32em] rounded-[0.09em] bg-accent" />
+      <span className="font-sans text-[1.05em] font-semibold tracking-[-0.03em]">Do</span>
     </span>
   )
 }
@@ -49,13 +51,13 @@ export function SyllabusArt({ className = '' }: P) {
       <path d="M18 10h44l12 12v64H18z" />
       <path d="M62 10v12h12" />
       <path d="M28 34h34M28 44h24M28 54h30M28 64h20M28 74h28" opacity=".45" />
-      <rect x="26" y="40" width="28" height="8" rx="1" fill="var(--tangerine)" stroke="none" opacity=".35" />
-      <rect x="26" y="60" width="24" height="8" rx="1" fill="var(--tangerine)" stroke="none" opacity=".35" />
+      <rect x="26" y="40" width="28" height="8" rx="1" fill="var(--accent)" stroke="none" opacity=".35" />
+      <rect x="26" y="60" width="24" height="8" rx="1" fill="var(--accent)" stroke="none" opacity=".35" />
       <path d="M82 44c10 0 14-6 22-6M82 64c12 0 16 8 24 8" strokeDasharray="2 4" />
       <rect x="108" y="22" width="40" height="58" rx="4" />
       <path d="M108 34h40M121 34v46M134 34v46M108 50h40M108 65h40" opacity=".35" />
-      <rect x="123" y="37" width="9" height="10" rx="1.5" fill="var(--tangerine)" stroke="none" />
-      <rect x="136" y="68" width="9" height="10" rx="1.5" fill="var(--tangerine)" stroke="none" />
+      <rect x="123" y="37" width="9" height="10" rx="1.5" fill="var(--accent)" stroke="none" />
+      <rect x="136" y="68" width="9" height="10" rx="1.5" fill="var(--accent)" stroke="none" />
     </svg>
   )
 }

@@ -1,0 +1,21 @@
+import unittest
+from server import validate_request, PROFILE, allowed_origin, Budget
+class ServiceTests(unittest.TestCase):
+    def test_profiles_are_male(self):
+        self.assertEqual(PROFILE['jhyvie']['voice'], 'fil-PH-AngeloNeural')
+        self.assertEqual(PROFILE['diel']['voice'], 'en-US-BrianNeural')
+    def test_reject_bad_requests(self):
+        for payload in ({}, {'pal':'unknown','text':'hi'}, {'pal':'rei','text':''}, {'pal':'rei','text':'x'*2001}, {'pal':'rei','text':3}):
+            with self.assertRaises(ValueError): validate_request(payload)
+    def test_no_client_voice_override(self):
+        with self.assertRaises(ValueError): validate_request({'pal':'rei','text':'hello','voice':'anything'})
+    def test_valid(self):
+        self.assertEqual(validate_request({'pal':'rei','text':' hello '}), ('rei','hello'))
+    def test_origins(self):
+        self.assertTrue(allowed_origin('http://localhost:8443', ['http://localhost:8443']))
+        self.assertFalse(allowed_origin('https://evil.test', ['http://localhost:8443']))
+        self.assertFalse(allowed_origin(None, ['http://localhost:8443']))
+    def test_rate_limit(self):
+        b=Budget(2)
+        self.assertTrue(b.accept('a',0)); self.assertTrue(b.accept('a',1)); self.assertFalse(b.accept('a',2)); self.assertTrue(b.accept('a',61))
+if __name__ == '__main__': unittest.main()

@@ -2,9 +2,9 @@ import type { PalId } from './core'
 
 /** Each pal's Kokoro voice. All four ship in /public/kokoro/voices. */
 export const PAL_VOICE: Record<PalId, { voice: string; speed: number }> = {
-  rei: { voice: 'af_heart', speed: 0.95 },
-  diel: { voice: 'am_michael', speed: 1 },
-  jhyvie: { voice: 'af_bella', speed: 1.05 },
+  rei: { voice: 'am_michael', speed: 1.1 },
+  diel: { voice: 'am_michael', speed: 0.9 },
+  jhyvie: { voice: 'am_puck', speed: 1 },
   jaypee: { voice: 'am_puck', speed: 1.1 },
 }
 

@@ -38,7 +38,7 @@ export default function AiModeSelector() {
             key={o.value}
             aria-checked={mode === o.value}
             onClick={() => setAiMode(o.value)}
-            className={`press min-w-0 rounded-[14px] p-2.5 text-left text-[12px] ${mode === o.value ? 'bg-tangerine/15 text-action-text' : 'bg-paper text-ink-2'}`}
+            className={`press min-w-0 rounded-[14px] p-2.5 text-left text-[12px] ${mode === o.value ? 'bg-accent/15 text-accent' : 'bg-paper text-ink-2'}`}
           >
             <span className="block font-semibold">{o.label}{o.value === 'auto' && <span className="ml-1 font-normal opacity-70">· best</span>}</span>
             <span className="mt-0.5 block leading-snug">{o[where]}</span>

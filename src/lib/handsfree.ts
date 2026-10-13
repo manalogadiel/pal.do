@@ -1,14 +1,18 @@
 // Hands-free "Hi Jhyvie". Listens on this device, works out when you've stopped talking, and wakes only on
 // "hi/hey + the pal's name". Nothing leaves the device unless that wake phrase was heard.
 //
-//   mic → Silero voice detector (one clip per utterance, ends after ~0.8s of silence)
-//       → Whisper base on this device → matchWake(): not for Pal? dropped, never sent anywhere
+//   mic → wake-word engine (wakeword.ts): "Hi {pal}" caught ~0.2s after the name, while they're still talking
+//       → Silero voice detector (one clip per utterance: ends after 0.5s of silence while waiting for the wake
+//   phrase, 2s once awake so a pause mid-request doesn't cut it)
+//       → Whisper base on this device → matchWake(): not for Pal? dropped, never sent anywhere (Whisper is also the
+//         wake detector when the engine misses one, can't load, or Pal is talking)
 //       → the command: Groq's Whisper re-hears just that clip when allowed (better Taglish), else the device's text
 // While Pal talks it keeps listening, but only "Hi {pal}" counts (it interrupts), and Pal's own words heard back
 // through the speaker are ignored.
 import type { MicVAD } from '@ricky0123/vad-web'
 import type { PalId } from './core'
 import { isEcho, matchWake, wakesOtherPal } from './wake'
+import { WakeEngine, type Ort } from './wakeword'
 
 export type HandsFreeState = 'off' | 'loading' | 'listening' | 'awake' | 'thinking' | 'paused' | 'error'
 
@@ -20,24 +24,30 @@ export interface HandsFreeOptions {
   deviceOnly?: boolean
   /** One command, then stop: the push-to-talk mic where the browser has no speech service (the Android app) */
   oneShot?: boolean
-  onState: (s: HandsFreeState, info?: { progress?: number; error?: string }) => void
+  /** mic: waiting for the browser's microphone permission. tap: ready, but the browser wants one tap first */
+  onState: (s: HandsFreeState, info?: { progress?: number; error?: string; mic?: boolean; tap?: boolean }) => void
   /** "Hi Jhyvie" with nothing after it: Pal says "yes?" and takes the next sentence without the wake word */
-  onWake?: () => void
+  /**
+   * "Hi {pal}" heard. early: the wake-word engine (or the live preview) caught it while they may still be talking, so
+   * the mic-open sound and rings come now; late: they stopped after the name (open the live words); full: both at once
+   */
+  onWake?: (phase: 'early' | 'late' | 'full') => void
   onCommand: (text: string) => void
-  /** Turned itself off: no wake for 30 minutes */
-  onIdle?: () => void
   /** "Hey Jhyvie" heard while another pal listens: the name they used, and the request after it ('' when none) */
   onWrongName?: (wrong: string, command: string) => void
   /** "Hi Jhyvie" while Pal was talking: stop talking now; the command (if any) follows through onWake / onCommand */
   onBargeIn?: () => void
+  /** Someone started (true) or stopped (false) talking into the mic */
+  onSpeech?: (talking: boolean) => void
+  /** Live words while they're still talking (on-device, updated about every 1.5s); '' clears it */
+  onPreview?: (text: string) => void
   /** Dev/tests only: run the loop without a microphone, fed by simulateHeard() */
   noMic?: boolean
 }
 
 const RATE = 16_000
-const MAX_SECONDS = 15
-const FOLLOW_UP_MS = 8_000
-const IDLE_OFF_MS = 30 * 60_000
+const MAX_SECONDS = 30
+const FOLLOW_UP_MS = 15_000
 
 let vad: MicVAD | null = null
 let worker: Worker | null = null
@@ -51,17 +61,166 @@ let line = ''
 let startedSpeaking = false
 let followUntil = 0
 let lastWake = 0
-let idleCheck: ReturnType<typeof setInterval> | null = null
 let wakeLock: { release: () => Promise<void> } | null = null
 let queue: Promise<void> = Promise.resolve()
 let seq = 0
 const waiting = new Map<number, (text: string) => void>()
 
-const set = (s: HandsFreeState, info?: { progress?: number; error?: string }) => {
+/** Silence that ends a clip: short while waiting for "Hi {pal}" (wakes fast), patient once it's listening to you */
+const WAKE_SILENCE_MS = 500
+/** Same as the app's SEND_AFTER_SILENCE_MS: 2s of quiet after their last words sends the request */
+const TALK_SILENCE_MS = 2000
+let awakeTimer: ReturnType<typeof setTimeout> | undefined
+const set = (s: HandsFreeState, info?: { progress?: number; error?: string; mic?: boolean; tap?: boolean }) => {
+  if (vad && (s === 'awake') !== (state === 'awake')) vad.setOptions({ redemptionMs: s === 'awake' ? TALK_SILENCE_MS : WAKE_SILENCE_MS })
+  // "Hi Rei" and then nothing: the window closes after FOLLOW_UP_MS (and the app plays the mic-closed sound)
+  clearTimeout(awakeTimer)
+  if (s === 'awake') awakeTimer = setTimeout(() => { if (state === 'awake' && !handedOff && Date.now() >= followUntil) set('listening') }, FOLLOW_UP_MS + 200)
   state = s
   opts?.onState(s, info)
 }
+/**
+ * After "Hi {pal}", the browser's live speech recognition can take the request (words appear as you talk, like the
+ * tap-to-talk mic). The detector steps aside meanwhile; anything it was still holding is dropped, never sent twice.
+ */
+let handedOff = false
+export async function handOffListening() {
+  if (!vad || handedOff) return
+  handedOff = true
+  followUntil = 0
+  await vad.pause().catch(() => {})
+}
+export async function resumeListening() {
+  if (!handedOff) return
+  handedOff = false
+  if (!vad) return
+  engine?.reset()
+  await vad.start().catch(() => {})
+  set('listening')
+}
+
+/*
+ * Live preview: while they talk, the audio so far is re-read on this device every PREVIEW_MS, so their words show
+ * under the mic like tap-to-talk (in steps, not word by word). One pass at a time; the final clip still decides.
+ */
+const PREVIEW_MS = 1500
+const PHANTOM = /^\W*(bye[- ]?bye|thank you( for watching)?|thanks for watching|you|okay|hmm+|uh+|\.+)\W*$/i
+const PREVIEW_MIN_SAMPLES = RATE * 0.6
+let liveFrames: Float32Array[] | null = null
+/** This utterance already woke Pal from its preview: its end decides "Yes?" (just the name) or the request */
+let earlyWake = false
+/** …and they already stopped after the name (the live words took over): its end mustn't wake again */
+let ackedWake = false
+let liveSamples = 0
+let previewBusy = false
+let lastPreview = 0
+function previewFrame(frame: Float32Array) {
+  if (!liveFrames || speaking || handedOff) return
+  liveFrames.push(frame.slice())
+  liveSamples += frame.length
+  if (previewBusy || liveSamples < PREVIEW_MIN_SAMPLES || Date.now() - lastPreview < PREVIEW_MS || liveSamples > RATE * MAX_SECONDS) return
+  // The engine listens for "Hi {pal}": no need to read every passing sentence just to look for it
+  if (state === 'listening' && engine?.ready) return
+  const audio = new Float32Array(liveSamples)
+  let at = 0
+  for (const f of liveFrames) { audio.set(f, at); at += f.length }
+  previewBusy = true
+  lastPreview = Date.now()
+  const o = opts
+  // While waiting for "Hi {pal}", a short read is enough to spot it; once awake, the whole thing for the words
+  const t0 = Date.now()
+  const seconds = audio.length / RATE
+  void hear(audio, state === 'listening' ? 12 : undefined).then((text) => {
+    previewBusy = false
+    if (import.meta.env.DEV) console.info(`[hf] preview ${seconds.toFixed(1)}s in ${Date.now() - t0}ms: "${text.trim()}"`)
+    // "Hi Rei" caught mid-utterance: the mic-open sound and rings now, not after the clip ends and is re-read
+    if (liveFrames && o && opts === o && state === 'listening' && !earlyWake && !speaking && matchWake(text, o.pal, o.userName)) {
+      earlyWake = true
+      lastWake = Date.now()
+      followUntil = Date.now() + FOLLOW_UP_MS
+      set('awake')
+      o.onWake?.('early')
+    }
+    // Still the same utterance: show it (a finished one is shown by the final read). Whisper "hears" these in noise
+    if (liveFrames && opts === o && text.trim() && !PHANTOM.test(text)) o?.onPreview?.(text.trim())
+  })
+}
+
+/*
+ * The wake-word engine heard "Hi {pal}": the mic-open sound, "Yes?" on screen and the rings right now. Then a quick
+ * look at whether they keep talking: they stopped after the name → the live words take the request (Pal stays quiet: a
+ * spoken "Yes?" talked over them); they went straight on ("Hi Rei, add gym at 5") → that utterance is the request.
+ * (Whisper isn't asked to double-check: it writes these names as "Hi, TV", "OJP", "Hello, GP" too often.)
+ */
+let engine: WakeEngine | null = null
+let ortRuntime: Ort | null = null
+/** What's catching "Hi {pal}" now, for Settings */
+export const wakeDetector = (): 'engine' | 'whisper' => (engine?.ready ? 'engine' : 'whisper')
+/** Dev/tests: the engine's newest score */
+export const wakeScore = () => engine?.lastScore ?? 0
+/** What hands-free is doing, for checking a phone over USB (chrome://inspect): window.__palVoiceStatus() */
+let micLevel = 0
+let speechProb = 0
+export const voiceStatus = () => ({ state, mic: +micLevel.toFixed(4), speech: +speechProb.toFixed(2), audio: audioContext()?.state, track: (() => { const t = (vad as unknown as { _stream?: MediaStream } | null)?._stream?.getAudioTracks()[0]; return t ? `${t.readyState}${t.muted ? ' muted' : ''}${t.enabled ? '' : ' disabled'} ${t.label}` : null })(), detector: wakeDetector(), msPerStep: engine ? Math.round(engine.msPerStep) : null, score: engine?.lastScore ?? null, isolated: typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated })
+if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__palVoiceStatus = voiceStatus
+/** Quiet this long right after the name: they stopped, say "Yes?". Talking this long (past the name's own tail): a request */
+const QUIET_MS = 250
+const TALKING_ON_MS = 200
+const NAME_TAIL_MS = 150
+let watchQuiet = -1
+let watchedMs = 0
+let talkingMs = 0
+let engineAt = 0
+function engineWake(score: number) {
+  const o = opts
+  if (import.meta.env.DEV) console.info(`[wakeword] heard "Hi ${o?.pal}" (${score.toFixed(2)}) while ${state}${speaking ? ', Pal talking' : ''}`)
+  // Over Pal's voice, Whisper confirms it isn't Pal's own words coming back; awake/thinking: already listening
+  if (!o || state !== 'listening' || speaking || handedOff || earlyWake) return
+  earlyWake = true
+  ackedWake = false
+  lastWake = engineAt = Date.now()
+  followUntil = Date.now() + FOLLOW_UP_MS
+  watchQuiet = watchedMs = talkingMs = 0
+  set('awake')
+  o.onWake?.('early')
+}
+function watchFrame(isSpeech: number, ms: number) {
+  if (watchQuiet < 0) return
+  if (state !== 'awake' || handedOff || !earlyWake) { watchQuiet = -1; return }
+  watchedMs += ms
+  if (isSpeech < 0.35) watchQuiet += ms
+  else {
+    watchQuiet = 0
+    // Talking on past the name's own tail: a request
+    if (watchedMs > NAME_TAIL_MS) talkingMs += ms
+  }
+  if (talkingMs >= TALKING_ON_MS || watchedMs > 1500) {
+    // "Hi Rei, what's next?": a request, and the end of this utterance decides (no "Yes?" over them)
+    watchQuiet = -1
+    if (import.meta.env.DEV) console.info('[wakeword] they kept talking: taking it as the request')
+  } else if (watchQuiet >= QUIET_MS) {
+    watchQuiet = -1
+    ackedWake = true
+    if (import.meta.env.DEV) console.info('[wakeword] they stopped after the name: listening')
+    opts?.onWake?.('late')
+  }
+}
+/** "Yes? Add gym at 5": Pal's own "Yes?" caught at the start of the request */
+function dropAck(text: string) {
+  const words = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, ' ').split(/\s+/).filter(Boolean)
+  const a = words(ack)
+  const t = text.trim().split(/\s+/)
+  return a.length && words(t.slice(0, a.length).join(' ')).join(' ') === a.join(' ') ? t.slice(a.length).join(' ') : text
+}
+
+/** Pal's quick "Yes?" after a wake: if the mic catches it, it isn't the user's request */
+let ack = ''
+export function setWakeAck(text: string) { ack = text }
 export const handsFreeState = () => state
+/** What the device last wrote out, shown in Settings so a missed "Hi {pal}" can be seen (it never leaves the device) */
+let heard = ''
+export const HEARD_EVENT = 'paldo-heard'
+export const lastHeard = () => heard
 
 /** Whisper on this device, in a worker so the UI never stutters */
 function loadWhisper(onProgress: (p: number) => void) {
@@ -90,12 +249,13 @@ function loadWhisper(onProgress: (p: number) => void) {
   return ready
 }
 
-function hear(audio: Float32Array): Promise<string> {
+/** maxTokens: stop after that many words-ish (a preview only needs to spot "Hi {pal}", and it's much faster) */
+function hear(audio: Float32Array, maxTokens?: number): Promise<string> {
   if (!worker) return Promise.resolve('')
   const id = ++seq
   return new Promise((resolve) => {
     waiting.set(id, resolve)
-    worker!.postMessage({ type: 'transcribe', id, audio }, [audio.buffer])
+    worker!.postMessage({ type: 'transcribe', id, audio, maxTokens }, [audio.buffer])
   })
 }
 
@@ -134,12 +294,18 @@ async function bestText(audio: Float32Array, local: string): Promise<string> {
 /** One utterance, in order: a second sentence never overtakes the first. overPal: it began while Pal was talking. */
 async function handle(audio: Float32Array, overPal: boolean) {
   const o = opts
-  if (!o) return
+  if (!o || handedOff) return
   const clip = audio.length > RATE * MAX_SECONDS ? audio.slice(0, RATE * MAX_SECONDS) : audio
   const followUp = !overPal && (o.oneShot || Date.now() < followUntil)
-  if (!overPal) set('thinking')
+  if (!overPal && !earlyWake) set('thinking')
+  const t0 = Date.now()
   const local = await hear(clip.slice())
-  if (opts !== o) return
+  if (import.meta.env.DEV) console.info(`[hf] read ${(clip.length / RATE).toFixed(1)}s of audio in ${Date.now() - t0}ms: "${local.trim()}"`)
+  if (opts !== o || handedOff) return
+  heard = local.trim()
+  window.dispatchEvent(new Event(HEARD_EVENT))
+  // The finished read replaces the step-by-step preview
+  if (!overPal) o.onPreview?.(heard)
   if (overPal) return interrupt(o, local, clip)
   await route(o, local, clip, followUp)
 }
@@ -158,11 +324,31 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
   const best = (fallback: string) => (clip ? bestText(clip, fallback) : Promise.resolve(fallback))
   // Right after "Hi Jhyvie…" or a question from Pal: this sentence is for Pal, no wake word needed
   if (followUp) {
+    // Pal's own "Yes?" coming back through the mic: keep waiting for the real request
+    if (ack && isEcho(local, ack, o.pal)) { ack = ''; return set('awake') }
+    // "Hi Rei" again (nothing seemed to happen): wake again, don't send "Hi Rei" to Pal as the request.
+    // After an early wake it's the same "Hi Rei" finishing: now say "Yes?" and listen for the request
+    const again = matchWake(local, o.pal, o.userName)
+    const early = earlyWake
+    const acked = ackedWake
+    earlyWake = ackedWake = false
+    if (again && (!again.command || (ack && isEcho(again.command, ack, o.pal)))) {
+      lastWake = Date.now()
+      followUntil = Date.now() + FOLLOW_UP_MS
+      set('awake')
+      // The engine's wake already said "Yes?" for this one: just keep listening
+      if (acked) return
+      return o.onWake?.(early ? 'late' : 'full')
+    }
+    // Silence or noise that Whisper "heard" as "Thank you." / "Bye-bye.": not a request, keep listening
+    if (PHANTOM.test(local)) { followUntil = Date.now() + FOLLOW_UP_MS; return set('awake') }
     followUntil = 0
     const text = (await best(local)).trim()
     if (o.oneShot) await stopHandsFree()
     else set('listening')
-    if (text) o.onCommand(matchWake(text, o.pal, o.userName)?.command || text)
+    const command = acked ? dropAck(matchWake(text, o.pal, o.userName)?.command || text) : matchWake(text, o.pal, o.userName)?.command || text
+    if (import.meta.env.DEV) console.info(`[hf] request: "${command}"`)
+    if (command.trim()) o.onCommand(command)
     return
   }
 
@@ -171,6 +357,7 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
     // "Hey Jhyvie" while Rei listens: Rei says who it is, then takes the request anyway
     const other = o.onWrongName ? wakesOtherPal(local, o.pal, o.userName) : null
     set('listening')
+    if (!other) o.onPreview?.('') // not for Pal: don't leave it on screen
     if (other) {
       lastWake = Date.now()
       if (!other.command) followUntil = Date.now() + FOLLOW_UP_MS
@@ -184,7 +371,8 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
   if (!wake.command) {
     followUntil = Date.now() + FOLLOW_UP_MS
     set('awake')
-    return o.onWake?.()
+    o.onPreview?.('')
+    return o.onWake?.('full')
   }
   // The cloud re-hears the whole clip, wake phrase included; keep what came after the name
   const heard = await best(local)
@@ -201,12 +389,36 @@ async function keepScreenOn() {
 }
 const onVisible = () => { if (document.visibilityState === 'visible' && vad && !wakeLock) keepScreenOn() }
 
+/** The detector's audio. MicVAD keeps it private, but it's what a browser suspends until the first tap */
+const audioContext = () => (vad as unknown as { _audioContext?: AudioContext } | null)?._audioContext
+/** The first tap after a load: let the audio run (hands-free started on its own, before any tap) */
+export async function resumeAudio() {
+  const ctx = audioContext()
+  if (!ctx || ctx.state !== 'suspended') return
+  await ctx.resume().catch(() => {})
+  if ((ctx.state as AudioContextState) === 'running' && state === 'loading') set(opts?.oneShot ? 'awake' : 'listening')
+}
+
+/** A start still loading: a second start (the tap that turned it on + the "resume on first tap" one) joins it */
+let starting: Promise<void> | null = null
+
 /** Start listening (asks for the mic). Call from a tap: browsers only allow audio after one. */
 export async function startHandsFree(o: HandsFreeOptions) {
+  if (starting) {
+    // Two starts at once used to leave a listener that was never started: the app said "on" but heard nothing
+    opts = o
+    return starting
+  }
   if (vad) {
     opts = o
+    engine?.setPal(o.pal).catch(() => {})
     return set(speaking ? 'paused' : 'listening')
   }
+  starting = begin(o).finally(() => { starting = null })
+  return starting
+}
+
+async function begin(o: HandsFreeOptions) {
   opts = o
   speaking = false
   followUntil = o.oneShot ? Date.now() + 60_000 : 0
@@ -218,46 +430,85 @@ export async function startHandsFree(o: HandsFreeOptions) {
       lastWake = Date.now()
       return set('listening')
     }
-    await loadWhisper((p) => opts === o && set('loading', { progress: p }))
+    // The mic first, right on the tap: Chrome's permission prompt shows now, and while it waits the app says so
+    // (it used to load the model first and then sit at "Getting ready… 100%" behind an unanswered prompt)
+    const micAudio = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    set('loading', { progress: 0, mic: true })
+    let firstStream: MediaStream | null = await navigator.mediaDevices.getUserMedia({ audio: micAudio })
+    if (!opts) { firstStream.getTracks().forEach((t) => t.stop()); return }
+    set('loading', { progress: 0 })
+    // The speech model and the voice detector load side by side (one after the other added ~5s)
+    const whisper = loadWhisper((p) => opts != null && set('loading', { progress: p }))
+    whisper.catch(() => {}) // reported where it's awaited below
     const { MicVAD } = await import('@ricky0123/vad-web')
     const base = import.meta.env.BASE_URL
     const paths = await vadOrtConfig()
     vad = await MicVAD.new({
+      startOnLoad: false, // started below, once the speech model is ready too
       model: 'v5',
       baseAssetPath: base + 'vad/',
       onnxWASMBasePath: base + 'kokoro/ort/',
       ortConfig: (ort) => {
+        ortRuntime = ort
         ort.env.wasm.wasmPaths = paths
         ort.env.wasm.numThreads = 1
       },
       positiveSpeechThreshold: 0.5,
       negativeSpeechThreshold: 0.35,
-      redemptionMs: 800, // ~0.8s of silence = you've finished the sentence
+      redemptionMs: WAKE_SILENCE_MS, // TALK_SILENCE_MS (2s) once awake: 0.8s cut people off mid-thought
       preSpeechPadMs: 300,
       minSpeechMs: 250,
-      getStream: () => navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+      // The stream the tap already opened, then fresh ones after a pause
+      getStream: async () => { const s = firstStream ?? (await navigator.mediaDevices.getUserMedia({ audio: micAudio })); firstStream = null; return s },
+      onFrameProcessed: (probs: { isSpeech: number }, frame: Float32Array) => {
+        let sum = 0
+        for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i]
+        micLevel = Math.max(Math.sqrt(sum / frame.length), micLevel * 0.9)
+        speechProb = probs.isSpeech
+        engine?.push(frame)
+        watchFrame(probs.isSpeech, (frame.length / RATE) * 1000)
+        previewFrame(frame)
+      },
       onSpeechStart: () => {
+        liveFrames = []
+        // A wake the engine caught just before the voice detector noticed speech belongs to this utterance
+        if (Date.now() - engineAt > 1500) earlyWake = ackedWake = false
+        opts?.onSpeech?.(true)
+        liveSamples = 0
+        lastPreview = Date.now() - PREVIEW_MS + 700 // first words after ~0.7s
         startedSpeaking = speaking
         if (!speaking && opts) set(Date.now() < followUntil || opts.oneShot ? 'awake' : 'listening')
       },
+      onVADMisfire: () => { liveFrames = null; opts?.onPreview?.(''); opts?.onSpeech?.(false) },
       onSpeechEnd: (audio: Float32Array) => {
+        if (import.meta.env.DEV) console.info(`[hf] utterance ended (${(audio.length / RATE).toFixed(1)}s)`)
+        liveFrames = null
+        opts?.onSpeech?.(false)
         // A clip that began while Pal talked is judged as heard over Pal, even if it ends after
         const overPal = startedSpeaking || speaking
         queue = queue.then(() => handle(audio, overPal)).catch(() => {})
       },
     })
-    if (opts !== o) return // stopped while loading
+    // The wake-word engine on the same runtime; without it, Whisper is the wake detector (slower, still works)
+    const wakeLoad = ortRuntime
+      ? WakeEngine.load(ortRuntime, o.pal, engineWake).then((e) => { if (vad) engine = e; else e.dispose() }, (err) => console.warn('[wakeword] not loaded, Whisper listens for the name:', err))
+      : Promise.resolve()
+    await whisper
+    await wakeLoad
+    if (!opts) { // stopped while loading
+      const v = vad
+      vad = null
+      await v.destroy().catch(() => {})
+      return
+    }
     await vad.start()
     lastWake = Date.now()
-    idleCheck = setInterval(() => {
-      if (!o.oneShot && Date.now() - lastWake > IDLE_OFF_MS) {
-        stopHandsFree()
-        o.onIdle?.()
-      }
-    }, 60_000)
     keepScreenOn()
     document.addEventListener('visibilitychange', onVisible)
-    set(o.oneShot ? 'awake' : 'listening')
+    // Started without a tap (on load): the browser may hold the audio until the first one
+    if (audioContext()?.state === 'suspended') return set('loading', { tap: true })
+    // The newest start's settings win (it may have joined while this one loaded)
+    set(opts.oneShot ? 'awake' : 'listening')
   } catch (err) {
     const e = err as Error & { name?: string }
     await stopHandsFree(false)
@@ -268,9 +519,12 @@ export async function startHandsFree(o: HandsFreeOptions) {
 export async function stopHandsFree(report = true) {
   const v = vad
   vad = null
+  handedOff = false
   followUntil = 0
-  if (idleCheck) clearInterval(idleCheck)
-  idleCheck = null
+  clearTimeout(awakeTimer)
+  engine?.dispose()
+  engine = null
+  watchQuiet = -1
   document.removeEventListener('visibilitychange', onVisible)
   wakeLock?.release().catch(() => {})
   wakeLock = null

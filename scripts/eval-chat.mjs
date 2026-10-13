@@ -13,13 +13,15 @@ const local = li < 0 ? undefined : {
   url: process.env.OLLAMA_URL || 'http://localhost:11434',
   model: process.argv[li + 1] && !process.argv[li + 1].startsWith('--') ? process.argv[li + 1] : 'qwen3.5:4b',
 }
-const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
+const vite = await createServer({ configLoader: 'runner', server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' })
 try {
   const { runEval } = await vite.ssrLoadModule('/src/lib/chat.eval.ts')
   const apiKey = llm ? process.env.GROQ_API_KEY || loadEnv('development', process.cwd(), 'VITE_GROQ_').VITE_GROQ_API_KEY : undefined
   const r = await runEval({ llm, apiKey, only: process.env.EVAL_ONLY, local })
   console.log(`\nrules: ${r.rules.pass}/${r.rules.total}${r.llm ? `   model: ${r.llm.pass}/${r.llm.total}` : ''}`)
 
+  const { runStudyToolTests } = await vite.ssrLoadModule('/src/lib/study-tools.test-cases.ts')
+  const toolFails = runStudyToolTests(); toolFails.forEach(f => console.log(`✗ study tools ${f}`)); console.log(`study tools: ${toolFails.length ? 'failing' : 'pass'}`)
   const { runSessionTests } = await vite.ssrLoadModule('/src/lib/session.test-cases.ts')
   const sessionFails = await runSessionTests()
   for (const f of sessionFails) console.log(`✗ session ${f}`)
@@ -40,7 +42,7 @@ try {
   for (const f of reliabilityFails) console.log(`✗ reliability ${f}`)
   console.log(`chat reliability: ${reliabilityFails.length ? `${reliabilityFails.length} failing` : 'pass'}`)
 
-  process.exitCode = r.rules.pass === r.rules.total && !sessionFails.length && !voiceFails.length && !studyFails.length && !reliabilityFails.length && (!r.llm || r.llm.pass === r.llm.total) ? 0 : 1
+  process.exitCode = r.rules.pass === r.rules.total && !toolFails.length && !sessionFails.length && !voiceFails.length && !studyFails.length && !reliabilityFails.length && (!r.llm || r.llm.pass === r.llm.total) ? 0 : 1
 } finally {
   await vite.close()
 }

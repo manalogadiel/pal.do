@@ -18,11 +18,18 @@ public class BundledModelTest {
         ModelStore.Model installed=bundle.ensure(store,()->new ByteArrayInputStream(bytes),()->3L<<30,()->false,file->{},activation->activation.run(),(copied,total)->{});
         assertEquals(hash(bytes),installed.sha256);assertEquals(installed.sha256,store.selected().sha256);
     }
-    @Test public void existingModelSkipsAssetCopyAndKeepsSelection()throws Exception{
-        byte[] bytes=valid();ModelStore store=new ModelStore(temp.newFolder());ModelStore.Model prior=store.importStream(new ByteArrayInputStream(bytes),bytes.length,()->3L<<30,()->false,file->{});
-        BundledModel bundle=new BundledModel(bytes.length,"0".repeat(64));
+    @Test public void bundleAlreadyCopiedSkipsAssetAndKeepsUserPick()throws Exception{
+        byte[] bytes=valid();ModelStore store=new ModelStore(temp.newFolder());BundledModel bundle=new BundledModel(bytes.length,hash(bytes));
+        bundle.ensure(store,()->new ByteArrayInputStream(bytes),()->3L<<30,()->false,file->{},activation->activation.run(),(copied,total)->{});
+        byte[] other=valid();other[100]=1;ModelStore.Model picked=store.importStream(new ByteArrayInputStream(other),other.length,()->3L<<30,()->false,file->{});
         ModelStore.Model result=bundle.ensure(store,()->{throw new AssertionError("Must not reopen bundled model");},()->0,()->false,file->{throw new AssertionError("Must not probe again");},activation->activation.run(),(copied,total)->{});
-        assertEquals(prior.sha256,result.sha256);
+        assertEquals(picked.sha256,result.sha256);
+    }
+    @Test public void newerBundleIsCopiedOverOlderModelAndKeepsIt()throws Exception{
+        byte[] old=valid();old[100]=1;ModelStore store=new ModelStore(temp.newFolder());ModelStore.Model prior=store.importStream(new ByteArrayInputStream(old),old.length,()->3L<<30,()->false,file->{});
+        byte[] bytes=valid();BundledModel bundle=new BundledModel(bytes.length,hash(bytes));
+        ModelStore.Model installed=bundle.ensure(store,()->new ByteArrayInputStream(bytes),()->3L<<30,()->false,file->{},activation->activation.run(),(copied,total)->{});
+        assertEquals(hash(bytes),store.selected().sha256);assertEquals(installed.sha256,store.selected().sha256);assertTrue(prior.file.exists());
     }
     @Test public void wrongChecksumCannotActivate()throws Exception{
         byte[] bytes=valid();ModelStore store=new ModelStore(temp.newFolder());

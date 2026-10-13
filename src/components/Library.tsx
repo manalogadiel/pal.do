@@ -1,3 +1,5 @@
+import { ToolChooser } from './StudyTools'
+import type { StudyConfig } from '../lib/session'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fmtDay, type PalId, type Task } from '../lib/core'
 import { generateStudyAids } from '../lib/groq'
@@ -19,6 +21,9 @@ interface Props {
   onTargetDone?: () => void
   onPlan: (file: LibraryFile, folder: Folder) => void
   onToast: (text: string) => void
+  onStudy?: (config: StudyConfig) => void
+  browseFolderId?: string | null
+  onBrowseDone?: () => void
 }
 
 /** The subject's next exam or deadline: a task whose title shares a word with the folder name */
@@ -40,9 +45,9 @@ function FolderArt({ folder, count, due, onOpen }: { folder: Folder; count: numb
       <span className={`folder-back absolute top-1 h-8 w-[42%] rounded-t-[12px] ${tab}`} aria-hidden />
       {/* Sheets peeking out of the top: one per file, up to three */}
       {Array.from({ length: Math.min(count, 3) }, (_, i) => (
-        <span key={i} aria-hidden className="absolute inset-x-4 h-10 rounded-[8px] bg-[#f7fafc] shadow-[0_1px_2px_rgb(0_0_0/0.12)] transition-transform duration-300 [transition-timing-function:var(--ease-out)] group-hover:-translate-y-1" style={{ top: 9 + i * 3, rotate: `${[-2.5, 2, -0.75][i]}deg` }} />
+        <span key={i} aria-hidden className="absolute inset-x-4 h-10 rounded-[8px] bg-[#f5f9ff] shadow-[0_1px_2px_rgb(0_0_0/0.12)] transition-transform duration-300 [transition-timing-function:var(--ease-out)] group-hover:-translate-y-1" style={{ top: 9 + i * 3, rotate: `${[-2.5, 2, -0.75][i]}deg` }} />
       ))}
-      <span className="folder-face relative flex min-h-[132px] flex-col justify-between rounded-[18px] p-3.5 shadow-[var(--edge),0_10px_24px_-14px_rgb(23_43_77/0.35)]" data-pattern={folder.style.pattern}>
+      <span className="folder-face relative flex min-h-[132px] flex-col justify-between rounded-[18px] p-3.5 shadow-[var(--edge),0_10px_24px_-14px_rgb(20_48_88/0.35)]" data-pattern={folder.style.pattern}>
         <span className="folder-sticker inline-block self-start rotate-[-3deg] px-2 py-1 text-[13px] leading-none">{initials(folder.name)}</span>
         <span>
           <span className="block font-serif text-[22px] leading-[1.05]">{folder.name}</span>
@@ -55,18 +60,21 @@ function FolderArt({ folder, count, due, onOpen }: { folder: Folder; count: numb
   )
 }
 
-export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast }: Props) {
+export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast, onStudy, browseFolderId, onBrowseDone }: Props) {
   const [folders, setFolders] = useState<Folder[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [files, setFiles] = useState<LibraryFile[]>([])
   const [openFolder, setOpenFolder] = useState<string | null>(null)
   const [open, setOpen] = useState<{ file: LibraryFile; mode: LibraryMode; topic?: string } | null>(null)
+  const [toolFolder, setToolFolder] = useState<Folder | null>(null)
+  useEffect(() => { if (!browseFolderId || !loaded) return; if (folders.some(f => f.id === browseFolderId)) { setOpenFolder(browseFolderId); setOpen(null) } else onToast('This folder is no longer available.'); onBrowseDone?.() }, [browseFolderId, folders, loaded])
   const [naming, setNaming] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let alive = true
-    const load = () => Promise.all([listFolders(), listFiles()]).then(([fo, fi]) => { if (alive) { setFolders(fo); setFiles(fi) } }).catch(() => {})
+    const load = () => Promise.all([listFolders(), listFiles()]).then(([fo, fi]) => { if (alive) { setFolders(fo); setFiles(fi); setLoaded(true) } }).catch(() => {})
     load()
     window.addEventListener(LIBRARY_EVENT, load)
     return () => { alive = false; window.removeEventListener(LIBRARY_EVENT, load) }
@@ -102,6 +110,8 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
     setOpenFolder(f.id)
   }
 
+  if (toolFolder) return <ToolChooser folder={toolFolder} tasks={tasks} onClose={() => setToolFolder(null)} onOpen={c => { setToolFolder(null); onStudy?.(c) }} onBrowse={() => { setOpenFolder(toolFolder.id); setToolFolder(null) }} />
+
   if (open && folder) return <FileView key={open.file.id + open.mode} file={open.file} folder={folder} mode={open.mode} topic={open.topic} pal={pal} onMode={(mode) => setOpen({ ...open, mode, topic: undefined })} onBack={() => { stopReading(); setOpen(null) }} onPlan={() => onPlan(open.file, folder)} />
 
   /* ---------- Inside a folder ---------- */
@@ -126,6 +136,7 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
           <input ref={input} type="file" accept={IMPORT_ACCEPT} multiple hidden onChange={(e) => { void addFiles(e.target.files); e.target.value = '' }} />
         </div>
 
+        <button className="press mt-4 h-11 self-start rounded-full bg-accent-soft px-5 text-sm font-medium" onClick={() => setToolFolder(folder)}>Study this folder</button>
         {inFolder.length === 0 ? (
           <div className="mt-8 max-w-[340px] self-center text-center text-[14px] leading-relaxed text-ink-2">
             Add a reviewer, handout or notes. Pal can plan study time from it, make flashcards and a practice quiz, and read it to you.
@@ -182,7 +193,7 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
         </div>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4">
-          {folders.map((f) => <FolderArt key={f.id} folder={f} count={files.filter((x) => x.folderId === f.id).length} due={nextDue(f, tasks, now)} onOpen={() => setOpenFolder(f.id)} />)}
+          {folders.map((f) => <FolderArt key={f.id} folder={f} count={files.filter((x) => x.folderId === f.id).length} due={nextDue(f, tasks, now)} onOpen={() => setToolFolder(f)} />)}
         </div>
       )}
     </div>
@@ -253,13 +264,15 @@ function Reader({ file, pal }: { file: LibraryFile; pal: PalId }) {
   }, [file, page])
 
   const pieces = useMemo(() => readingPieces(file.pages[page - 1] ?? ''), [file, page])
+  const [readError, setReadError] = useState('')
   const playingRef = useRef(false)
   async function play(from = 0) {
     playingRef.current = true
     setPlaying(true)
+    setReadError('')
     for (let i = from; i < pieces.length && playingRef.current; i++) {
       setPiece(i)
-      await readPiece(pieces[i], pal)
+      try { await readPiece(pieces[i], pal) } catch (err) { playingRef.current = false; setPlaying(false); setReadError(err instanceof Error ? err.message : 'Voice unavailable.'); return }
     }
     if (playingRef.current && page < total) { setPage((p) => p + 1); setPiece(-1) }
     else { playingRef.current = false; setPlaying(false); setPiece(-1) }
@@ -271,6 +284,7 @@ function Reader({ file, pal }: { file: LibraryFile; pal: PalId }) {
 
   return (
     <div>
+      {readError && <p role="status" className="mx-4 my-2 text-sm text-ink-2">{readError}</p>}
       <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-center gap-2 rounded-full bg-paper/90 p-1 shadow-[var(--edge)] backdrop-blur">
         <button type="button" onClick={() => go(-1)} disabled={page <= 1} className="press grid size-9 place-items-center rounded-full text-ink-2 disabled:opacity-30" aria-label="Previous page"><ChevronL /></button>
         <span className="tnum text-[12.5px] text-ink-2">Page {page} of {total}</span>

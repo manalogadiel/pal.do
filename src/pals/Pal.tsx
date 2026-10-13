@@ -11,10 +11,10 @@ const W = 20
 const H = 28
 
 export const PALS: Record<PalId, { name: string; line: string; tone: string; swatch: string }> = {
-  rei: { name: 'Rei', line: 'Calm and gentle', tone: 'Encouraging, never rushes you', swatch: '#c9c3e6' },
-  diel: { name: 'Diel', line: 'Precise and organized', tone: 'Short, clear, a little nerdy', swatch: '#a6dcc6' },
-  jhyvie: { name: 'Jhyvie', line: 'Playful and warm', tone: 'Chatty, speaks Taglish', swatch: '#f8c9a8' },
-  jaypee: { name: 'Jaypee', line: 'Your hype friend', tone: 'Upbeat, keeps it short', swatch: '#f7d046' },
+  rei: { name: 'Rei', line: 'Direct and clear', tone: 'Answer first, no filler', swatch: '#c9c3e6' },
+  diel: { name: 'Diel', line: 'Calm and gentle', tone: 'Warm, patient, and reassuring', swatch: '#a6dcc6' },
+  jhyvie: { name: 'Jhyvie', line: 'Your Tagalog friend', tone: 'Natural Tagalog with a little Taglish', swatch: '#f8c9a8' },
+  jaypee: { name: 'Jaypee', line: 'Playful and funny', tone: 'Useful answers with a little humor', swatch: '#f7d046' },
 }
 
 const BASE_PAL: Record<Key, string> = {

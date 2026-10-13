@@ -10,8 +10,12 @@
     "format": "oxfmt",
     "eval:chat": "node scripts/eval-chat.mjs",
     "check:android-ai": "node scripts/check-android-ai.mjs",
-    "android:prepare-ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-android-ai.ps1",
-    "android:preview": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android-preview.ps1"
+    "android:prepare-ai": "node scripts/android.mjs prepare-android-ai",
+    "android:preview": "node scripts/android.mjs build-android-preview",
+    "check:study-tools": "node scripts/check-study-tools.mjs",
+    "tts:serve": "node scripts/speech.mjs",
+    "tts:check": "node scripts/speech.mjs --check-voices",
+    "check:study-ui": "node scripts/check-study-ui.mjs"
   },
   "dependencies": {
     "@capacitor-community/text-to-speech": "8.0.2",

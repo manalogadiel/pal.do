@@ -1,1 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#03045E"/><path d="M749 -30Q533 -30 379.0 64.5Q225 159 142.5 328.0Q60 497 60 720Q60 943 142.5 1112.0Q225 1281 379.0 1375.5Q533 1470 749 1470Q998 1470 1164.0 1345.5Q1330 1221 1397 1010L1154 943Q1112 1084 1011.0 1163.5Q910 1243 749 1243Q604 1243 507.5 1178.0Q411 1113 362.5 995.5Q314 878 313 720Q313 562 361.5 444.5Q410 327 507.0 262.0Q604 197 749 197Q910 197 1011.0 277.0Q1112 357 1154 497L1397 430Q1330 219 1164.0 94.5Q998 -30 749 -30Z" transform="translate(131.66933333333333 378.88) scale(0.17066666666666666 -0.17066666666666666)" fill="#F7FAFC"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a2826"/>
+      <stop offset="100%" stop-color="#171615"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f0936b"/>
+      <stop offset="100%" stop-color="#e8794d"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  
+  <!-- Outer App Icon Shape -->
+  <rect width="512" height="512" rx="128" fill="url(#bg)"/>
+  
+  <!-- Subtle Border Highlight -->
+  <rect x="8" y="8" width="496" height="496" rx="120" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="4"/>
+  
+  <!-- Glow Circle -->
+  <circle cx="256" cy="240" r="140" fill="url(#accent)" opacity="0.12" filter="blur(24px)"/>
+  
+  <!-- Monogram "P" -->
+  <path d="M 176 136 L 272 136 C 330 136 368 168 368 220 C 368 272 330 304 272 304 L 216 304 L 216 376 L 176 376 Z M 216 172 L 216 268 L 270 268 C 306 268 328 248 328 220 C 328 192 306 172 270 172 Z" fill="#f4f1ec"/>
+  
+  <!-- Dot / Period Accent "." -->
+  <circle cx="348" cy="360" r="18" fill="url(#accent)"/>
+</svg>
