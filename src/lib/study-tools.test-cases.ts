@@ -1,0 +1,47 @@
+import { maleVoice, cleanSpeech } from './speech-profile'
+import { start, tick, pause, resume, skip, focusElapsed, fromSaved, phaseEnds, remaining, configure, finish, recoverAway, checkpoint, DEFAULT_CONFIG, validateConfig, running, nextRound } from './session'
+export function runStudyToolTests() {
+  const fails: string[] = [], min = 60_000
+  const eq = (n: string, a: unknown, b: unknown) => { if (JSON.stringify(a) !== JSON.stringify(b)) fails.push(`${n}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`) }
+  const s = start(0, DEFAULT_CONFIG)
+  eq('focus becomes break', tick(s, 25 * min).phase, 'break')
+  eq('away cannot invent rounds', [tick(s, 24 * 60 * min).phase, tick(s, 24 * 60 * min).completedFocusMs], ['waiting', 25 * min])
+  eq('waiting is not running', running(tick(s, 30 * min)), false)
+  eq('next round explicit', nextRound(tick(s, 30 * min), 40 * min).phaseEndsAt, 65 * min)
+  eq('pause excludes time', focusElapsed(resume(pause(s, 3 * min), 100 * min), 102 * min), 5 * min)
+  eq('only known alarms', phaseEnds(s, 0).map(x => x.at), [25 * min, 30 * min])
+  eq('early finish credits actual', finish(s, 7 * min).completedFocusMs, 7 * min)
+  eq('finish is idempotent', finish(finish(s, 7 * min), 10 * min).completedFocusMs, 7 * min)
+  const flow = start(0, { ...DEFAULT_CONFIG, method: 'flowtime' })
+  const away = checkpoint(flow, 10 * min)
+  eq('away excluded', focusElapsed(recoverAway(away, 40 * min, false), 40 * min), 10 * min)
+  eq('away included', focusElapsed(recoverAway(away, 40 * min, true), 40 * min), 40 * min)
+  const setup = skip(flow, 36 * min)
+  eq('flow break setup', [setup.phase, setup.breakMs], ['breakReady', 8 * min])
+  eq('flow elapsed credited', setup.completedFocusMs, 36 * min)
+  eq('custom bounds', validateConfig({ ...DEFAULT_CONFIG, method: 'custom', focusMinutes: 0 }), false)
+  eq('task goal required', validateConfig({ ...DEFAULT_CONFIG, method: 'task', goal: '' }), false)
+  eq('ready does not run', configure(DEFAULT_CONFIG).phase, 'ready')
+  eq('invalid save harmless', fromSaved({ phase: 'focus', version: 2, config: {} }).phase, 'idle')
+  eq('roundtrip', fromSaved(JSON.parse(JSON.stringify(s))), s)
+  const custom = start(0, { ...DEFAULT_CONFIG, method: 'custom', focusMinutes: 1, breakMinutes: 0, rounds: 1 })
+  eq('no break finishes', tick(custom, min).phase, 'finished')
+  eq('completed credits once', tick(tick(custom, min), 2 * min).completedFocusMs, min)
+  const late = new Date(2026, 9, 13, 23, 40).getTime()
+  const crossed = tick(start(late, DEFAULT_CONFIG), late + 45 * min)
+  eq('actual focus split at midnight', crossed.focusDays, { [new Date(late).toDateString()]: 20 * min, [new Date(late + 25 * min).toDateString()]: 5 * min })
+  const pausedMidnight = resume(pause(start(late, DEFAULT_CONFIG), late + 10 * min), late + 30 * min)
+  const ended = finish(pausedMidnight, late + 35 * min)
+  eq('pause is excluded from day allocation', ended.focusDays, { [new Date(late).toDateString()]: 10 * min, [new Date(late + 35 * min).toDateString()]: 5 * min })
+  const englishVoice = { name: 'Daniel', localService: true, lang: 'en-US' }
+  eq('Tagalog never guessed as English', maleVoice(englishVoice, 'jhyvie', 'Salamat!'), false)
+  eq('explicit English fallback', maleVoice(englishVoice, 'jhyvie', 'Thank you.', true), true)
+  eq('female voice excluded', maleVoice({ ...englishVoice, name: 'Samantha' }, 'rei', 'Hi'), false)
+  eq('remote voice excluded offline', maleVoice({ ...englishVoice, localService: false }, 'rei', 'Hi'), false)
+  eq('speech preserves link text', cleanSpeech('**Hi** [Rei](https://example.com) 😊'), 'Hi Rei')
+  const longer = tick(start(0, { ...DEFAULT_CONFIG, method: '52-17' }), 70 * min)
+  eq('52/17 finishes one actual round', [longer.phase, longer.completedFocusMs], ['finished', 52 * min])
+  const task = start(0, { ...DEFAULT_CONFIG, method: 'task', goal: 'Ten problems' })
+  eq('task counts up', remaining(task, 12 * min), 12 * min)
+  return fails
+}

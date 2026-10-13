@@ -1,5 +1,6 @@
 // Pal's brain: scope filter → intent → slot-filling dialog. Deterministic and auditable.
 import { at, fmtDay, fmtHours, fmtTime, HOUR, startOfDay, type PalId, type PalState, type TaskKind } from './core'
+import { endFromAnswer } from './conversation'
 import { clockTime, eventKind, extractTitle, hasSingleDay, isNo, isRelative, isYes, namedDay, parseDays, parseHours, parseRange, parseWhen, taskKind } from './parse'
 
 /** Words around a day/time correction that aren't a new title ("sabing mamayang 10 am", "mamaya ngaaa", "oo lagay mo para today") */
@@ -13,7 +14,8 @@ export interface Draft {
 }
 export type Awaiting = null | 'due' | 'hours' | 'confirm'
 /** A class/shift we heard but still need weekdays for. */
-export interface PendingEvent { title: string; kind: string; start: number; end: number }
+/** A class/shift waiting for its days, or (needsEnd) an event waiting for its end time */
+export interface PendingEvent { title: string; kind: string; start: number; end: number; needsEnd?: boolean }
 /** The event card still waiting for Add it / Never mind, so "no, it's a lunch date" can revise it. */
 export interface LastEvent { title: string; kind: string; start: number; end: number; days?: number[] }
 
@@ -23,11 +25,12 @@ export type Card =
   | { type: 'proposal'; taskId: string; blockIds: string[]; why: string; shortfall: number; freeHours: number; commute?: boolean; replaces?: string[]; taskUpdate?: { due: number; hours: number } }
   | { type: 'checkin'; eventIds: string[] }
   /** conflicts: study blocks it lands on (re-planned on add). clash: other events it overlaps ("Travel to school, 4am–5am"); alt: the nearest free time. */
-  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; whatIf?: boolean; days?: number[]; until?: number; clash?: string[]; alt?: { start: number; end: number }; moveOther?: { id: string; title: string; to: { start: number; end: number } } }
+  | { type: 'event'; title: string; kind: string; start: number; end: number; conflicts: number; blocked?: string[]; whatIf?: boolean; days?: number[]; until?: number; clash?: string[]; alt?: { start: number; end: number }; moveOther?: { id: string; title: string; to: { start: number; end: number }; trimmed?: boolean } }
   /** Remove or move something already on the calendar. seriesIds: the same slot on other days, for "remove all". clash: what the new time overlaps. */
   | { type: 'change'; mode: 'remove' | 'move'; eventId: string; title: string; kind: string; start: number; end: number; to?: { start: number; end: number }; seriesIds?: string[]; targets?: { id: string; title: string; start: number; end: number }[]; clash?: string[] }
   /** A file attached in chat, now in the Study library: plan study from it, flashcards, quiz, read aloud */
-  | { type: 'file'; fileId: string; name: string; folderName: string; scanned: boolean }
+  /** dates: how many dated deadlines the file holds (a syllabus or timeline), so Pal can suggest adding them */
+  | { type: 'file'; fileId: string; name: string; folderName: string; scanned: boolean; dates?: number }
   | { type: 'notify' }
   | { type: 'boundary' }
 
@@ -68,6 +71,11 @@ const GRADES = /\b(will i pass|am i (going to|gonna) (pass|fail)|predict|my grad
 const STRESS = /\b(burn(ed|t)? ?out|stressed|anxious|anxiety|depress|overwhelm|panic|can'?t cope|pagod na pagod|suicid|self[- ]harm)\b/i
 const INJECT = /\b(ignore (your|all|previous|the) (rules|instructions)|system prompt|you are now|pretend (to be|you)|jailbreak|developer mode|act as)\b/i
 const OFFTOPIC = /^(who|what is|what's the|where is|why is|explain|tell me (a joke|about)|how do i (code|make|cook)|write me a (poem|story|song))\b/i
+/** Doing coursework for them: "what's 17 x 23", "explain photosynthesis", "solve this equation", "define mitosis" */
+const ACADEMIC = /\b(?:what'?s|what is|calculate|compute|solve|ano ang)\s+-?\d[\d.,\s]*\s*(?:[-+*/x×÷^]|times|plus|minus|divided by)\s*-?\d|\b(?:explain|define|definition of|meaning of|solve|derive|prove|summari[sz]e|translate|ipaliwanag)\b.{0,40}\b(?:photosynthesis|mitosis|meiosis|cells?|atoms?|molecules?|equations?|theorem|derivatives?|integrals?|formulas?|chemistry|physics|biology|algebra|calculus|geometry|trigonometry|economics|grammar|chapter|lesson|module|topic|concept|theory|law of|revolution|history)\b/i
+
+/** They asked Pal to do coursework (the one kind of request a "redirect" is for) */
+export const isAcademicAsk = (text: string) => ACADEMIC.test(text) || GRADED.test(text)
 
 export const BLOCKED_OUTPUT = /\b(you will (pass|fail)|your grade will|you (are|seem) (burned out|depressed|anxious))\b/i
 
@@ -96,14 +104,14 @@ const BASE: Lines = {
   revised: ['Ahh got it. Like this?', 'Oops, fixed it. This one?'],
   reflowNone: ["Nothing left to move. You're good on this one."],
   graded: ["I can't write it for you, but I can save you some focus time for it. How long do you think you need?"],
+  academic: ["That's coursework, so the answering is yours. I can block study time for it though. Want me to?"],
   grades: ["I honestly can't tell you your grade. I can show how much study time fits before the exam though."],
   stress: ["I can't really tell how you're feeling, but I can look at your week and see what we can move. And if it's getting heavy, the guidance office is there for you."],
   inject: ["Let's stick to your schedule. Anything else coming up?"],
+  // Only when no AI can answer (offline, nothing set up): general chat needs the model, the schedule doesn't
   offtopic: [
-    "Ooh, I get what you're asking, but that's outside what I can help with. Want to look at {next} instead?",
-    "That one's not really my thing, sorry! I'm better at time stuff. Should we plan around {next}?",
-    "I'd love to, but I'm just your planning buddy. How about we block some time for {next}?",
-    "Hmm, can't help with that one. What I can do is make your week lighter. Start with {next}?",
+    "I'd need my AI brain online to chat about that. For your schedule I'm all yours. Want to look at {next}?",
+    "That one needs me online. Offline I can still handle your week, like {next}.",
   ],
   time: ["It's {t}, {d}.", '{t} right now, {d}.'],
   prefSaved: ["Noted! I'll remember: {what}.", 'Got it, {what}. I\'ll plan around that from now on.'],
@@ -160,7 +168,7 @@ const BASE: Lines = {
   voiceRemoveAsk: ['Remove {what}? Say yes or no.'],
   voiceMoveAsk: ['Move {what}? Say yes or no.'],
   hfOff: ['Hands-free off. Tap the mic whenever you want to talk.'],
-  hfYes: ['Yes?', "I'm here, go ahead."],
+  hfYes: ['Yes?', 'Yeah?', 'Hmm?', "I'm here."],
   hfIdle: ['I stopped listening after 30 quiet minutes. Turn hands-free back on whenever.'],
   hfQuiet: ["It's quiet hours, so I've stopped listening. Good night!"],
   hfMicBlocked: ['I need the microphone for hands-free. Allow it in your browser or phone settings, then try again.'],
@@ -177,6 +185,7 @@ const BASE: Lines = {
   kept: ['Okay, left it as is.', 'Sure, keeping it.'],
   confirmWhich: ['Wait, just to be sure: add this one?', 'Just checking, this one?'],
   slowNet: ["My connection's being slow, so simpler answers from me for a bit."],
+  slowLocal: ["My offline brain is taking too long on this one, so here's the quick version. A free Groq key in Settings makes me much faster."],
   quotaLocal: ["My free cloud AI ran out for now, so I'm thinking on your PC instead. A bit slower, same me."],
   quotaOut: ['My free AI limit ran out, so simple answers from me until about {time}.'],
   busy: ["We've been chatting a lot! Simpler answers for a minute while my AI catches its breath."],
@@ -188,11 +197,21 @@ const BASE: Lines = {
   daysRetry: ['Which days though? Like "MWF", "TTh", or "just today".'],
   askStart: ['{what}. What time does it start?', '{what}. When does it start?'],
   askEnd: ['{what} starts {when}. What time does it end?'],
+  askStartSubject: ['{what}. What subject is it, and what time does it start?'],
+  fixedAskStart: ['Got it, {what}. What time does it start?'],
+  fixedAskEnd: ['Got it, {what} starts {when}. What time does it end?'],
+  askStartAgain: ['I still need a start time for {what}. When does it begin?'],
+  askEndAgain: ['Still need the end time for {what}. Tell me when it ends, or say "skip" and I\'ll block an hour.'],
+  overlapWhat: ['It lands on {what}. If you add it, I\'ll find that a new time.'],
+  overlapNone: ['It doesn\'t overlap anything on your calendar.'],
   addAsk: ['{what}. Add it?'],
   newEventAsk: ['Sure. What would you like to schedule?'],
   declineOk: ['Okay. What would you like to do instead?'],
   examOverlap: ['Your exam is {range}. It overlaps {clash}.{move} Add it anyway?'],
   moveOther: [' I can move {other} to {to} instead.'],
+  keepAndMove: ['{what} overlaps your {other}. Let\'s keep {what} and move {other} to {to}. Okay?', 'Heads up, that lands on {other}. I\'d keep {what} and move {other} to {to}. Sound good?'],
+  keepAndTrim: ['{what} overlaps your {other}, and there\'s no other time for it that day. Let\'s keep {what} and shorten {other} to {to}. Okay?'],
+  keptAndMoved: ['Done! {what} is in, and {other} moved to {to}.', 'All set: {what} is in, {other} is now {to}.'],
   studyWhich: ['Which exam or deadline is this review for, and when is it?'],
   studyHours: ['How many hours of review would you like before {what}?'],
   examStill: ['Your calendar still has {what}. Should the exam itself move, or should review still finish before it?'],
@@ -202,7 +221,10 @@ const BASE: Lines = {
   wrongPal: ["I'm not {wrong}. I'm {me} 🙂", "Close! I'm {me}, not {wrong}."],
   cloudNotSet: ["My cloud brain isn't set up on this device, so I'll keep it simple for now."],
   phoneModelMissed: ["I couldn't work that one out on this phone. Try saying it like \"Bio exam Friday 3pm\"."],
-  fileSaved: ['Saved {file} in your {folder} folder. Want me to plan study time from it, make flashcards, or quiz you?'],
+  fileSaved: ['Saved {file} in your {folder} folder. Is it a schedule I should pull dates from, or study material for flashcards and a quiz?'],
+  fileHasDates: ['Saved {file}. I found {n} dates in it, like a syllabus. Add them to your schedule, or is it study material for flashcards and a quiz?'],
+  fileStudy: ['Here are flashcards from {file}. Say "quiz me" when you\'re ready to test yourself.'],
+  fileNoText: ["{file} is scanned pages, so I can't read dates or make flashcards from it. You can still open it."],
   fileScanned: ["Saved {file} in {folder}. It's scanned pages, so I can show it but can't read it out or quiz you on it."],
   fileTooBig: ['{file} is over 25 MB. Try a smaller copy, or split it.'],
   fileUnsupported: ['I can keep PDFs, text files and images. {file} is something else.'],
@@ -216,23 +238,28 @@ const BASE: Lines = {
 }
 const VOICE: Record<PalId, Partial<Lines>> = {
   rei: {
-    wrongPal: ["I'm not {wrong}. I'm Rei 🙂"],
-    greet: ["Hi, I'm Rei. Tell me about your week, we'll figure it out together."],
-    doneOk: ["That one's done. Proud of you.", 'Nice and steady. Checked off.'],
-    offtopic: ["I hear you, but that's not something I can help with. Maybe we take a gentle look at {next}?"],
+    wrongPal: ["I'm Rei, not {wrong}."],
+    greet: ["I'm Rei. What needs planning?"],
+    greetNamed: ["Hi {user}. What needs planning?"],
+    askHours: ['How many hours will it take?'],
+    accepted: ["Added to your calendar."],
+    doneOk: ['Done. Checked off.'],
+    offtopic: ['That needs AI online. For your schedule: {next}.'],
   },
   diel: {
-    wrongPal: ["Close, but I'm Diel, not {wrong}."],
-    greet: ["Hey, Diel here. Give me your classes, deadlines, shifts. I like a good schedule."],
-    askHours: ['How many hours, roughly?', "What's your estimate in hours?"],
-    accepted: ["In the calendar. I'll check in after each block."],
-    doneOk: ['Done. Love a clean list.'],
-    offtopic: ['Outside my parameters, unfortunately. Within them: {next}. Want me to plan it?'],
+    wrongPal: ["I'm Diel. Easy mix-up, I'm here to help."],
+    greet: ["Hi, I'm Diel. Tell me about your week; we can take it one step at a time."],
+    greetNamed: ["Hi {user}. Let's take your week one step at a time."],
+    askHours: ['About how much time do you think you will need?'],
+    accepted: ["It's in your calendar. One step at a time."],
+    doneOk: ['That is done. Take a moment before the next thing.'],
+    offtopic: ["I'd need AI online for that. We can still look at your schedule: {next}."],
   },
   jhyvie: {
-    greet: ['Hiii, Jhyvie here! Kwento mo naman your week, classes, deadlines, raket, lahat.', 'Uy hello! Anong meron sa week mo?', 'Hi hi! May plano ka ba today?'],
-    greetNamed: ['Hiii {user}! Kwento mo naman your week, classes, deadlines, raket, lahat.', 'Uy {user}! Anong meron sa week mo?', 'Hi hi {user}! May plano ka ba today?'],
+    greet: ['Uy, si Jhyvie ito! Kuwento mo ang linggo mo, klase, takdang gawain, at raket.', 'Uy hello! Anong meron sa week mo?', 'Hi hi! May plano ka ba today?'],
+    greetNamed: ['Uy {user}! Kuwento mo ang linggo mo, klase, takdang gawain, at raket.', 'Uy {user}! Anong meron sa week mo?', 'Hi hi {user}! May plano ka ba today?'],
     slowNet: ['Medyo mabagal connection ko ngayon, simpler replies muna ha.'],
+    slowLocal: ['Ang tagal ng offline brain ko dito, kaya eto muna ang mabilis na sagot. Mas bibilis ako pag may free Groq key sa Settings.'],
     quotaLocal: ['Naubos yung free cloud AI ko, kaya yung AI sa PC mo muna gamit ko. Medyo mabagal, pero ako pa rin!'],
     quotaOut: ['Naubos yung free AI limit ko, kaya simple replies muna hanggang mga {time}.'],
     busy: ['Ang dami nating napag-usapan! Simple replies muna for a minute ha.'],
@@ -262,7 +289,7 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     voiceRemoveAsk: ['Tanggalin ko ba ang {what}? Oo o wag na?'],
     voiceMoveAsk: ['Ilipat ko ba ang {what}? Oo o wag na?'],
     hfOff: ['Sige, off na ang hands-free. Tap mo lang yung mic pag gusto mo mag-usap.'],
-    hfYes: ['Yes? Ano yun?', 'Nandito ako, go!'],
+    hfYes: ['Yes?', 'Ano yun?', 'Bakit?', 'Yup?'],
     hfQuiet: ['Quiet hours na, kaya tumigil muna ako sa pakikinig. Good night!'],
     studySkipped: ['Sige, skip! Tuloy tayo.'],
     askDue: ['Sige! Kailan deadline?', 'Okay! When is it due?'],
@@ -270,7 +297,8 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     accepted: ["G! Nasa calendar na. Kamustahin kita after each block ha."],
     doneOk: ['Yay, tapos na yan!', 'Galing! Done!'],
     notNow: ['Sige, later na lang. Sabihin mo lang "plan it".'],
-    offtopic: ['Gets ko yan, pero hindi ko talaga forte yan hehe. Tara, {next} na lang natin pag-usapan?', 'Ay, di ko kaya sagutin yan! Pero kaya kitang tulungan sa {next}, game?'],
+    offtopic: ['Kailangan ko ng AI brain na naka-online para sa ganyang tanong. Pero sa schedule mo, game ako: {next}?'],
+    academic: ['Coursework yan, kaya ikaw ang sasagot hehe. Pero kaya kitang bigyan ng study time para diyan. Gusto mo?'],
     time: ['{t} na! {d} ngayon.'],
     focusStart: ['Tara, focus muna! Nandito lang ako.'],
     breakStart: ['Galing! Break muna, 5 minutes. Inom ka tubig!'],
@@ -285,17 +313,30 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     askDays: ['{what}, gets! Anong mga araw?'],
     askStart: ['{what}. Anong oras magsisimula?', '{what}. Mga anong oras start?'],
     askEnd: ['{what}, simula {when}. Anong oras matatapos?'],
+    askStartSubject: ['{what}. Anong subject, at anong oras magsisimula?'],
+    fixedAskStart: ['Sige, {what}. Anong oras magsisimula?'],
+    fixedAskEnd: ['Sige, {what} simula {when}. Anong oras matatapos?'],
+    askStartAgain: ['Kailangan ko pa kung anong oras magsisimula ang {what}.'],
+    askEndAgain: ['Kailangan ko pa kung anong oras matatapos ang {what}. Sabihin mo, o "skip" para isang oras na lang.'],
+    overlapWhat: ['Tatamaan nito yung {what}. Pag in-add mo, hahanapan ko yun ng bagong oras.'],
+    overlapNone: ['Wala siyang natatamaan sa calendar mo.'],
     addAsk: ['{what}. Idagdag ko na?'],
     newEventAsk: ['Sige! Ano ilalagay natin?'],
     declineOk: ['Sige. Ano na lang gagawin natin?'],
     examOverlap: ['Exam mo {range}, pero sabay sa {clash}.{move} I-add ko pa rin?'],
     moveOther: [' Pwede kong ilipat ang {other} sa {to}.'],
+    keepAndMove: ['Sabay ang {what} sa {other} mo. I-keep natin ang {what} at ilipat ang {other} sa {to}. Okay ba?'],
+    keepAndTrim: ['Sabay ang {what} sa {other} mo, at wala nang ibang oras that day. I-keep natin ang {what} at paikliin ang {other} sa {to}. Okay ba?'],
+    keptAndMoved: ['Ayan! Nasa calendar na ang {what}, at nilipat ko ang {other} sa {to}.'],
     studyWhich: ['Para saang exam o deadline itong review, at kailan?'],
     studyHours: ['Ilang oras ng review gusto mo bago ang {what}?'],
     wrongPal: ["Hindi ako si {wrong}, si {me} 'to! 🙂", "Uy, {me} 'to, hindi si {wrong}!"],
     cloudNotSet: ['Di pa naka-set up ang cloud AI ko dito, kaya simple lang muna ako.'],
     phoneModelMissed: ['Di ko na-gets yun dito sa phone. Try mo ganito: "Bio exam Friday 3pm".'],
-    fileSaved: ['Nai-save ko na ang {file} sa {folder} folder mo. Gusto mo i-plan natin ang study time, gawan kita ng flashcards, o quiz?'],
+    fileSaved: ['Nai-save ko na ang {file} sa {folder} folder mo. Schedule ba ito na kukunan ko ng dates, o pang-aral para sa flashcards at quiz?'],
+    fileHasDates: ['Nai-save ko ang {file}. May {n} dates dito, parang syllabus. Ilalagay ko ba sa schedule mo, o pang-aral ito para sa flashcards at quiz?'],
+    fileStudy: ['Eto na ang flashcards galing sa {file}. Sabihin mo lang "quiz me" pag ready ka na.'],
+    fileNoText: ['Scanned pages ang {file}, kaya di ko mabasa ang dates o magawan ng flashcards. Pero mabubuksan mo pa rin.'],
     fileScanned: ['Nai-save ko ang {file} sa {folder}. Scanned pages siya, kaya makikita mo pero di ko mababasa o magagawan ng quiz.'],
     planFromFile: ['Mga {h} ng aral ang {file}.{topics}'],
     planNeedsDate: ['Mga {h} ng aral ang {file}. Kailan ang {what}?'],
@@ -311,7 +352,7 @@ const VOICE: Record<PalId, Partial<Lines>> = {
     askHours: ['How many hours?'],
     accepted: ["Locked in! Let's go."],
     doneOk: ["Let's gooo, done!", 'Boom. Checked off.'],
-    offtopic: ["Ha, not my sport! What I CAN coach is your week. Let's lock in {next}?"],
+    offtopic: ["Gotta be online for that one! What I can do offline is your week. Let's lock in {next}?"],
   },
 }
 
@@ -323,7 +364,8 @@ export function say(pal: PalId, key: string, vars: Record<string, string | numbe
   // Never the exact same line twice in a row ("hi" then "hello")
   if (pool.length > 1 && s === lastLine[key]) s = pool[rot++ % pool.length]
   lastLine[key] = s
-  for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v))
+  // Every {name}, not just the first ("keep {what} … move {other}" uses each twice)
+  for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v))
   return BLOCKED_OUTPUT.test(s) ? BASE.inject[0] : s
 }
 
@@ -349,9 +391,21 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
   if (INJECT.test(text)) return out('inject', { rule: 'Scope filter: instruction override' })
   if (STRESS.test(text)) return out('stress', { rule: 'Scope filter: no wellbeing assessment', chips: ['Show my week', 'Find things to move'] })
   if (GRADES.test(text)) return out('grades', { rule: 'Scope filter: no grade predictions' })
+  if (ACADEMIC.test(text)) return out('academic', { rule: 'Scope filter: no academic work', chips: ['Plan study time'] })
   if (GRADED.test(text)) {
     const k = taskKind(text) ?? 'assignment'
     return out('graded', { rule: 'Scope filter: no graded work', draft: { title: extractTitle(text, 'Assignment'), kind: k }, awaiting: 'hours' })
+  }
+
+  // Answering "what time does it end?"
+  if (ctx.pending?.needsEnd) {
+    const p = ctx.pending
+    const end = endFromAnswer(text, p.start)
+    if (end != null) return { ...keep, pending: null, text: '', action: { type: 'addEvent', title: p.title, kind: p.kind, start: p.start, end, whatIf: false } }
+    if (isNo(text)) return out('notNow', { pending: null })
+    if (text.split(/\s+/).length <= 3) return { ...keep, text: say(pal, 'askEnd', { what: p.title, when: `${fmtDay(p.start)} at ${fmtTime(p.start)}` }) }
+    const r = turn(input, { ...ctx, pending: null })
+    return { ...r, pending: r.pending === undefined ? null : r.pending }
   }
 
   // Answering "which days?" for a class/shift we already heard
@@ -475,9 +529,9 @@ export function turn(input: string, ctx: { pal: PalId; now: number; draft: Draft
   if (singleWhen?.hadTime && (ek || /\b(gym|workout|study|review|shift|class|klase|pasok|duty|meeting|org|training|practice|lagay|schedule|sched|add|put|set)\b/i.test(text))) {
     const kind = ek ?? (/\b(gym|workout|run|training)\b/i.test(text) ? 'protected' : 'work')
     const title = extractTitle(text.replace(/\b(lagay( mo)?|schedule|add|put|set)\b/gi, ''), kind === 'protected' ? 'Gym' : kind === 'class' ? 'Class' : kind === 'shift' ? 'Shift' : 'Study Session')
+    // Only a start: ask when it ends instead of assuming an hour
     const start = singleWhen.t
-    const end = start + 1 * HOUR
-    return { ...keep, pending: null, text: '', action: { type: 'addEvent', title, kind, start, end, whatIf: false } }
+    return { ...keep, pending: { title, kind, start, end: start, needsEnd: true }, text: say(pal, 'askEnd', { what: title, when: `${fmtDay(start)} at ${fmtTime(start)}` }) }
   }
 
   // Slot filling for the current draft

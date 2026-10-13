@@ -21,6 +21,8 @@ public class LocalAiPlugin extends Plugin {
     private final AtomicReference<Job> active=new AtomicReference<>();
     private volatile boolean loaded=false,foreground=true,destroyed=false;
     private ModelStore store;
+    /** No usable bundle this launch (a dev build without it, or the copy failed): use what's already installed */
+    private volatile boolean bundleMissing=false;
     private Runnable pendingImport;
     private CompletableFuture<JSObject> setupFuture;
     private volatile long setupBytes=0;
@@ -32,7 +34,7 @@ public class LocalAiPlugin extends Plugin {
     private boolean supported(){return Build.VERSION.SDK_INT>=26 && NativeEngine.available() && store!=null;}
     private JSObject snapshot() throws Exception {
         JSObject result=new JSObject();result.put("available",supported());result.put("loaded",loaded);result.put("architecture",Build.SUPPORTED_ABIS[0]);
-        if(store!=null){ModelStore.Model selected=store.selected();if(selected!=null){JSObject model=new JSObject();model.put("name","Qwen GGUF");model.put("bytes",selected.bytes);model.put("sha256",selected.sha256);result.put("model",model);}}
+        if(store!=null){ModelStore.Model selected=store.selected();if(selected!=null){JSObject model=new JSObject();model.put("name",store.name(selected.sha256));model.put("bytes",selected.bytes);model.put("sha256",selected.sha256);result.put("model",model);}}
         if(setupStage!=null){JSObject setup=new JSObject();setup.put("bytes",setupBytes);setup.put("total",BundledModel.BYTES);setup.put("stage",setupStage);result.put("setup",setup);}
         return result;
     }
@@ -58,7 +60,8 @@ public class LocalAiPlugin extends Plugin {
     @PluginMethod public void status(PluginCall call){try{call.resolve(snapshot());}catch(Exception e){reject(call,e);}}
     @PluginMethod public synchronized void setupModel(PluginCall call){
         if(setupFuture!=null && !setupFuture.isDone()){attachSetup(call,setupFuture);return;}
-        try{if(supported() && store.selected()!=null){call.resolve(snapshot());return;}}catch(Exception error){reject(call,error);return;}
+        // Done when this app's bundled model is in place, or when a dev build has no bundle and something was imported
+        try{if(supported() && (store.has(BundledModel.SHA256) || (bundleMissing && store.selected()!=null))){call.resolve(snapshot());return;}}catch(Exception error){reject(call,error);return;}
         Job job=begin(call,"setup");if(job==null)return;job.started=true;
         CompletableFuture<JSObject> completion=new CompletableFuture<>();setupFuture=completion;attachSetup(call,completion);
         worker.execute(()->{
@@ -66,8 +69,16 @@ public class LocalAiPlugin extends Plugin {
             try{
                 check(job);engine.unload();loaded=false;
                 new BundledModel(BundledModel.BYTES,BundledModel.SHA256).ensure(store,()->getContext().getAssets().open(BundledModel.ASSET),()->getContext().getFilesDir().getUsableSpace(),()->job.cancelled.get() || destroyed || !foreground,file->{try{engine.load(file.getAbsolutePath());}finally{engine.unload();loaded=false;}},activation->{synchronized(job){check(job);activation.run();job.committed=true;}},(copied,total)->{setupBytes=copied;setupStage=copied<total?"copying":"checking";});
+                store.setName(BundledModel.SHA256,BundledModel.NAME);
                 setupStage=null;result=snapshot();
-            }catch(FileNotFoundException error){failure=new IllegalStateException("MISSING_MODEL");}catch(Exception error){failure=error;}
+            }catch(FileNotFoundException error){
+                bundleMissing=true;
+                try{if(store.selected()!=null)result=snapshot();else failure=new IllegalStateException("MISSING_MODEL");}catch(Exception e){failure=e;}
+            }catch(Exception error){
+                // A failed update copy (e.g. no room for the new bundle) keeps the model already here working; retried next launch
+                String code=error instanceof ModelStore.Failure?((ModelStore.Failure)error).code:error.getMessage();
+                try{if(!"CANCELLED".equals(code) && store.selected()!=null){bundleMissing=true;result=snapshot();}else failure=error;}catch(Exception e){failure=error;}
+            }
             finally{setupStage=null;active.compareAndSet(job,null);}
             if(failure!=null)completion.completeExceptionally(failure);else completion.complete(result);
         });
@@ -85,7 +96,8 @@ public class LocalAiPlugin extends Plugin {
         worker.execute(()->{
             try{
                 long loadMs=ensureLoaded(job);check(job);
-                JSObject result=new JSObject(engine.generate(id,input,limit));check(job);result.put("loadMs",loadMs);call.resolve(result);
+                JSObject result=new JSObject(engine.generate(id,input,limit));check(job);result.put("loadMs",loadMs);
+                ModelStore.Model selected=store.selected();if(selected!=null)result.put("model",store.name(selected.sha256));call.resolve(result);
             }catch(Exception e){reject(call,e);}finally{active.compareAndSet(job,null);}
         });
     }
@@ -97,6 +109,23 @@ public class LocalAiPlugin extends Plugin {
     private void cancelJob(Job job){synchronized(job){if(!job.committed){job.cancelled.set(true);engine.cancel(job.id);}}}
     private void stop(){Job job=active.get();if(job!=null)cancelJob(job);worker.execute(()->{engine.unload();loaded=false;});}
     @PluginMethod public void unload(PluginCall call){stop();worker.execute(call::resolve);}
+    @PluginMethod public void listModels(PluginCall call){
+        if(!supported()){call.reject("UNSUPPORTED_ARCH","UNSUPPORTED_ARCH");return;}
+        try{
+            ModelStore.Model selected=store.selected();JSArray models=new JSArray();
+            for(ModelStore.Model m:store.list()){JSObject model=new JSObject();model.put("name",store.name(m.sha256));model.put("bytes",m.bytes);model.put("sha256",m.sha256);model.put("selected",selected!=null && selected.sha256.equals(m.sha256));model.put("bundled",m.sha256.equals(BundledModel.SHA256));models.put(model);}
+            JSObject result=new JSObject();result.put("models",models);call.resolve(result);
+        }catch(Exception e){reject(call,e);}
+    }
+    /** Switch the answering model: unload now, the next message loads the new one */
+    @PluginMethod public void selectModel(PluginCall call){
+        String sha=call.getString("sha256","");Job job=begin(call,"select");if(job==null)return;
+        worker.execute(()->{try{engine.unload();loaded=false;store.select(sha);call.resolve(snapshot());}catch(Exception e){reject(call,e);}finally{active.compareAndSet(job,null);}});
+    }
+    @PluginMethod public void removeModel(PluginCall call){
+        String sha=call.getString("sha256","");Job job=begin(call,"remove");if(job==null)return;
+        worker.execute(()->{try{store.remove(sha);call.resolve(snapshot());}catch(Exception e){reject(call,e);}finally{active.compareAndSet(job,null);}});
+    }
     @PluginMethod public void importModel(PluginCall call){
         Job job=begin(call,"import");if(job==null)return;
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("*/*");
@@ -109,11 +138,12 @@ public class LocalAiPlugin extends Plugin {
         Uri uri=result.getData().getData();
         Runnable operation=()->{
             try{
-                check(job);engine.unload();loaded=false;long bytes=-1;
-                try(Cursor cursor=getContext().getContentResolver().query(uri,new String[]{OpenableColumns.SIZE},null,null,null)){if(cursor!=null && cursor.moveToFirst() && !cursor.isNull(0))bytes=cursor.getLong(0);}
+                check(job);engine.unload();loaded=false;long bytes=-1;String name="Imported model";
+                try(Cursor cursor=getContext().getContentResolver().query(uri,new String[]{OpenableColumns.SIZE,OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null && cursor.moveToFirst()){if(!cursor.isNull(0))bytes=cursor.getLong(0);if(!cursor.isNull(1))name=cursor.getString(1).replaceAll("(?i)\\.gguf$","");}}
                 try(InputStream input=getContext().getContentResolver().openInputStream(uri)){
                     if(input==null)throw new IllegalStateException("INVALID_MODEL");
-                    store.importStream(input,bytes,()->getContext().getFilesDir().getUsableSpace(),()->job.cancelled.get() || destroyed || !foreground,file->{try{engine.load(file.getAbsolutePath());}finally{engine.unload();loaded=false;}},activation->{synchronized(job){check(job);activation.run();job.committed=true;}});
+                    ModelStore.Model imported=store.importStream(input,bytes,()->getContext().getFilesDir().getUsableSpace(),()->job.cancelled.get() || destroyed || !foreground,file->{try{engine.load(file.getAbsolutePath());}finally{engine.unload();loaded=false;}},activation->{synchronized(job){check(job);activation.run();job.committed=true;}});
+                    store.setName(imported.sha256,name);
                 }
                 call.resolve(snapshot());
             }catch(Exception e){reject(call,e);}finally{active.compareAndSet(job,null);}

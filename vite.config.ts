@@ -3,9 +3,25 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+const configDirectory = path.dirname(fileURLToPath(import.meta.url))
 
 import siteConfiguration from './.figma/make/site.json'
 
+
+/**
+ * Cross-origin isolation: lets on-device speech-to-text use every CPU core (multithreaded WebAssembly), so hands-free
+ * hears "Hi {pal}" and shows live words several times faster. Same headers in vercel.json for the deployed app.
+ */
+const ISOLATION_HEADERS = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }
+/** The same headers from middleware too: server.headers alone was lost once after Vite restarted itself */
+function crossOriginIsolation(): Plugin {
+  const add = (_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    for (const [k, v] of Object.entries(ISOLATION_HEADERS)) res.setHeader(k, v)
+    next()
+  }
+  return { name: 'cross-origin-isolation', configureServer: (s) => { s.middlewares.use(add) }, configurePreviewServer: (s) => { s.middlewares.use(add) } }
+}
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -15,6 +31,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     publicDir: 'public',
+    cacheDir: '.cache/vite',
     base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
     build: {
       outDir: androidPreview ? 'dist-android' : 'dist',
@@ -22,6 +39,7 @@ export default defineConfig(({ mode }) => {
       minify: !emitSourcemaps,
     },
     plugins: [
+      crossOriginIsolation(),
       react(),
       tailwindcss(),
       figmaSiteConfiguration(siteConfiguration),
@@ -32,9 +50,9 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: [
-        { find: '@', replacement: path.resolve(__dirname, './src') },
+        { find: '@', replacement: path.resolve(configDirectory, './src') },
         // self-contained browser build (the package's default entry imports node's fs/path)
-        { find: 'kokoro-web', replacement: path.resolve(__dirname, './node_modules/kokoro-js/dist/kokoro.web.js') },
+        { find: 'kokoro-web', replacement: path.resolve(configDirectory, './node_modules/kokoro-js/dist/kokoro.web.js') },
         // Hands-free voice detection asks for ONNX's plain-wasm build; give it the full one Kokoro and Whisper already
         // ship in /public/kokoro/ort, so the app carries one runtime instead of two (saves ~11MB)
         { find: /^onnxruntime-web\/wasm$/, replacement: 'onnxruntime-web' },
@@ -43,6 +61,8 @@ export default defineConfig(({ mode }) => {
     worker: { format: 'es' },
     optimizeDeps: { exclude: ['kokoro-js', 'kokoro-web'] },
     server: {
+      proxy: { '/tts': { target: 'http://127.0.0.1:8788', changeOrigin: false } },
+      headers: ISOLATION_HEADERS,
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
@@ -57,6 +77,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     preview: {
+      headers: ISOLATION_HEADERS,
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
     },
@@ -64,10 +85,10 @@ export default defineConfig(({ mode }) => {
 })
 
 /**
- * Builds ship only the voice files the app loads from its own server: the voice detector (vad/) and the ONNX
- * runtime (kokoro/ort/). Whisper downloads from Hugging Face the first time hands-free is turned on (stt.worker.ts
- * falls back to it), and the Kokoro speech model was never used for speaking: leaving them out keeps ~165 MB off
- * every deploy and APK. The bundler's second copy of the ONNX runtime is never loaded either (paths point at kokoro/ort/).
+ * Builds ship only the voice files the app loads from its own server: the voice detector (vad/), the wake-word
+ * engine (wakeword/, ~6 MB) and the ONNX runtime (kokoro/ort/). Whisper downloads from Hugging Face the first time
+ * hands-free is turned on (stt.worker.ts falls back to it), and the Kokoro speech model was never used for
+ * speaking: leaving them out keeps ~165 MB off every deploy and APK. The bundler's second copy of the ONNX runtime is never loaded either (paths point at kokoro/ort/).
  * The dev server still serves all of public/, so the voice self-test keeps working.
  */
 function pruneUnusedModels(outDir: string): Plugin {
@@ -75,7 +96,7 @@ function pruneUnusedModels(outDir: string): Plugin {
     name: 'paldo-prune-unused-models',
     apply: 'build',
     closeBundle() {
-      const out = path.resolve(__dirname, outDir)
+      const out = path.resolve(configDirectory, outDir)
       for (const dir of ['whisper', 'kokoro/models', 'kokoro/voices']) fs.rmSync(path.join(out, dir), { recursive: true, force: true })
       const assets = path.join(out, 'assets')
       if (fs.existsSync(assets)) for (const f of fs.readdirSync(assets)) if (/^ort-wasm.*\.wasm$/.test(f)) fs.rmSync(path.join(assets, f))

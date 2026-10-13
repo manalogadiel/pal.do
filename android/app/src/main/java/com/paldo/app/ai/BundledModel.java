@@ -7,16 +7,18 @@ import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 public final class BundledModel {
-    public static final String ASSET="models/qwen2.5-0.5b-instruct-q4_k_m.gguf";
-    public static final long BYTES=491400032L;
-    public static final String SHA256="74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db";
+    public static final String NAME="Qwen2.5 1.5B Instruct";
+    public static final String ASSET="models/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+    public static final long BYTES=1117320736L;
+    public static final String SHA256="6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e";
     public interface Source {InputStream open() throws IOException;}
     public interface Progress {void update(long copied,long total);}
     private final long bytes;
     private final String sha256;
     public BundledModel(long bytes,String sha256){this.bytes=bytes;this.sha256=sha256;}
     public ModelStore.Model ensure(ModelStore store,Source source,LongSupplier free,BooleanSupplier cancelled,ModelStore.Validator validator,ModelStore.ActivationGate gate,Progress progress)throws Exception{
-        ModelStore.Model prior=store.selected();if(prior!=null)return prior;
+        // Already copied: keep whatever the user picked. A newer bundle (an app update) is copied in and becomes the pick
+        if(store.has(sha256)){ModelStore.Model selected=store.selected();return selected!=null?selected:store.select(sha256);}
         progress.update(0,bytes);
         try(InputStream input=new FilterInputStream(source.open()){
             private long copied=0,last=0;

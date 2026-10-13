@@ -134,6 +134,32 @@ export function moveAside(slot: Slot, hit: CalEvent[], events: CalEvent[], now: 
   return null
 }
 
+/** How fixed each kind is. Exams, classes and shifts never move for something else; a bus ride moves for almost anything */
+const KEEP_RANK: Record<string, number> = { exam: 6, deadline: 6, class: 5, shift: 5, protected: 3, work: 2, commute: 1 }
+const MOVABLE_MAX = 3
+
+/**
+ * A secretary's call on a clash: what should give way. One flexible thing in the way of something that matters more
+ * (a bus ride under a dinner, gym under a meeting) → keep the new event and move that one to its nearest free time the
+ * same day. Anything fixed in the way (a class, a shift, an exam) → move the new event instead (the caller's `alt`).
+ */
+export function resolveClash(slot: Slot, kind: string, hit: CalEvent[], events: CalEvent[], now: number): { event: CalEvent; to: Slot; trimmed?: boolean } | null {
+  if (hit.length !== 1) return null
+  const other = hit[0]
+  const rank = (k: string) => KEEP_RANK[k] ?? 3
+  // Two equally flexible things (dinner over gym): no call to make, the new one gets a free time instead
+  if (rank(other.kind) > MOVABLE_MAX || rank(other.kind) >= rank(kind)) return null
+  if (other.kind === 'commute') return moveAside(slot, hit, events, now)
+  // Everything else: its own length, the nearest free time that day, clear of the new event too
+  const taken = [...events, { id: '', title: '', kind: 'protected', status: 'planned', ...slot } as CalEvent]
+  const to = nearestFree([{ start: other.start, end: other.end }], taken, now, other.id)
+  if (to) return { event: other, to }
+  // Nowhere to move it that day: keep what fits before or after the new event, if that's still 30 minutes or more
+  if (slot.start - other.start >= 30 * MIN && slot.start > now) return { event: other, to: { start: other.start, end: slot.start }, trimmed: true }
+  if (other.end - slot.end >= 30 * MIN) return { event: other, to: { start: slot.end, end: other.end }, trimmed: true }
+  return null
+}
+
 /**
  * The closest time, earlier or later the same day, where every slot fits clear of everything planned,
  * with the 15-min buffer after a commute or shift (as in freeGaps). Never in the past, before 5am or after 11pm.

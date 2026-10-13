@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { cloudReady, getLocalAiModel, getLocalAiUrl } from '../lib/groq'
+import { CLOUD_MODELS, cloudReady, getLocalAiModel, getLocalAiUrl } from '../lib/groq'
 import { AI_MODE_EVENT, getAiMode, isPhoneAiPlatform } from '../lib/ai-mode'
 
 export interface StatusBadgeProps {
@@ -15,13 +15,11 @@ export interface StatusBadgeProps {
 
 export function formatModelDisplayName(model: string): string {
   const m = model.toLowerCase()
-  if (m.startsWith('phone/')) return 'This phone · Qwen 0.5B'
+  if (m.startsWith('phone/')) return `This phone · ${model.slice(6).replace(/^qwen2\.5-1\.5b$/i, 'Qwen2.5 1.5B').replace(/ Instruct$/, '')}`
   if (!m || m.includes('rule')) return 'Local Rules'
   if (m.includes(':')) return `Your PC · ${model}` // Ollama tags look like qwen3.5:4b
-  if (m === 'gemini') return 'Gemini Flash-Lite'
-  if (m.includes('qwen3.8')) return 'Groq · Qwen3.8 27B'
-  if (m.includes('gpt-oss-120b')) return 'Groq · GPT-OSS 120B'
-  if (m.includes('gpt-oss')) return 'Groq · GPT-OSS 20B'
+  const cloud = CLOUD_MODELS.find((c) => c.id === model)
+  if (cloud) return cloud.label
   return model.split('/').pop() || model
 }
 
@@ -127,7 +125,7 @@ export function StatusBadge({
               </span>
               <span className="font-semibold text-[13px]">{statusText}</span>
             </div>
-            <span className="rounded-full bg-tangerine/15 px-2 py-0.5 text-[9.5px] font-semibold text-tangerine">
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[9.5px] font-semibold text-accent">
               Advanced Mode
             </span>
           </div>

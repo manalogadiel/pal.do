@@ -86,7 +86,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_paldo_app_ai_NativeEngine_nativeLoad(
         auto params=llama_model_default_params();params.n_gpu_layers=0;params.load_mode=LLAMA_LOAD_MODE_MMAP;
         model=llama_model_load_from_file(utf8(env,path).c_str(),params);
         if(!model)throw std::runtime_error("LOAD_FAILED");
-        if(llama_model_n_params(model)>1000000000ULL || !llama_model_chat_template(model,nullptr))throw std::runtime_error("INVALID_MODEL");
+        if(llama_model_n_params(model)>2000000000ULL || !llama_model_chat_template(model,nullptr))throw std::runtime_error("INVALID_MODEL");
         auto cp=llama_context_default_params();cp.n_ctx=4096;cp.n_batch=128;cp.n_ubatch=128;cp.n_threads=2;cp.n_threads_batch=4;cp.abort_callback=abortDecode;
         context=llama_init_from_model(model,cp);
         if(!context)throw std::runtime_error("LOAD_FAILED");

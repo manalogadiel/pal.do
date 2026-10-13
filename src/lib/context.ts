@@ -28,7 +28,7 @@ const TAGALOG = ['Linggo', 'Lunes', 'Martes', 'Miyerkules', 'Huwebes', 'Biyernes
 
 /** The card a typed yes/no would answer, as the model should see it */
 export type OpenCard =
-  | { type: 'event'; title: string; start: number; end: number; days?: number[]; until?: number; clash?: string[]; alt?: { start: number; end: number } }
+  | { type: 'event'; title: string; start: number; end: number; days?: number[]; until?: number; clash?: string[]; alt?: { start: number; end: number }; blocked?: string[] }
   | { type: 'plan'; title: string; blocks: { start: number; end: number }[] }
   | { type: 'task'; title: string; kind: string; due: number; hours: number }
   | { type: 'change'; mode: 'remove' | 'move'; title: string; start: number; end: number; to?: { start: number; end: number } }
@@ -49,7 +49,8 @@ function describeCard(c: OpenCard) {
     const days = c.days?.length ? ` every ${c.days.map((d) => DAYN[d]).join(', ')}${c.until ? ` until ${fmtDay(c.until)}` : ''}` : ''
     // An overlap: the app already asked about it, so the model knows a yes means the offered time
     const clash = c.clash?.length ? ` (overlaps ${c.clash.join(' and ')}${c.alt ? `; you offered ${fmtTime(c.alt.start)}–${fmtTime(c.alt.end)} instead, which a plain yes takes` : ''})` : ''
-    return `add "${c.title}" ${span(c.start, c.end)}${days}${clash}`
+    const blocked = c.blocked?.length ? ` (lands on study block ${c.blocked.join(' and ')}; adding it moves that block to a new time)` : ''
+    return `add "${c.title}" ${span(c.start, c.end)}${days}${clash}${blocked}`
   }
   if (c.type === 'plan') return `study plan for ${c.title}: ${c.blocks.length ? c.blocks.map((b) => span(b.start, b.end)).join(', ') : 'no times fit'}`
   if (c.type === 'task') return `${c.kind} "${c.title}" ${c.kind === 'exam' ? 'on' : 'due'} ${fmtDay(c.due)}, ${fmtDur(c.hours)} of ${c.kind === 'exam' ? 'review' : 'work'}`

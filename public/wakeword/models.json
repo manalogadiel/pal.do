@@ -1,0 +1,14 @@
+{
+  "rei": {
+    "threshold": 0.995
+  },
+  "diel": {
+    "threshold": 0.3
+  },
+  "jhyvie": {
+    "threshold": 0.7
+  },
+  "jaypee": {
+    "threshold": 0.3
+  }
+}

@@ -1,7 +1,7 @@
 // Pomodoro session model regression net. Run by `pnpm eval:chat` (scripts/eval-chat.mjs).
 import { alarmMode, eventAlarmId, isReservedAlarmId, makeSerial, SESSION_ALARM_ID, SESSION_ALARM_IDS } from './alarmIds'
 import { makeChime } from './chime'
-import { focusElapsed, fromSaved, FOCUS_MS, IDLE, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './session'
+import { focusElapsed, fromSaved, FOCUS_MS, IDLE, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './session-legacy'
 
 const MIN = 60_000
 

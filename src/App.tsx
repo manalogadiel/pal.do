@@ -1,33 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ANSWERABLE, defaultHours, greetLine, say, turn, type Awaiting, type Card, type Draft, type PendingEvent } from './lib/agent'
 import { addDays, at, DAY, fmtDay, fmtHours, fmtTime, HOUR, hoursOf, MIN, seedWeek, startOfDay, startOfWeek, uid, type CalEvent, type PalId, type PalState, type Task } from './lib/core'
-import { clashes, freeGaps, moveAside, nearestFree, occurrences, propose, type Energy, type Prefs } from './lib/schedule'
+import { clashes, freeGaps, nearestFree, resolveClash, occurrences, propose, type Energy, type Prefs } from './lib/schedule'
 import { buildContext, type OpenCard } from './lib/context'
 import { isYes, namedDay, parseHours, parseRange, parseWhen } from './lib/parse'
-import { wrongPal } from './lib/wake'
+import { isEcho, matchWake, wrongPal } from './lib/wake'
 import { getCachedWeather, refreshWeather, weatherLine, type Weather } from './lib/weather'
 import { Calendar, LoadStrip } from './components/Calendar'
 import { Chat, type Msg, type MascotBubble } from './components/Chat'
-import { BlockPopover, DeletePlansSheet, Onboarding, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
+import { BlockPopover, DeletePlansSheet, Onboarding, scanDeadlines, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
+import Welcome from './components/Welcome'
+import { answerScheduleQuestion, parseScheduleQuestion } from './lib/schedule-answers'
+import { dayInsights, newInsights, weekInsights } from './lib/insights'
 import { ChevronD, ChevronL, ChevronR, Clock, Gear, Moon, Sun, Trash, Wordmark } from './components/Icons'
 import { Pal, PALS } from './pals/Pal'
 import { Rail, TabBar, type View } from './components/Nav'
 import { Today } from './components/Today'
 import { Tasks } from './components/Tasks'
 import { stopKokoro } from './lib/voice'
-import { hasNativeTts, speakNative, stopNative } from './lib/native-tts'
+import { hasNativeTts, speakNative, stopNative, speakPal, stopSpeech } from './lib/native-tts'
 import { deleteFolder, getFile, listFiles, listFolders, newFolder, saveFolder, type Folder, type LibraryFile } from './lib/library'
 import { importFile } from './lib/study-files'
 import { studyHours, suggestFolder, terms, titleFromFileName, topicsOf } from './lib/study-material'
 import type { LibraryMode, LibraryTarget } from './components/Library'
-import { cancelSessionAlarms, enableAlarms, notifyWeb, playChime, playSound, scheduleSessionAlarms, scheduleTimerAlarms, syncEventAlarms, unlockChime } from './lib/notifications'
-import { focusElapsed, fromSaved, isPaused, LONG_EVERY, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, type Session } from './lib/session'
+import { cancelSessionAlarms, enableAlarms, isNative, notifyWeb, playChime, playMicSound, playSound, scheduleSessionAlarms, scheduleTimerAlarms, setSoundsOn, syncEventAlarms, unlockChime } from './lib/notifications'
+import { focusElapsed, fromSaved, isPaused, LONG_EVERY, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, active, running, countUp, configure, finish, nextRound, checkpoint, recoverAway, DEFAULT_CONFIG, type StudyConfig, type Session } from './lib/session'
 import { addReminder, addTime, cancelTimer, fmtLeft, isPaused as isTimerPaused, newestTimer, NO_ALARMS, pauseTimer, resumeTimer, sayLength, startTimer, tickAlarms, timeLeft, upcomingAlarms, type Alarms, type Alert } from './lib/timers'
 import { parseCommand, type Command } from './lib/commands'
 import { TimerPill } from './components/TimerPill'
-import { expectFollowUp, isHandsFreeOn, setPalSpeaking, startHandsFree, stopHandsFree, type HandsFreeState } from './lib/handsfree'
+import { expectFollowUp, handOffListening, isHandsFreeOn, resumeAudio, resumeListening, setPalSpeaking, startHandsFree, stopHandsFree, type HandsFreeState } from './lib/handsfree'
 import { Study, StudyTabs } from './components/Study'
-import { aiFailure, alignToMessage, askGroq, CLOUD_CHAIN, cloudIssue, getGroqApiKey, hasCloudAi, parseIsoToLocalMs, preloadOllama, PRIMARY_MODEL, recoverEvent, toLocalIso, transcribeGroq, type AiAction, type AiFailure, type ChatTurn, type Claim } from './lib/groq'
+import { aiFailure, alignToMessage, askGroq, CLOUD_CHAIN, cloudIssue, cloudReady, getGroqApiKey, getLocalAiUrl, hasCloudAi, parseIsoToLocalMs, preloadOllama, PRIMARY_MODEL, recoverEvent, toLocalIso, transcribeGroq, type AiAction, type AiFailure, type ChatTurn, type Claim } from './lib/groq'
 import { StatusBadge } from './components/StatusBadge'
 import { AI_MODE_EVENT, getAiMode, isPhoneAiPlatform } from './lib/ai-mode'
 import { AiRequestGate } from './lib/ai-request'
@@ -38,6 +41,10 @@ import { describeFocus, emptyFocus, eventFromFocus, removePreviewedEvents, resol
 const KEY = 'paldo-v1'
 const QUIET: [number, number] = [23, 7]
 const MAX_CHECKINS = 3
+/** Talking to Pal: the request is sent after this much quiet following their last words (every mic path) */
+const SEND_AFTER_SILENCE_MS = 2000
+const NOTHING_SAID_MS = 8000
+const MAX_TALK_MS = 30_000
 const VOICE_PITCH: Record<PalId, number> = { rei: 1.1, diel: 0.9, jhyvie: 1.3, jaypee: 1.05 }
 
 interface Settings { pal: PalId; name: string; energy: Energy; onboarded: boolean; voiceOn: boolean; notify: boolean; notifyAsked: boolean; advancedMode?: boolean; prefs?: Prefs; lastBrief?: string; userName?: string; handsFree?: boolean; sttDeviceOnly?: boolean }
@@ -60,6 +67,8 @@ const REMOVE_ASK = /\b(delete|remove|tanggal\w*|bura\w*|alis\w*|cancel)\b/i
 /** "add anyway", "ok lang", "yung original": keep the asked time even though it overlaps */
 /** Phone-model errors the user can fix (import a model, free space); anything else is just a missed reply */
 const NATIVE_SETUP_ISSUES = ['MISSING_MODEL', 'UNSUPPORTED_ARCH', 'INVALID_MODEL', 'INSUFFICIENT_SPACE', 'LOAD_FAILED', 'PROMPT_TOO_LONG']
+/** "What plan does it block?", "anong tatamaan?", "what does it overlap with": about the waiting card's clashes */
+const OVERLAP_ASK = /\b(what|which|whats|what's|ano|anong|alin|alin ang)\b.*\b(block|blocks|blocking|overlaps?|overlapping|clash(es)?|conflicts?|tatamaan|matatamaan|natatamaan|sagasa\w*)\b|\b(block|overlap)s? (what|which)\b/i
 const ADD_ANYWAY =/\b(any ?ways?|kahit (na )?(overlap|sabay|ganun|ganon|ganyan)|ok(ay)? lang|ituloy|tuloy (mo|na|lang)|(yung|the) (original|una|first)( time)?|same time|as is)\b/i
 /** "asaan", "wala sa calendar", "where is it": they can't find something Pal just added */
 const WHERE_ASK = /\b(asan|asaan|nasaan|nasan|where('?s| is| did) (it|that)( go)?|wala sa (calendar|kalendaryo)|di ko (makita|nakita)|hindi ko (makita|nakita)|can'?t (see|find))\b/i
@@ -94,6 +103,9 @@ export default function App() {
   const [mood, setMood] = useState<{ state: PalState; until: number } | null>(null)
   const [typing, setTyping] = useState(false)
   const [micOn, setMicOn] = useState(false)
+  const [heard, setHeard] = useState('')
+  const heardTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const [hf, setHf] = useState<{ state: HandsFreeState; progress?: number; error?: string; mic?: boolean; tap?: boolean }>({ state: 'off' })
   const [interim, setInterim] = useState('')
   const [idleLong, setIdleLong] = useState(false)
   const [highlight, setHighlight] = useState<Set<string>>(new Set())
@@ -135,7 +147,8 @@ export default function App() {
     }
   }, [])
 
-  const [syllabus, setSyllabus] = useState(false)
+  /** The syllabus sheet: closed, empty for pasting, or filled from an attached file's text */
+  const [syllabus, setSyllabus] = useState<false | { text?: string; source?: string }>(false)
   const [editing, setEditing] = useState(false)
   const [weekOff, setWeekOff] = useState(0)
   const [dayIdx, setDayIdx] = useState((new Date().getDay() + 6) % 7)
@@ -185,7 +198,7 @@ export default function App() {
 
   /* ---------- study session (Pomodoro). Lives here, not in the tab, so switching tabs never stops it ---------- */
   // Not ticked yet: the reconcile effect below catches up time spent closed, so those minutes get logged
-  const [session, setSession] = useState<Session>(() => fromSaved(init.session))
+  const [session, setSession] = useState<Session>(() => { const saved = fromSaved(init.session); return countUp(saved) && !isPaused(saved) ? { ...saved, awayAt: saved.awayAt ?? saved.checkpointAt ?? saved.phaseStartedAt } : saved })
   // Voice timers and reminders ("set me a timer for 5 mins"). Timestamps, so a reload or a sleeping phone lands right.
   const [alarms, setAlarms] = useState<Alarms>(() => init.alarms ?? NO_ALARMS)
   const alarmsRef = useRef(alarms)
@@ -196,17 +209,27 @@ export default function App() {
   ringingRef.current = ringing
   /** Hands-free: Pal's line ends in a question or a card, so the next sentence answers it without "Hi {pal}" */
   const followNext = useRef(false)
+  /** Insights already raised this session, so a nudge is never repeated */
+  const nudged = useRef(new Set<string>())
+  /** Their last message was spoken (hands-free or the mic), so Pal's question gets a spoken answer too */
+  const lastByVoice = useRef(false)
   const [focusLog, setFocusLog] = useState<Record<string, number>>(() => init.focusLog ?? {})
   // The pal's latest session line, shown on the Study screen (the chat bubble is hidden while the chat log is open)
   const [studyLine, setStudyLine] = useState('')
   const sessionRef = useRef(session)
   sessionRef.current = session
   const todayFocus = focusLog[new Date().toDateString()] ?? 0
-  const logFocus = (ms: number) => {
-    const min = Math.round(ms / 60_000)
-    if (min <= 0) return
-    const day = new Date().toDateString()
-    setFocusLog((l) => ({ ...l, [day]: (l[day] ?? 0) + min }))
+  const logFocus = (ms: number, end = Date.now()) => {
+    if (ms <= 0) return
+    const additions: Record<string, number> = {}
+    let cursor = end - ms
+    while (cursor < end) {
+      const day = new Date(cursor), boundary = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime()
+      const until = Math.min(end, boundary)
+      additions[day.toDateString()] = (additions[day.toDateString()] ?? 0) + (until - cursor) / 60_000
+      cursor = until
+    }
+    setFocusLog(l => { const next = { ...l }; for (const [day, minutes] of Object.entries(additions)) next[day] = (next[day] ?? 0) + minutes; return next })
   }
   // The view as of now, for callbacks created in older renders (the reconcile interval)
   const viewRef = useRef(view)
@@ -215,7 +238,7 @@ export default function App() {
   const alarmBody = (e: { phase: 'focus' | 'break'; round: number }) =>
     e.phase === 'focus'
       ? e.round === LONG_EVERY ? 'Four rounds done! Time for a longer break.' : 'Round done! Time for a break.'
-      : e.round === LONG_EVERY ? "Set complete! Start another whenever you're ready." : "Break's over. Next round is starting."
+      : e.round === LONG_EVERY ? "Set complete! Start another whenever you're ready." : "Break's over. Start the next round when you are ready."
   /** One native alarm per phase end left in the set. Only user actions re-arm; natural transitions are already armed. */
   const armSession = (s: Session) =>
     scheduleSessionAlarms(phaseEnds(s, Date.now()).map((e) => ({ at: e.at, title: PALS[palRef.current].name, body: alarmBody(e) })))
@@ -226,19 +249,19 @@ export default function App() {
       if (!granted) return
       syncEventAlarms(ev.current, name)
       const s = sessionRef.current
-      if (s.phase !== 'idle' && !isPaused(s)) armSession(s)
+      if (running(s)) armSession(s)
     })
 
   /** The one place a session changes: logs focus and lets the pal react to a new phase (or a finished set). */
   function applySession(next: Session, prev: Session, natural = false) {
     // Update the ref now, not on next render: a second check() before re-render must not re-apply the same transition
     sessionRef.current = next
-    logFocus(next.completedFocusMs - prev.completedFocusMs)
+    if (next.version && next.focusDays) { setFocusLog(l => { const out = { ...l }; for (const [day, ms] of Object.entries(next.focusDays!)) { const delta = ms - (prev.focusDays?.[day] ?? 0); if (delta > 0) out[day] = (out[day] ?? 0) + delta / 60_000 } return out }) } else logFocus(next.completedFocusMs - prev.completedFocusMs)
     const changed = next.phase !== prev.phase || next.round !== prev.round
     // Moving to idle on its own means the set finished; the user's Stop goes through studyStop instead
     if (changed && (next.phase !== 'idle' || natural)) {
-      const key = next.phase === 'idle' ? 'setDone' : next.phase === 'focus' ? 'focusStart' : phaseLabel(next) === 'Long break' ? 'longBreak' : 'breakStart'
-      const line = say(palRef.current, key)
+      const key = next.phase === 'idle' || next.phase === 'finished' ? 'setDone' : next.phase === 'focus' ? 'focusStart' : phaseLabel(next) === 'Long break' ? 'longBreak' : 'breakStart'
+      const line = next.phase === 'waiting' ? 'Break finished. Start the next round when you are ready.' : next.phase === 'breakReady' ? 'Choose a break that feels right.' : next.phase === 'focus' && next.version ? (palRef.current === 'jhyvie' ? 'Nagsimula na ang oras mo sa pag-aaral.' : countUp(next) ? 'Your focus clock is counting up. Finish when you are ready.' : `Your ${next.config?.method === 'pomodoro' ? 25 : next.config?.method === '52-17' ? 52 : next.config?.focusMinutes} minute focus session has started.`) : say(palRef.current, key)
       if (natural) {
         if (document.hidden) notifyWeb(PALS[palRef.current].name, line)
         if (!isQuiet(Date.now())) next.phase === 'focus' ? playSound('focus') : next.phase === 'break' ? playSound('break') : playChime()
@@ -253,7 +276,9 @@ export default function App() {
   // Start/Resume/Skip are taps, so they also unlock audio for the chime that plays later from a timer
   const studyStart = () => {
     unlockChime()
-    const s = start(Date.now())
+    const current = sessionRef.current
+    if (active(current)) return
+    const s = start(Date.now(), current.config ?? DEFAULT_CONFIG)
     applySession(s, sessionRef.current)
     armSession(s)
   }
@@ -273,22 +298,38 @@ export default function App() {
     applySession(s, sessionRef.current)
     armSession(s)
   }
-  const studyStop = () => {
-    const s = sessionRef.current
-    const partial = Math.round(focusElapsed(s, Date.now()) / 60_000)
-    logFocus(focusElapsed(s, Date.now()))
+  const studyStop = (done = false) => {
+    const prev = sessionRef.current
+    const next = finish(prev, Date.now(), done)
     cancelSessionAlarms()
-    setStudyLine(say(palRef.current, 'sessionDone', { m: todayFocus + Math.max(0, partial) }))
-    setSession(stop())
+    applySession(next, prev)
+    setStudyLine('Focused time saved. Take a moment before your next session.')
   }
+  const studyConfigure = (config: StudyConfig) => { const next = configure(config); sessionRef.current = next; setSession(next); setStudyLine('') }
+  const studyNext = (minutes?: number) => { unlockChime(); const prev = sessionRef.current; const next = nextRound(prev, Date.now(), minutes); applySession(next, prev); armSession(next) }
+  const studyRecover = (include: boolean) => { const prev = sessionRef.current; applySession(recoverAway(prev, Date.now(), include), prev) }
+  useEffect(() => {
+    const markAway = () => {
+      const prev = sessionRef.current
+      if (!countUp(prev) || isPaused(prev) || prev.awayAt !== undefined) return
+      const next = checkpoint(prev, Date.now())
+      sessionRef.current = next; setSession(next)
+      try { const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}'); localStorage.setItem(KEY, JSON.stringify({ ...saved, session: next })) } catch {}
+    }
+    const visibility = () => { if (document.hidden) markAway() }
+    document.addEventListener('visibilitychange', visibility)
+    window.addEventListener('pagehide', markAway)
+    return () => { document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', markAway) }
+  }, [])
   // Catch up from timestamps every second while running, and right away when the tab becomes visible again
-  const sessionRunning = session.phase !== 'idle' && !isPaused(session)
+  const sessionRunning = running(session)
   useEffect(() => {
     if (!sessionRunning) return
     const check = () => {
       const prev = sessionRef.current
       const next = tick(prev, Date.now())
       if (next !== prev) applySession(next, prev, true)
+      else if (countUp(prev) && Date.now() - (prev.checkpointAt ?? 0) >= 5000) { const next = recoverAway(checkpoint(prev, Date.now()), Date.now(), false); sessionRef.current = next; setSession(next) }
     }
     check()
     const i = setInterval(check, 1000)
@@ -338,127 +379,33 @@ export default function App() {
     return () => clearTimeout(t)
   }, [mood])
 
-  const palState: PalState = micOn || typing ? 'listening' : mood ? mood.state : isQuiet(now) || idleLong ? 'sleeping' : 'idle'
+  const palState: PalState = micOn || typing || hf.state === 'awake' ? 'listening' : mood ? mood.state : isQuiet(now) || idleLong ? 'sleeping' : 'idle'
   const feel = (state: PalState, ms = 1600) => setMood({ state, until: Date.now() + ms })
 
   /* ---------- voice ---------- */
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
-  useEffect(() => {
-    if (!('speechSynthesis' in window)) return
-    const load = () => setVoices(speechSynthesis.getVoices())
-    load()
-    speechSynthesis.addEventListener('voiceschanged', load)
-    return () => speechSynthesis.removeEventListener('voiceschanged', load)
-  }, [])
   const voiceOnRef = useRef(settings.voiceOn)
-  /* ---------- voice & speech ---------- */
-  const cleanForSpeech = (raw: string): string => {
-    return raw
-      .replace(/[*#_~`>]/g, '') // remove markdown symbols
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // remove markdown links, keep text
-      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // remove emojis
-      .replace(/\b'yan\b/gi, 'yan') // normalize Tagalog contractions
-      .replace(/\b'to\b/gi, 'to')
-      .replace(/\b'di\b/gi, 'hindi')
-      .replace(/\b'ko\b/gi, 'ko')
-      .replace(/\b'yung\b/gi, 'yung')
-      .replace(/\s+/g, ' ')
-      .trim()
-  }
-
-  const speak = useCallback((text: string, force = false) => {
+  const speechSequence = useRef(0)
+  const englishSpeechRef = useRef(false)
+  const speak = useCallback((text: string, force = false, ack = false) => {
     if ((!voiceOnRef.current && !force) || !text) return
-    const clean = cleanForSpeech(text)
-    if (!clean) return
-    // The Android app: the phone's own voice (the WebView has none). Same hand-off as below when it finishes.
-    if (hasNativeTts()) {
-      setPalSpeaking(true, clean)
-      feel('talking', 60_000)
-      void speakNative(clean, pal).finally(() => {
-        setMood((m) => (m?.state === 'talking' ? null : m))
-        setPalSpeaking(false)
-        if (followNext.current) {
-          followNext.current = false
-          expectFollowUp()
-        }
-      })
-      return
-    }
-    if (!('speechSynthesis' in window)) return
-
-    window.speechSynthesis.cancel()
-    const u = new SpeechSynthesisUtterance(clean)
-    const all = voices.length ? voices : window.speechSynthesis.getVoices()
-
-    if (pal === 'jhyvie') {
-      // Jhyvie speaks Taglish: search for Philippine English (en-PH) or Filipino (fil-PH / tl-PH)
-      const ph = all.find((v) => v.lang === 'en-PH' || v.lang === 'fil-PH' || v.lang === 'tl-PH' || /philippines|filipino|tagalog/i.test(v.name))
-      if (ph) {
-        u.voice = ph
-        u.lang = ph.lang
-      } else {
-        const FEMALE = /female|samantha|victoria|karen|moira|tessa|fiona|zira|aria|jenny|libby|sonia|natasha|hazel|susan|serena|ava|allison|emma|michelle|google us english/i
-        const f = all.find((v) => FEMALE.test(v.name)) ?? all[0]
-        if (f) u.voice = f
-        u.lang = f?.lang ?? 'en-US'
-      }
-      u.pitch = 1.2
-      u.rate = 1.04
-    } else if (pal === 'rei') {
-      const FEMALE = /female|samantha|victoria|karen|moira|tessa|fiona|zira|aria|jenny|libby|sonia|natasha|hazel|susan|serena|ava|allison|emma|michelle|google us english/i
-      const f = all.find((v) => FEMALE.test(v.name)) ?? all[0]
-      if (f) u.voice = f
-      u.lang = f?.lang ?? 'en-US'
-      u.pitch = 1.05
-      u.rate = 0.96
-    } else if (pal === 'diel') {
-      const MALE = /\bmale|daniel|alex\b|fred|david|guy|ryan|mark|george|thomas|aaron|arthur|oliver|christopher|eric|google uk english male/i
-      const m = all.find((v) => MALE.test(v.name) && !/female/i.test(v.name)) ?? all[0]
-      if (m) u.voice = m
-      u.lang = m?.lang ?? 'en-US'
-      u.pitch = 0.95
-      u.rate = 1.0
-    } else {
-      const MALE = /\bmale|daniel|alex\b|fred|david|guy|ryan|mark|george|thomas|aaron|arthur|oliver|christopher|eric|google uk english male/i
-      const m = all.find((v) => MALE.test(v.name) && !/female/i.test(v.name)) ?? all[0]
-      if (m) u.voice = m
-      u.lang = m?.lang ?? 'en-US'
-      u.pitch = 1.05
-      u.rate = 1.12
-    }
-
-    let keep = 0
-    let safety = 0
-    u.onstart = () => {
-      // Hands-free: while Pal talks only "Hi {pal}" counts (to interrupt), and its own words heard back don't.
-      // Browsers sometimes never send "end": resume anyway after about as long as the line takes to say.
-      setPalSpeaking(true, clean)
-      safety = window.setTimeout(stop, Math.min(30_000, 2000 + clean.length * 90))
-      feel('talking', 60_000)
-      keep = window.setInterval(() => window.speechSynthesis.speaking && window.speechSynthesis.resume(), 8_000)
-    }
-    const stop = () => {
-      clearInterval(keep)
-      clearTimeout(safety)
-      setMood((m) => (m?.state === 'talking' ? null : m))
+    const id = ++speechSequence.current
+    void speakPal(text, pal, () => { if (!ack && id === speechSequence.current) { setPalSpeaking(true, text); feel('talking', 60_000) } }, englishSpeechRef.current).then(ok => {
+      if (id !== speechSequence.current) return
+      setMood(m => m?.state === 'talking' ? null : m)
       setPalSpeaking(false)
-      // Pal asked something ("Add this?"): the answer doesn't need "Hi Jhyvie" again
-      if (followNext.current) {
-        followNext.current = false
-        expectFollowUp()
-      }
-    }
-    u.onend = stop
-    u.onerror = stop
-
-    setTimeout(() => {
-      window.speechSynthesis.resume()
-      window.speechSynthesis.speak(u)
-    }, 25)
-  }, [pal, voices])
+      if (!ok) toast({ text: 'Voice unavailable. Your reply is still here.' })
+      if (!ack && ok !== 'cancelled' && followNext.current) { followNext.current = false; expectFollowUp() }
+    })
+  }, [pal])
+  useEffect(() => { speechSequence.current++; stopSpeech(); setPalSpeaking(false); return () => { speechSequence.current++; stopSpeech() } }, [pal])
+  // Hands-free callbacks are made once per start; this keeps them on the current voice and pal
+  const speakRef = useRef(speak)
+  speakRef.current = speak
 
   const recRef = useRef<any>(null)
-  const SR = typeof window !== 'undefined' ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null
+  // The Android app's WebView has webkitSpeechRecognition but no speech service behind it: it starts and hears
+  // nothing. There, the on-device path (voice detector + Whisper) takes every request
+  const SR = typeof window !== 'undefined' && !isNative ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null
 
   /* ---------- messaging helpers ---------- */
   const toast = (t: Omit<Toast, 'id'>) => setToasts((x) => [...x.slice(-2), { id: uid(), ...t }])
@@ -478,9 +425,10 @@ export default function App() {
     feel(state, state === 'talking' ? Math.min(2600, 500 + text.length * 28) : 1800)
     // Hands-free: a question or a card means the next sentence answers it, no wake word needed.
     // It opens when Pal finishes talking (speak's end), or right away when Pal isn't talking out loud.
-    if (isHandsFreeOn() && (/\?\s*$/.test(text) || (extra.card && ANSWERABLE.includes(extra.card.type)))) {
+    // Only in a spoken conversation: typing a question to Pal shouldn't open the mic or leave the keyboard
+    if (isHandsFreeOn() && lastByVoice.current && (/\?\s*$/.test(text) || (extra.card && ANSWERABLE.includes(extra.card.type)))) {
       followNext.current = true
-      if (!voiceOnRef.current || !('speechSynthesis' in window)) {
+      if (!voiceOnRef.current) {
         followNext.current = false
         expectFollowUp()
       }
@@ -491,7 +439,6 @@ export default function App() {
   }
 
   /* ---------- hands-free "Hi {pal}" ---------- */
-  const [hf, setHf] = useState<{ state: HandsFreeState; progress?: number; error?: string }>({ state: 'off' })
   const hfPrev = useRef<HandsFreeState>('off')
   /** When they last talked to Pal hands-free (or turned it on), so quiet hours never cut off someone who's awake */
   const lastVoice = useRef(0)
@@ -502,25 +449,45 @@ export default function App() {
     oneShot,
     // Only what's said after "Hi {pal}" ever goes to the cloud; the hint helps it spell names and Taglish
     transcribeCloud: (wav: Blob) => transcribeGroq(wav, `${PALS[pal].name}, timer, reminder, bukas, mamaya, Taglish`),
-    onState: (state: HandsFreeState, info?: { progress?: number; error?: string }) => {
+    onState: (state: HandsFreeState, info?: { progress?: number; error?: string; mic?: boolean; tap?: boolean }) => {
       const prev = hfPrev.current
       hfPrev.current = state
       setHf({ state, ...info })
       if (oneShot && (state === 'off' || state === 'error')) setMicOn(false)
-      if (!oneShot && prev === 'loading' && state === 'listening') palSay(say(palRef.current, 'hfOn', { name: PALS[palRef.current].name }), {}, 'happy')
+      // The mic stopped listening to you (request taken, or the window closed): the soft closing sound
+      if (prev === 'awake' && (state === 'listening' || state === 'thinking')) playMicSound(false)
+      // "Say Hi Rei" the first time it's ever ready; after that it just quietly listens on every load
+      if (!oneShot && prev === 'loading' && state === 'listening' && !localStorage.getItem('paldo.hfIntro')) {
+        try { localStorage.setItem('paldo.hfIntro', '1') } catch {}
+        // A tip in the speech bubble, not a chat message: it isn't part of the conversation
+        setBubble({ id: uid(), mascotId: palRef.current, text: say(palRef.current, 'hfOn', { name: PALS[palRef.current].name }), kind: 'response' })
+      }
       if (state === 'error') palSay(say(palRef.current, info?.error === 'mic-blocked' ? 'hfMicBlocked' : 'hfError'))
     },
     // "Hi Jhyvie" … (pause): a chime and "Yes?" on screen, then the next sentence is the command
-    onWake: () => {
+    onWake: (phase: 'early' | 'late' | 'full') => {
       lastVoice.current = Date.now()
-      playSound('wake')
-      setBubble({ id: uid(), mascotId: palRef.current, text: say(palRef.current, 'hfYes'), kind: 'response' })
+      // The moment "Hi Rei" is caught: the mic sound and "Listening…" on screen. Always heard, even with Sounds off.
+      // Pal doesn't say "Yes?" out loud: it talked over the start of the request
+      if (phase !== 'late') {
+        playMicSound(true)
+        setBubble({ id: uid(), mascotId: palRef.current, text: 'Listening…', kind: 'response' })
+      }
+      // They stopped after the name: the live words take the request
+      if (phase !== 'early') liveAfterWakeRef.current('')
+    },
+    onPreview: (text: string) => {
+      clearTimeout(heardTimer.current)
+      setHeard(text)
     },
     onCommand: (text: string) => {
       lastVoice.current = Date.now()
+      // On-device path: no live words while talking, so show what it heard under the mic for a moment
+      setHeard(text)
+      clearTimeout(heardTimer.current)
+      heardTimer.current = setTimeout(() => setHeard(''), 4000)
       sendRef.current(text, true)
     },
-    onIdle: () => palSay(say(palRef.current, 'hfIdle', { name: PALS[palRef.current].name })),
     // "Hey Jhyvie" while Rei listens: Rei says who it is, then handles the request (or waits for it)
     onWrongName: (wrong: string, command: string) => {
       lastVoice.current = Date.now()
@@ -535,18 +502,6 @@ export default function App() {
       stopKokoro(); stopNative()
     },
   })
-  async function setHandsFree(on: boolean) {
-    // Talking to Pal means Pal talks back
-    setSettings((s) => ({ ...s, handsFree: on, ...(on ? { voiceOn: true } : {}) }))
-    if (!on) {
-      await stopHandsFree()
-      return palSay(say(pal, 'hfOff'))
-    }
-    voiceOnRef.current = true
-    lastVoice.current = Date.now()
-    unlockChime()
-    await startHandsFree(hfOptions())
-  }
   // Switching pal or name mid-listen: wake on the new name
   useEffect(() => {
     if (isHandsFreeOn() && !micOn) startHandsFree(hfOptions())
@@ -564,27 +519,25 @@ export default function App() {
       }
       w.__palHear = (text: string) => import('./lib/handsfree').then((m) => m.simulateHeard(text))
       w.__palVoiceTest = (o?: Parameters<typeof import('./lib/voice.selftest').runVoiceSelfTest>[0]) => import('./lib/voice.selftest').then((m) => m.runVoiceSelfTest(o))
+      w.__palWakeTest = (o: Parameters<typeof import('./lib/wakeword.selftest').runWakeTest>[0]) => import('./lib/wakeword.selftest').then((m) => m.runWakeTest(o))
     }
   })
-  // Quiet hours (11pm–7am): stop listening once they've gone quiet for 10 minutes (they may be up late studying),
-  // and never while a timer still needs a "stop"
+  // Hands-free is always on once onboarding is done: it starts by itself on load (the mic was allowed in onboarding).
+  // A browser may hold the audio until the first tap, so that tap also lets it run; if it's off, the tap starts it
   useEffect(() => {
-    if (!isHandsFreeOn() || micOn || !isQuiet(now)) return
-    if (Date.now() - lastVoice.current < 10 * MIN) return
-    if (alarmsRef.current.timers.some((t) => !t.done) || ringingRef.current) return
-    stopHandsFree()
-    palSay(say(pal, 'hfQuiet'))
-  }, [now]) // eslint-disable-line react-hooks/exhaustive-deps
-  // After a reload, browsers only allow the mic and audio after a tap: resume on the first one
-  useEffect(() => {
-    if (!settings.handsFree || hf.state !== 'off') return
-    const resume = () => {
-      lastVoice.current = Date.now()
-      startHandsFree(hfOptions())
+    if (!settings.onboarded) return
+    if (hf.state === 'off') {
+      const perms = (navigator as Navigator & { permissions?: Permissions }).permissions
+      void perms?.query({ name: 'microphone' as PermissionName }).then((p) => { if (p.state === 'granted' && !isHandsFreeOn()) startHandsFree(hfOptions()) }).catch(() => {})
     }
-    window.addEventListener('pointerdown', resume, { once: true })
-    return () => window.removeEventListener('pointerdown', resume)
-  }, [settings.handsFree, hf.state]) // eslint-disable-line react-hooks/exhaustive-deps
+    const tap = () => {
+      unlockChime()
+      void resumeAudio()
+      if (!isHandsFreeOn()) startHandsFree(hfOptions())
+    }
+    window.addEventListener('pointerdown', tap, { once: true })
+    return () => window.removeEventListener('pointerdown', tap)
+  }, [settings.onboarded, hf.state]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---------- voice timers & reminders ---------- */
   const setAlarmsNow = (a: Alarms) => {
@@ -692,11 +645,13 @@ export default function App() {
     if (c.type === 'study') {
       const s = sessionRef.current
       if (c.op === 'start') {
-        if (s.phase === 'idle') studyStart()
+        if (s.phase === 'waiting') studyNext()
+        else if (!active(s)) studyStart()
         else if (isPaused(s)) studyResume()
-        return palSay(say(pal, 'focusStart'), {}, 'happy')
+        return palSay(pal === 'jhyvie' ? 'Handa na ang sesyon mo sa pag-aaral.' : 'Your focus session is ready.', {}, 'happy')
       }
-      if (s.phase === 'idle') return palSay(say(pal, 'noStudy'))
+      if (!active(s)) return palSay(say(pal, 'noStudy'))
+      if (c.op === 'left' && countUp(s)) return palSay(`You have focused for ${fmtLeft(focusElapsed(s, now))}.`)
       if (c.op === 'left') return palSay(say(pal, 'studyLeft', { phase: phaseLabel(s), left: fmtLeft(remaining(s, now)) }))
       if (c.op === 'pause') studyPause()
       else if (c.op === 'resume') studyResume()
@@ -730,6 +685,7 @@ export default function App() {
         s.today === 'nothing else' ? 'Nothing else planned today.' : `Still today: ${s.today}.`,
         s.weather ? `Weather: ${s.weather}.` : '',
         s.insight,
+        (() => { const i = dayInsights(Date.now(), ev.current, tk.current, Date.now(), settings.prefs)[0]; return i ? (pal === 'jhyvie' ? i.textTl : i.text) : '' })(),
       ].filter(Boolean).join(' '))
       setSettings((x) => ({ ...x, lastBrief: today }))
     }, 1500)
@@ -832,8 +788,9 @@ export default function App() {
   }
 
   /* ---------- Study library ---------- */
-  const [studySection, setStudySectionState] = useState<'focus' | 'library'>(() => { try { return localStorage.getItem('paldo.study') === 'library' ? 'library' : 'focus' } catch { return 'focus' } })
+  const [studySection, setStudySectionState] = useState<'focus' | 'library'>(() => { try { return localStorage.getItem('paldo.study') === 'focus' ? 'focus' : 'library' } catch { return 'library' } })
   const setStudySection = (s: 'focus' | 'library') => { setStudySectionState(s); try { localStorage.setItem('paldo.study', s) } catch {} }
+  const [browseFolderId, setBrowseFolderId] = useState<string | null>(null)
   const [libraryTarget, setLibraryTarget] = useState<LibraryTarget | null>(null)
   function openInLibrary(t: LibraryTarget) {
     setStudySection('library')
@@ -879,7 +836,10 @@ export default function App() {
         if (created) await deleteFolder(folder.id)
         return palSay(say(pal, r === 'too-big' ? 'fileTooBig' : r === 'unsupported' ? 'fileUnsupported' : 'fileUnreadable', { file: file.name }))
       }
-      palSay(say(pal, r.scanned ? 'fileScanned' : 'fileSaved', { file: titleFromFileName(file.name), folder: folder.name }), { card: { type: 'file', fileId: r.id, name: titleFromFileName(r.name), folderName: folder.name, scanned: r.scanned } }, 'happy')
+      // A syllabus or timeline: say how many dates it has, so adding them is the obvious next step
+      const dates = r.scanned ? 0 : scanDeadlines(r.chunks.map((c) => c.text).join('\n'), nowRef.current).length
+      const line = r.scanned ? 'fileScanned' : dates >= 2 ? 'fileHasDates' : 'fileSaved'
+      palSay(say(pal, line, { file: titleFromFileName(file.name), folder: folder.name, n: String(dates) }), { card: { type: 'file', fileId: r.id, name: titleFromFileName(r.name), folderName: folder.name, scanned: r.scanned, dates } }, 'happy')
     } catch {
       palSay(say(pal, 'fileUnreadable', { file: file.name }))
     } finally {
@@ -898,7 +858,8 @@ export default function App() {
       const body = terms(f.chunks.map((c) => `${c.heading ?? ''} ${c.text}`).join(' '))
       return name.filter((w) => want.has(w)).length * 5 + body.filter((w) => want.has(w)).length
     }
-    const best = want.size ? [...files].sort((a, b) => score(b) - score(a))[0] : files[0]
+    // No topic ("quiz me" right after attaching): the newest file, the one they're talking about
+    const best = want.size ? [...files].sort((a, b) => score(b) - score(a) || b.addedAt - a.addedAt)[0] : [...files].sort((a, b) => b.addedAt - a.addedAt)[0]
     palSay(say(pal, mode === 'cards' ? 'openCards' : mode === 'quiz' ? 'openQuiz' : 'openRead', { file: titleFromFileName(best.name) }))
     // A topic that's just the subject ("quiz me on bio") means the whole file
     const subjectOnly = !!topic && terms(topic).every((w) => terms(best.name).includes(w) || terms(folders.find((x) => x.id === best.folderId)?.name ?? '').includes(w))
@@ -917,22 +878,27 @@ export default function App() {
     saveConversation({ intent: 'event', title: e.title, kind: e.kind as ConversationFocus['kind'], day: startOfDay(e.start), start: e.start, end: e.end, rejected: [] })
     const slots = e.days?.length ? occurrences(e.start, e.end, e.days, nowRef.current, e.until) : [{ start: e.start, end: e.end }]
     // A task's study blocks under it get new times on add; anything else it overlaps is a clash Pal asks about
-    const conflicts = ev.current.filter((x) => x.kind === 'work' && x.taskId && (x.status === 'planned' || x.status === 'proposed') && slots.some((s) => x.start < s.end && x.end > s.start)).length
+    const under = ev.current.filter((x) => x.kind === 'work' && x.taskId && (x.status === 'planned' || x.status === 'proposed') && slots.some((s) => x.start < s.end && x.end > s.start))
+    const conflicts = under.length
+    const blocked = under.length ? under.slice(0, 3).map((x) => `${x.title}, ${fmtTime(x.start)}–${fmtTime(x.end)}`) : undefined
     const hit = clashes(slots, ev.current)
     const first = slots[0] ?? { start: e.start, end: e.end }
     const alt = hit.length && e.kind !== 'exam' ? nearestFree(slots, ev.current, nowRef.current) ?? undefined : undefined
     const clash = hit.length ? [...new Map(hit.map((x) => [x.title, `${x.title}, ${fmtTime(x.start)}–${fmtTime(x.end)}`])).values()].slice(0, 2) : undefined
-    // A bus ride can move, an exam can't: offer to shift the ride instead of stacking the two
-    const aside = slots.length === 1 ? moveAside(first, hit, ev.current, nowRef.current) : null
-    const moveOther = aside ? { id: aside.event.id, title: aside.event.title, to: aside.to } : undefined
-    const move = aside ? say(pal, 'moveOther', { other: aside.event.title, to: `${fmtTime(aside.to.start)}–${fmtTime(aside.to.end)}` }) : ''
+    // A secretary's call: a bus ride or a gym session gives way to a dinner; a class, shift or exam never moves
+    const aside = slots.length === 1 ? resolveClash(first, e.kind, hit, ev.current, nowRef.current) : null
+    const moveOther = aside ? { id: aside.event.id, title: aside.event.title, to: aside.to, trimmed: aside.trimmed } : undefined
+    const move = aside && e.kind === 'exam' ? say(pal, 'moveOther', { other: aside.event.title, to: `${fmtTime(aside.to.start)}–${fmtTime(aside.to.end)}` }) : ''
     setMsgs((ms) => ms.map((m) => (m.card?.type === 'event' && !m.resolved ? { ...m, resolved: 'Changed' } : m)))
     // A clash is the app's line, never the model's ("free ka pa!" over a 4–5am commute).
     // Hands-free: they may not be looking, so the card is asked out loud as a yes/no question.
     const line = clash
-      ? e.kind === 'exam' ? say(pal, 'examOverlap', { range: `${fmtTime(first.start)}–${fmtTime(first.end)}`, clash: clash.join(' and '), move }) : say(pal, alt ? 'overlapAsk' : 'overlapAskNoAlt', { clash: clash.join(' and '), alt: alt ? `${fmtTime(alt.start)}–${fmtTime(alt.end)}` : '' }) + move
+      ? e.kind === 'exam' ? say(pal, 'examOverlap', { range: `${fmtTime(first.start)}–${fmtTime(first.end)}`, clash: clash.join(' and '), move })
+        // "Let's keep the dinner and move your bus home to 9:15pm. Okay?" (a plain yes does exactly that)
+        : aside ? say(pal, aside.trimmed ? 'keepAndTrim' : 'keepAndMove', { what: e.title, other: aside.event.title, to: `${fmtTime(aside.to.start)}–${fmtTime(aside.to.end)}` })
+        : say(pal, alt ? 'overlapAsk' : 'overlapAskNoAlt', { clash: clash.join(' and '), alt: alt ? `${fmtTime(alt.start)}–${fmtTime(alt.end)}` : '' })
       : isHandsFreeOn() ? say(pal, 'voiceAddAsk', { what: `${e.title}, ${fmtDay(first.start).replace(/,.*/, '')} ${fmtTime(first.start)}` }) : text
-    palSay(line, { card: { type: 'event', title: e.title, kind: e.kind, start: first.start, end: first.end, conflicts, whatIf: true, days: e.days, until: e.until, clash, alt, moveOther } }, conflicts || clash ? 'alarmed' : 'talking')
+    palSay(line, { card: { type: 'event', title: e.title, kind: e.kind, start: first.start, end: first.end, conflicts, blocked, whatIf: true, days: e.days, until: e.until, clash, alt, moveOther } }, conflicts || clash ? 'alarmed' : 'talking')
     showWeekOf(first.start)
   }
 
@@ -974,7 +940,7 @@ export default function App() {
   /** The waiting card, as the model should see it in the facts */
   function openCardOf(m?: Msg): OpenCard | null {
     const c = m?.card
-    if (c?.type === 'event') return { type: 'event', title: c.title, start: c.start, end: c.end, days: c.days, until: c.until, clash: c.clash, alt: c.alt }
+    if (c?.type === 'event') return { type: 'event', title: c.title, start: c.start, end: c.end, days: c.days, until: c.until, clash: c.clash, alt: c.alt, blocked: c.blocked }
     if (c?.type === 'proposal') {
       const blocks = c.blockIds.map((id) => ev.current.find((e) => e.id === id)).filter((e): e is CalEvent => !!e)
       return { type: 'plan', title: tk.current.find((t) => t.id === c.taskId)?.title ?? 'your task', blocks }
@@ -1003,6 +969,12 @@ export default function App() {
   function answerCard(m: Msg, yes: boolean, line: string, pick: 'alt' | 'orig' = 'alt') {
     const c = m.card
     if (c?.type === 'event') {
+      // Pal recommended keeping this and moving the other event: a plain yes does that
+      if (yes && pick === 'alt' && c.moveOther && c.kind !== 'exam') {
+        // Say what really happened: both changes, with the new time
+        palSay(say(pal, 'keptAndMoved', { what: c.title, other: c.moveOther.title, to: `${fmtTime(c.moveOther.to.start)}–${fmtTime(c.moveOther.to.end)}` }), {}, 'happy')
+        return onCard(m.id, 'moveOther')
+      }
       const alt = yes && c.alt && pick === 'alt' ? c.alt : null
       const when = alt ?? c
       // The confirmation first, so a re-plan card that follows is the newest message.
@@ -1061,6 +1033,9 @@ export default function App() {
   sendRef.current = send
   /** voice: said out loud (hands-free), so Pal answers in one short spoken sentence */
   function send(text: string, voice = false) {
+    if (/\b(?:in|speak|reply|answer|use)\s+english\b|mag[- ]?english/i.test(text)) englishSpeechRef.current = true
+    if (/\b(?:in|speak|reply|answer|use)\s+tagalog\b|mag[- ]?tagalog/i.test(text)) englishSpeechRef.current = false
+    lastByVoice.current = voice
     const id = uid()
     if (!voice) playSound('send')
     setMsgs((m) => [...m, { id, from: 'me', text }])
@@ -1094,6 +1069,14 @@ export default function App() {
       setLastIntent(cmd.type)
       return runCommand(cmd)
     }
+    // "What are my plans tomorrow?", "free time today?", "next schedule?", "how long before my exam?": straight from
+    // the calendar, instant and exact on every model (advice like "what do you suggest" still goes to the model)
+    const sq = parseScheduleQuestion(text, nowRef.current)
+    if (sq) {
+      setLastIntent('schedule question')
+      const chip = sq.type === 'insights' ? weekInsights(ev.current, tk.current, nowRef.current, settings.prefs).find((i) => i.chip)?.chip : undefined
+      return palSay(answerScheduleQuestion(sq, { events: ev.current, tasks: tk.current, now: nowRef.current, prefs: settings.prefs, taglish: pal === 'jhyvie' }), chip ? { chips: [chip] } : {})
+    }
     unanswered.current.push({ id, text, voice })
     setThinking((n) => n + 1)
     queue.current = queue.current
@@ -1126,6 +1109,13 @@ export default function App() {
     // "Add anyway" / "ok lang" to an overlap card: the asked time, no AI needed
     const wc = waitMsg?.card
     if (wc?.type === 'event' && wc.clash && ADD_ANYWAY.test(text) && text.split(/\s+/).length <= 8) return answerCard(waitMsg!, true, '', 'orig')
+    // "What plan does it block?" about the waiting card: the app knows exactly, so it answers (the model guessed "the free slot")
+    if (wc?.type === 'event' && OVERLAP_ASK.test(text)) {
+      const hits = [...(wc.clash ?? []), ...(wc.blocked ?? []).map((b) => `study block ${b}`)]
+      return palSay(hits.length ? say(pal, 'overlapWhat', { what: hits.join(' and ') }) : say(pal, 'overlapNone'))
+    }
+    // Pal had asked "what time does it end?": "2 hours" answers it even with no clock time in it
+    const wasAwaitingEnd = !!conversationRef.current.awaitingEnd
     const update = updateConversationFocus(conversationRef.current, text, nowRef.current)
     const snap = buildContext(nowRef.current, ev.current, tk.current, weather, settings.prefs, {
       focusTitle: update.focus.title,
@@ -1134,8 +1124,17 @@ export default function App() {
       draft: draft && awaiting && awaiting !== 'confirm' ? draft : null,
       user: settings.userName,
     })
-    const t = turn(text, { pal, now: nowRef.current, draft, awaiting, pending, lastEvent, waiting: waitMsg?.card?.type ?? null, waitingIsLatest: waitIsLatest, facts: { next: snap.next, user: settings.userName } })
+    const asking = update.directive === 'question'
+    const ruled = turn(text, { pal, now: nowRef.current, draft, awaiting, pending, lastEvent, waiting: waitMsg?.card?.type ?? null, waitingIsLatest: waitIsLatest, facts: { next: snap.next, user: settings.userName } })
+    // A question that the rules read as "add this" ("do I have gym at 5?"): no card, the model (or "didn't get that") answers
+    const t = asking && ruled.action && ['addEvent', 'createTask', 'findTime', 'reviseEvent'].includes(ruled.action.type)
+      ? { ...ruled, action: undefined, key: 'unknown' as const, text: say(pal, 'unknown', { next: snap.next }), card: undefined, chips: undefined }
+      : ruled
     const a = t.action
+    // A model can answer this turn: it words the reply (with the plain-words brief), the fixed lines are the fallback
+    // The cloud answers in 1-2s, so it words the questions Pal asks ("when does it end?"); a local model takes 5-10s,
+    // so then the instant fixed lines ask them instead
+    const cloudWords = provider !== 'local' && provider !== 'native' && cloudReady()
     feel('listening', 500)
 
     let groqText: string | null = null
@@ -1150,12 +1149,12 @@ export default function App() {
     // Off-topic is NOT a safety block: let the AI write its own warm redirect.
     const isSafetyFilterTriggered = Boolean(t.rule && !/off-topic/.test(t.rule))
     saveConversation(update.focus)
-    if (!isSafetyFilterTriggered) {
+    if (!isSafetyFilterTriggered && !asking) {
       if (update.directive === 'greeting') return palSay(greetLine(pal, settings.userName))
       if (update.directive === 'newRequest' || (update.directive === 'correct' && !update.focus.title)) {
         setDraft(null); setAwaiting(null); setPending(null)
         if (waitMsg) resolve(waitMsg.id, 'Superseded by a new request')
-        return palSay(say(pal, 'newEventAsk'))
+        if (!cloudWords) return palSay(say(pal, 'newEventAsk'))
       }
       if (update.directive === 'decline') {
         setDraft(null); setAwaiting(null); setPending(null)
@@ -1172,31 +1171,64 @@ export default function App() {
           return palSay(say(pal, 'removeWhichTime'))
         }
         if (/\b(\d+|apat|four|previous|old|dati|mga)\b/i.test(text) && /\b(remove|remoce|delete|tanggal\w*|alisin|bura\w*)\b/i.test(text)) return palSay(say(pal, 'removeWhichPlan'))
+        // "Tanggalin mo yung cafe shift ko sa saturday": the event they named (on that day, if they said one). A weekly
+        // one with no day given is its next time. Two different names that fit equally: the model asks which
+        const said = new Set(terms(text))
+        const onDay = namedDay(text, nowRef.current)
+        const scored = ev.current
+          .filter((e) => (e.status === 'planned' || e.status === 'proposed') && e.kind !== 'deadline' && e.end > nowRef.current && (onDay == null || startOfDay(e.start) === onDay))
+          .map((e) => ({ e, score: terms(e.title).filter((w) => said.has(w)).length }))
+          .filter((x) => x.score > 0)
+        const top = Math.max(0, ...scored.map((x) => x.score))
+        const best = scored.filter((x) => x.score === top).sort((a, b) => a.e.start - b.e.start)
+        if (best.length && best.every((x) => x.e.title === best[0].e.title)) return previewChange(say(pal, 'removeAsk'), 'remove', best[0].e)
+        // "Delete mo pala yan": the event this chat just added
+        const justAdded = /\b(yan|iyan|yun|iyon|that|it|this)\b/i.test(text) ? lastAddedEvent(recent) : undefined
+        if (justAdded) return previewChange(say(pal, 'removeAsk'), 'remove', justAdded)
       }
       if (update.focus.intent === 'study' && (!waitMsg || (!!parseWhen(text, nowRef.current) && waitMsg.card?.type === 'proposal')) && (/\b(study|review|aral\w*|hours?|hrs?|oras)\b/i.test(text) || isYes(text) || !!parseHours(text) || !!parseWhen(text, nowRef.current))) {
         const study = resolveStudyRequest(update.focus, ev.current, tk.current, nowRef.current)
-        if (!study) return palSay(say(pal, 'studyWhich'))
-        if (study.exam && update.focus.due && update.focus.due > study.exam.start) return palSay(say(pal, 'examStill', { what: `${study.exam.title} on ${fmtDay(study.exam.start)} at ${fmtTime(study.exam.start)}` }))
-        if (!study.hours) return palSay(say(pal, 'studyHours', { what: study.title }))
-        return findTime({ type: 'findTime', title: study.title, hours: study.hours, perDay: study.perDay, due: toLocalIso(study.due) }, '', { replace: study.replace, notBefore: study.notBefore })
+        // Missing which exam or how many hours: the fixed question offline; with the cloud, the model asks it
+        if (!study) { if (!cloudWords) return palSay(say(pal, 'studyWhich')) }
+        else if (study.exam && update.focus.due && update.focus.due > study.exam.start) return palSay(say(pal, 'examStill', { what: `${study.exam.title} on ${fmtDay(study.exam.start)} at ${fmtTime(study.exam.start)}` }))
+        else if (!study.hours) { if (!cloudWords) return palSay(say(pal, 'studyHours', { what: study.title })) }
+        else return findTime({ type: 'findTime', title: study.title, hours: study.hours, perDay: study.perDay, due: toLocalIso(study.due) }, '', { replace: study.replace, notBefore: study.notBefore })
       }
       const focusEvent = eventFromFocus(update.focus)
       const hasUserTime = !!(parseRange(text, nowRef.current) || parseWhen(text, nowRef.current)?.hadTime)
-      if (update.focus.intent === 'event' && update.focus.awaitingEnd && update.focus.start != null) return palSay(say(pal, 'askEnd', { what: update.focus.title ?? '', when: `${fmtDay(update.focus.start)} at ${fmtTime(update.focus.start)}` }))
-      if (focusEvent && hasUserTime && !/\b(every|tuwing|daily|araw-araw|weekdays)\b/i.test(text)) {
+      const f = update.focus
+      const what = f.title ?? ''
+      const when = f.start != null ? `${fmtDay(f.start)} at ${fmtTime(f.start)}` : ''
+      const startWhat = `${what}${f.day != null ? ` on ${fmtDay(f.day)}` : ''}`
+      // Never the same question twice in a row: the second time it's rephrased, with a way out
+      const lastPal = [...recent].reverse().find((m) => m.from !== 'me')?.text
+      const ask = (line: string, again: string) => palSay(line === lastPal ? again : line)
+      const askStart = () => ask(say(pal, f.needsSubject ? 'askStartSubject' : 'askStart', { what: startWhat }), say(pal, 'askStartAgain', { what }))
+      const askEnd = (fixed: boolean) => ask(say(pal, fixed ? 'fixedAskEnd' : 'askEnd', { what, when }), say(pal, 'askEndAgain', { what }))
+      // A correction ("it's not parts", "it's for bio", "no, it starts at 5"): say it's fixed, then the next missing thing
+      if (update.directive === 'correct' && f.intent === 'event' && f.title && !focusEvent) {
+        if (f.start == null && !cloudWords) return ask(say(pal, 'fixedAskStart', { what: startWhat }), say(pal, 'askStartAgain', { what }))
+        if (f.awaitingEnd && !cloudWords) return askEnd(true)
+      }
+      // Pal is waiting for the end time: ask again only when this message moved things on (a time, or a new start).
+      // Anything else ("bakit?", "what do you mean") goes to the model, which knows the end time is still missing
+      if (f.intent === 'event' && f.awaitingEnd && f.start != null && (hasUserTime || !wasAwaitingEnd) && !cloudWords) return askEnd(false)
+      if (focusEvent && (hasUserTime || wasAwaitingEnd) && !/\b(every|tuwing|daily|araw-araw|weekdays)\b/i.test(text)) {
         setDraft(null); setAwaiting(null)
         return previewEvent(say(pal, 'addAsk', { what: `${focusEvent.title}, ${fmtDay(focusEvent.start)} ${fmtTime(focusEvent.start)}–${fmtTime(focusEvent.end)}` }), focusEvent)
       }
       // "May exam ako bukas", or just the day ("bukas pa naman") after Pal asked the time: the day is noted, the time is still needed
       if (update.focus.intent === 'event' && update.focus.title && !update.focus.start && !waitMsg && (/\b(i have|may|meron|later|mamaya)\b/i.test(text) || namedDay(text, nowRef.current) != null))
-        return palSay(say(pal, 'askStart', { what: `${update.focus.title}${update.focus.day != null ? ` on ${fmtDay(update.focus.day)}` : ''}` }))
+        if (!cloudWords) return askStart()
     }
     snap.full += `\n${describeFocus(update.focus)}`
+    const noticed = weekInsights(ev.current, tk.current, nowRef.current, settings.prefs).slice(0, 2)
+    if (noticed.length) snap.full += `\n- Noticed this week (bring up only if relevant): ${noticed.map((i) => i.text).join(' ')}`
     // The phone's own model is slow (20s+) and often wrong, so on it the rules answer whatever they understood,
     // and the model only gets what they didn't ("unknown")
     const phoneTurn = phoneModelAnswers(provider)
     if (phoneTurn && !isSafetyFilterTriggered && update.focus.intent === 'event' && update.focus.title && update.focus.start == null && !waitMsg && t.key === 'unknown')
-      return palSay(say(pal, 'askStart', { what: `${update.focus.title}${update.focus.day != null ? ` on ${fmtDay(update.focus.day)}` : ''}` }))
+      return palSay(say(pal, update.focus.needsSubject ? 'askStartSubject' : 'askStart', { what: `${update.focus.title}${update.focus.day != null ? ` on ${fmtDay(update.focus.day)}` : ''}` }))
     // "friday 9am" to "when is it?", "3 hours" to "how long?": filling the question Pal just asked is the rules' alone
     // (a model took "friday 9am" for a reminder)
     const slotFill = !!draft && text.split(/\s+/).length <= 6 && ((awaiting === 'due' && !!parseWhen(text, nowRef.current)) || (awaiting === 'hours' && !!parseHours(text)))
@@ -1212,7 +1244,10 @@ export default function App() {
       const t0 = performance.now()
       try {
         const groqKey = getGroqApiKey()
-        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!waitMsg, { voice, focus: update.focus, provider, signal: lease.signal })
+        // A local model's words show in the bubble as they arrive (the cloud is fast enough to just answer)
+        const streamId = uid()
+        const onPartial = (partial: string) => { if (lease.isCurrent() && partial.length > 3) setBubble({ id: streamId, mascotId: palRef.current, text: partial, kind: 'response' }) }
+        const ai = await askGroq(text, pal, groqKey, nowRef.current, history, snap, !!waitMsg, { voice, focus: update.focus, provider, signal: lease.signal, onPartial })
         if (!lease.isCurrent()) return
         if (ai?.text) {
           // A reply claiming it already changed something it can't: point at the real way instead
@@ -1222,9 +1257,16 @@ export default function App() {
           groqText = ai.claimed && !trueClaim ? claimLine(ai.claimed, ai.action?.type, waitMsg?.card?.type, a?.type) : ai.text
           // The app's reading of the day and time wins ("10am hanggang 1pm mamaya" is today, whatever the model says)
           groqAction = ai.action && alignToMessage(ai.action, text, nowRef.current)
+          // "Lock it in" with a card waiting, answered by re-sending that exact card: it's a yes to it.
+          // A new time ("make it 10 to 11 instead") is a change, so the times must both match
+          if (wc?.type === 'event' && groqAction?.type === 'addEvent' && parseIsoToLocalMs(groqAction.start) === wc.start && parseIsoToLocalMs(groqAction.end) === wc.end)
+            groqAction = { type: 'confirmEvent' }
           // Pal talked an event through in words ("i-lock ko na!") but sent no card: recover it from the chat as a card
           if (ai.claimed === 'add' && !trueClaim && !waitMsg && (!ai.action || ai.action.type === 'none') && a?.type !== 'addEvent') {
+            // The cloud re-reads the chat; on your PC or phone, the event this conversation already pinned down
+            const pinned = eventFromFocus(update.focus)
             const found = await recoverEvent([...history, { role: 'user', content: text }, { role: 'assistant', content: ai.text }], nowRef.current, groqKey, provider)
+              ?? (pinned ? { type: 'addEvent' as const, title: pinned.title, kind: pinned.kind as AiAction['kind'], start: toLocalIso(pinned.start), end: toLocalIso(pinned.end) } : null)
             if (!lease.isCurrent()) return
             if (found) {
               groqAction = found
@@ -1299,6 +1341,7 @@ export default function App() {
     else if (notice && noticeRef.current !== notice) {
       noticeRef.current = notice
       if (notice === 'quotaLocal' || notice === 'quotaOut' || notice === 'busy') palSay(say(pal, notice, { time: ci ? fmtTime(ci.until) : 'later' }))
+      else if (notice === 'slowLocal') palSay(say(pal, 'slowLocal'))
       else if (notice !== 'offline') palSay(say(pal, 'slowNet'))
       else palSay(say(pal, 'offlineSimple'))
     }
@@ -1326,7 +1369,14 @@ export default function App() {
       if (modelLed && g) {
         if (g.type === 'addEvent') {
           const startMs = parseIsoToLocalMs(g.start) || nowRef.current
-          const endMs = parseIsoToLocalMs(g.end) || startMs + 1 * HOUR
+          const endMs = parseIsoToLocalMs(g.end)
+          // The model knew when it starts but not when it ends: ask, never assume an hour
+          if (!endMs || endMs <= startMs) {
+            const title = g.title?.trim() || 'Event'
+            setPending({ title, kind: g.kind || 'work', start: startMs, end: startMs, needsEnd: true })
+            saveConversation({ ...emptyFocus(), intent: 'event', title, kind: g.kind && g.kind !== 'assignment' ? g.kind : undefined, start: startMs, day: startOfDay(startMs), awaitingEnd: true })
+            return palSay(say(pal, 'askEnd', { what: title, when: `${fmtDay(startMs)} at ${fmtTime(startMs)}` }))
+          }
           return previewEvent(groqText || say(pal, 'eventAdd'), {
             title: g.title?.trim() || 'Event',
             kind: g.kind || 'work',
@@ -1387,7 +1437,7 @@ export default function App() {
       }
       if (a.type === 'openSyllabus') {
         palSay(replyText)
-        return setSyllabus(true)
+        return setSyllabus({})
       }
       if (a.type === 'energy') {
         setSettings((s) => ({ ...s, energy: a.value }))
@@ -1502,6 +1552,18 @@ export default function App() {
     }
     if (c?.type === 'checkin' && arg) return answerCheckin(arg, action as 'done' | 'partly' | 'notyet')
     if (c?.type === 'file') {
+      // "Add its dates to my schedule": the file's own text, scanned, in the checklist to confirm
+      if (action === 'schedule') return void getFile(c.fileId).then((f) => {
+        const text = f?.chunks.map((x) => x.text).join('\n') ?? ''
+        if (!text.trim()) return palSay(say(pal, 'fileNoText', { file: c.name }))
+        setSyllabus({ text, source: c.name })
+      })
+      // "Study it": flashcards first; a quiz is one "quiz me" away
+      if (action === 'study') {
+        if (c.scanned) return palSay(say(pal, 'fileNoText', { file: c.name }))
+        palSay(say(pal, 'fileStudy', { file: c.name }), { chips: ['Quiz me', 'Plan study time'] })
+        return openInLibrary({ fileId: c.fileId, mode: 'cards' })
+      }
       if (action !== 'plan') return openInLibrary({ fileId: c.fileId, mode: action as LibraryMode })
       return void (async () => {
         const f = await getFile(c.fileId)
@@ -1528,7 +1590,7 @@ export default function App() {
       setView('week')
       // Keep the chat open when a re-plan card is coming, so its Accept button is in reach
       if (mobile && !replan) setChatOpen(false)
-      const moved = use === c.alt ? ` at ${fmtTime(use.start)}` : shift ? `, ${shift.title} moved to ${fmtTime(shift.to.start)}` : ''
+      const moved = use === c.alt ? ` at ${fmtTime(use.start)}` : shift ? (shift.trimmed ? `, ${shift.title} now ${fmtTime(shift.to.start)}–${fmtTime(shift.to.end)}` : `, ${shift.title} moved to ${fmtTime(shift.to.start)}`) : ''
       playSound('added')
       resolve(id, replan ? `Added${moved}. New times for the overlap below` : added.length > 1 ? `Added ${added.length} sessions${moved}${c.until ? ` until ${fmtDay(c.until)}` : ' over the next 8 weeks'}` : `Added${moved}`)
       setTimeout(() => feel('happy', 1400), 60)
@@ -1539,6 +1601,13 @@ export default function App() {
       } else {
         setEvents(base)
         flash(added.map((a) => a.id))
+        // Like a good secretary: if this made the day worse (no break, no dinner, 10 hours), say so once, with a fix
+        const fresh = newInsights(dayInsights(added[0].start, ev.current, tk.current, nowRef.current, settings.prefs), dayInsights(added[0].start, base, tk.current, nowRef.current, settings.prefs))
+          .find((i) => !nudged.current.has(i.id) && i.day === startOfDay(added[0].start))
+        if (fresh) {
+          nudged.current.add(fresh.id)
+          setTimeout(() => palSay(pal === 'jhyvie' ? fresh.textTl : fresh.text, fresh.chip ? { chips: [fresh.chip] } : {}), 900)
+        }
       }
       return
     }
@@ -1651,12 +1720,98 @@ export default function App() {
 
   const micStarting = useRef(false)
   const micStopEarly = useRef(false)
+  /**
+   * After a bare "Hi {pal}": the browser's live recognizer takes the request, the same one tap-to-talk uses, so
+   * their words show under the mic as they talk (and arrive sooner than a whole clip through Whisper).
+   * Device-only, or no recognizer here (the Android app): the on-device path takes it as before.
+   */
+  function liveAfterWake(ack: string) {
+    // (ack: a line Pal said that the mic may catch; '' now that Pal stays quiet after the wake)
+    if (!SR || settings.sttDeviceOnly || micOn || recRef.current || liveBroken.current) return
+    void handOffListening()
+    const r = new SR()
+    r.lang = navigator.language?.startsWith('en') ? navigator.language : 'en-US'
+    r.interimResults = true
+    // The app decides when they're done (SEND_AFTER_SILENCE_MS of no new words), not Chrome: it sent mid-sentence
+    r.continuous = true
+    const quiet = endAfterSilence(r)
+    let final = ''
+    let retried = false
+    r.onresult = (e: any) => {
+      quiet.heard()
+      let live = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i]
+        if (res.isFinal) final += res[0].transcript
+        else live += res[0].transcript
+      }
+      setInterim((final + live).trim())
+    }
+    // "no-speech", "aborted": onend follows and hands back to hands-free. Refused outright (Safari without
+    // Dictation, blocked mic, no network): the on-device path takes this request and the next ones
+    let refused = false
+    r.onerror = (e: any) => {
+      if (/not-allowed|service-not-allowed|audio-capture|network|language-not-supported/.test(e?.error ?? '')) refused = liveBroken.current = true
+    }
+    r.onend = () => {
+      quiet.done()
+      const said = final.trim()
+      // It only caught Pal's own "Yes?": listen once more for the real request
+      if (said && isEcho(said, ack, palRef.current) && !retried) {
+        retried = true
+        final = ''
+        setInterim('')
+        try { r.start(); return quiet.heard() } catch {}
+      }
+      recRef.current = null
+      setMicOn(false)
+      setInterim('')
+      void resumeListening().then(() => { if (refused && !said) expectFollowUp() })
+      if (said && !isEcho(said, ack, palRef.current)) {
+        lastVoice.current = Date.now()
+        // "Hi Rei" again: just listening again. "Hi Rei, add …": only what came after the name
+        const wake = matchWake(said, palRef.current, settings.userName)
+        if (wake && !wake.command) return void resumeListening().then(() => liveAfterWakeRef.current(ack))
+        sendRef.current(wake?.command || said, true)
+      }
+    }
+    recRef.current = r
+    try {
+      r.start()
+      quiet.started()
+      setMicOn(true)
+    } catch {
+      recRef.current = null
+      // No live recognizer after all: the on-device path takes the next sentence
+      void resumeListening().then(() => expectFollowUp())
+    }
+  }
+  /**
+   * A recognizer left running (continuous) until they've been quiet SEND_AFTER_SILENCE_MS after their last words,
+   * NOTHING_SAID_MS if they never start, MAX_TALK_MS at most. heard(): new words came in.
+   */
+  function endAfterSilence(r: { stop: () => void }) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let cap: ReturnType<typeof setTimeout> | undefined
+    const wait = (ms: number) => { clearTimeout(timer); timer = setTimeout(() => { try { r.stop() } catch {} }, ms) }
+    return {
+      started: () => { wait(NOTHING_SAID_MS); cap = setTimeout(() => { try { r.stop() } catch {} }, MAX_TALK_MS) },
+      heard: () => wait(SEND_AFTER_SILENCE_MS),
+      done: () => { clearTimeout(timer); clearTimeout(cap) },
+    }
+  }
+  /** The live recognizer refused once (e.g. Safari without Dictation): stop trying it this session */
+  const liveBroken = useRef(false)
+  const liveAfterWakeRef = useRef(liveAfterWake)
+  liveAfterWakeRef.current = liveAfterWake
+
   async function toggleMic() {
     // No speech service here (the Android app, Firefox): hear one sentence with the on-device Whisper instead
     if (!SR) {
       if (!navigator.mediaDevices?.getUserMedia) return micFail('unsupported')
+      // Hands-free is always listening: a tap means "this next sentence is for you", no "Hi Rei" needed
       if (isHandsFreeOn()) {
-        if (micOn) { setMicOn(false); return void stopHandsFree() }
+        if (micOn) return setMicOn(false)
         return expectFollowUp()
       }
       setMicOn(true)
@@ -1686,9 +1841,11 @@ export default function App() {
     const r = new SR()
     r.lang = navigator.language?.startsWith('en') ? navigator.language : 'en-US'
     r.interimResults = true
-    r.continuous = false
+    r.continuous = true
+    const quiet = endAfterSilence(r)
     let final = ''
     r.onresult = (e: any) => {
+      quiet.heard()
       let live = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i]
@@ -1698,6 +1855,7 @@ export default function App() {
       setInterim((final + live).trim())
     }
     r.onend = () => {
+      quiet.done()
       setMicOn(false)
       setInterim('')
       if (final.trim()) sendRef.current(final.trim())
@@ -1706,6 +1864,7 @@ export default function App() {
     recRef.current = r
     try {
       r.start()
+      quiet.started()
       setMicOn(true)
       if (micStopEarly.current) r.stop()
     } catch {
@@ -1739,9 +1898,12 @@ export default function App() {
     }
   }
 
-  function finishOnboarding(v: { pal: PalId; name: string; energy: Energy; advancedMode?: boolean; userName?: string }) {
+  function finishOnboarding(v: { pal: PalId; name: string; energy?: Energy; advancedMode?: boolean; userName?: string; notify?: boolean }) {
     const first = !settings.onboarded
-    setSettings((s) => ({ ...s, ...v, onboarded: true, advancedMode: v.advancedMode ?? s.advancedMode ?? false }))
+    const { notify, ...rest } = v
+    // A fresh start: sounds on, and this "Start" tap lets the app make sound from now on
+    if (first) { setSoundsOn(true); unlockChime() }
+    setSettings((s) => ({ ...s, ...rest, energy: v.energy ?? s.energy, onboarded: true, advancedMode: v.advancedMode ?? s.advancedMode ?? false, ...(notify != null ? { notify, notifyAsked: true } : {}) }))
     setEditing(false)
     if (first)
       setTimeout(() => {
@@ -1795,12 +1957,14 @@ export default function App() {
         else { window.speechSynthesis?.cancel(); stopKokoro(); stopNative() }
       }}
       micOn={micOn} toggleMic={toggleMic} micSupported={!!SR || !!navigator.mediaDevices?.getUserMedia} interim={interim} compact={mobile} noPal={(view === 'home' || view === 'study') && !chatOpen}
-      handsFree={{ on: !!settings.handsFree, state: hf.state, progress: hf.progress, toggle: () => setHandsFree(!settings.handsFree) }}
+      handsFree={{ on: settings.onboarded, state: hf.state, progress: hf.progress, mic: hf.mic, tap: hf.tap, error: hf.error, heard }}
       onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)}
       open={chatOpen} setOpen={setChatOpen} onCollapse={mobile ? undefined : toggleCollapse}
     />
   )
 
+  // The demo's time machine: only for testing (Advanced Mode), or while time is shifted so "Now" can bring it back
+  const showSim = !!settings.advancedMode || offset !== 0
   const simCluster = (
     <div className="flex items-center gap-0.5 rounded-full bg-ink/[0.04] p-1 text-[12px]">
       <span className="flex items-center gap-1.5 px-2 text-ink-2" title="Simulated time for the demo">
@@ -1904,22 +2068,28 @@ export default function App() {
       <span className="tnum min-w-[96px] text-center text-[14px] font-semibold">{weekLabel}</span>
       <button onClick={() => setWeekOff((w) => w + 1)} className="press grid size-10 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Next week"><ChevronR /></button>
       <button onClick={() => setClearing(true)} className="press ml-1 grid size-10 place-items-center rounded-full text-ink-3 hover-lift hover:text-red-500" aria-label="Delete all plans" title="Delete all plans"><Trash /></button>
-      {weekOff !== 0 && <button onClick={() => setWeekOff(0)} className="pop press ml-1 h-8 rounded-full bg-tangerine-soft px-3 text-[12px] font-medium text-ink">This week</button>}
+      {weekOff !== 0 && <button onClick={() => setWeekOff(0)} className="pop press ml-1 h-8 rounded-full bg-accent-soft px-3 text-[12px] font-medium text-ink">This week</button>}
     </div>
   )
 
   const content =
     view === 'home' ? (
-      <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} pal={pal} palName={name} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} onTalk={() => (mobile ? setChatOpen(true) : setCollapsed(false))} />
+      <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palName={name} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} onTalk={() => (mobile ? setChatOpen(true) : setCollapsed(false))} />
     ) : view === 'study' ? (
       <Study
         session={session}
         pal={pal}
         palState={mood ? mood.state : session.phase === 'break' ? 'happy' : 'idle'}
-        todayMinutes={todayFocus}
+        todayMinutes={Math.floor(todayFocus)}
         palLine={studyLine}
         alarmsOn={settings.notify}
         onStart={studyStart}
+        onConfigure={studyConfigure}
+        onNext={studyNext}
+        onRecover={studyRecover}
+        onBrowse={(id) => { setBrowseFolderId(id); setStudySection('library') }}
+        browseFolderId={browseFolderId}
+        onBrowseDone={() => setBrowseFolderId(null)}
         onPause={studyPause}
         onResume={studyResume}
         onSkip={studySkip}
@@ -1946,7 +2116,7 @@ export default function App() {
             </button>
           ))}
         </div>
-        <div className="flex shrink-0 items-center justify-center gap-2 py-1">{weekNav}{simCluster}</div>
+        <div className="flex shrink-0 items-center justify-center gap-2 py-1">{weekNav}{showSim && simCluster}</div>
         <div className="min-h-0 flex-1">
           <Calendar days={shownDays} now={now} events={events} pal={pal} highlight={hl} onOpen={openPop} quiet={QUIET} />
         </div>
@@ -1962,7 +2132,7 @@ export default function App() {
   const panelLeft = view === 'week' ? (
     <div className="flex min-w-0 items-center gap-x-4">
       {weekNav}
-      {simCluster}
+      {showSim && simCluster}
       <div className="hidden xl:block"><LoadStrip weekStart={weekStart} events={events} active={weekOff === 0 ? (new Date(now).getDay() + 6) % 7 : undefined} onPick={(i) => setDayIdx(i)} /></div>
     </div>
   ) : view === 'study' ? (
@@ -1970,7 +2140,7 @@ export default function App() {
   ) : null
 
   return (
-    <div className={`grain relative isolate flex h-dvh overflow-hidden p-3 pt-[max(52px,env(safe-area-inset-top))] pr-[max(12px,env(safe-area-inset-right))] pl-[max(12px,env(safe-area-inset-left))] sm:p-4 sm:pt-[max(16px,env(safe-area-inset-top))] ${mobile ? 'flex-col gap-2' : 'gap-3 sm:gap-4'}`}>
+    <div className={`${!mobile && view === 'home' ? 'desktop-today' : ''} grain relative isolate flex h-dvh overflow-hidden p-3 pt-[max(52px,env(safe-area-inset-top))] pr-[max(12px,env(safe-area-inset-right))] pl-[max(12px,env(safe-area-inset-left))] sm:p-4 sm:pt-[max(16px,env(safe-area-inset-top))] ${mobile ? 'flex-col gap-2' : 'gap-3 sm:gap-4'}`}>
       <div className="mist" aria-hidden />
 
       {mobile ? (
@@ -2014,8 +2184,8 @@ export default function App() {
               <span className="grid size-11 place-items-center overflow-hidden rounded-full" style={{ background: PALS[pal].swatch }}>
                 <Pal id={pal} size={40} state={palState} animate />
               </span>
-              {settings.handsFree && hf.state !== 'off' && <span className="absolute inset-0 rounded-full ring-2 ring-tangerine/60" aria-hidden />}
-              {unseen && <span className="absolute top-0.5 right-0.5 size-3 rounded-full bg-tangerine ring-2 ring-paper" aria-hidden />}
+              {settings.onboarded && hf.state !== 'off' && <span className="absolute inset-0 rounded-full ring-2 ring-accent/60" aria-hidden />}
+              {unseen && <span className="absolute top-0.5 right-0.5 size-3 rounded-full bg-accent ring-2 ring-paper" aria-hidden />}
             </button>
           ) : (
             <div
@@ -2037,19 +2207,19 @@ export default function App() {
             </div>
           )}
           <div className="fixed inset-x-3 z-30" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-            <TabBar view={view} setView={(v) => { setView(v); setChatOpen(false) }} taskCount={openTasks} studying={session.phase !== 'idle'} />
+            <TabBar view={view} setView={(v) => { setView(v); setChatOpen(false) }} taskCount={openTasks} studying={active(session)} />
           </div>
         </>
       ) : (
         <>
-          <Rail view={view} setView={setView} onSyllabus={() => setSyllabus(true)} onSettings={() => setEditing(true)} taskCount={openTasks} dark={dark} onTheme={() => setDark((d) => !d)} studying={session.phase !== 'idle'} />
+          <Rail view={view} setView={setView} onSyllabus={() => setSyllabus({})} onSettings={() => setEditing(true)} taskCount={openTasks} dark={dark} onTheme={() => setDark((d) => !d)} studying={active(session)} />
           <aside
             className={`liquid relative min-h-0 shrink-0 overflow-hidden rounded-[30px] ${instant ? '' : 'transition-[width,opacity,transform,margin] duration-[260ms] [transition-timing-function:var(--ease-out)]'} ${collapsed ? 'pointer-events-none -mr-4 w-0 -translate-x-4 opacity-0' : 'w-[clamp(400px,34vw,520px)]'}`}
             aria-hidden={collapsed}
           >
             <div className="h-full w-[clamp(400px,34vw,520px)]">{chat}</div>
           </aside>
-          <section className="liquid relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[30px]">
+          <section className={`liquid relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[30px] ${view === 'home' ? 'today-panel' : ''}`}>
             {/* Its own row, not floating over the page: nothing in any view can slide under the badge or the pals */}
             <header className="@container relative z-30 flex h-14 shrink-0 items-center gap-3 pr-3 pl-4">
               <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">{panelLeft}</div>
@@ -2080,7 +2250,7 @@ export default function App() {
               title="Open chat  ⌘/"
             >
               <Pal id={pal} state={palState} size={34} float />
-              {micOn && <span className="pulse-dot absolute top-2 right-2 size-2.5 rounded-full bg-tangerine" />}
+              {micOn && <span className="pulse-dot absolute top-2 right-2 size-2.5 rounded-full bg-accent" />}
             </button>
           )}
         </>
@@ -2095,12 +2265,13 @@ export default function App() {
         />
       )}
       {clearing && <DeletePlansSheet onClose={() => setClearing(false)} onConfirm={clearAllPlans} count={events.length} />}
-      {syllabus && <SyllabusSheet now={now} onClose={() => setSyllabus(false)} onAdd={addSyllabus} />}
-      {(!settings.onboarded || editing) && (
+      {syllabus && <SyllabusSheet key={syllabus.source ?? 'paste'} now={now} initialText={syllabus.text} source={syllabus.source} onClose={() => setSyllabus(false)} onAdd={addSyllabus} />}
+      {!settings.onboarded && <Welcome onDone={finishOnboarding} />}
+      {settings.onboarded && editing && (
         <Onboarding
-          initial={settings.onboarded ? settings : undefined}
+          initial={settings}
           onDone={finishOnboarding}
-          onClose={settings.onboarded ? () => setEditing(false) : undefined}
+          onClose={() => setEditing(false)}
           onUserName={(userName) => setSettings((s) => ({ ...s, userName }))}
           prefsLabel={[
             settings.prefs?.latestHour != null ? `Nothing after ${fmtTime(new Date().setHours(settings.prefs.latestHour, 0, 0, 0))}` : '',
@@ -2108,16 +2279,13 @@ export default function App() {
           ].filter(Boolean).join(' · ')}
           onClearPrefs={() => setSettings((s) => ({ ...s, prefs: {} }))}
           handsFree={{
-            on: !!settings.handsFree,
-            toggle: () => setHandsFree(!settings.handsFree),
+            on: isHandsFreeOn(),
             deviceOnly: !!settings.sttDeviceOnly,
             setDeviceOnly: (v) => setSettings((s) => ({ ...s, sttDeviceOnly: v })),
           }}
-          extras={mobile && settings.onboarded ? { dark, toggleDark: () => setDark((d) => !d), onSyllabus: () => { setEditing(false); setSyllabus(true) } } : undefined}
+          extras={mobile && settings.onboarded ? { dark, toggleDark: () => setDark((d) => !d), onSyllabus: () => { setEditing(false); setSyllabus({}) } } : undefined}
+          onDemoWeek={() => { resetDemo(); setEditing(false) }}
         />
-      )}
-      {editing && (
-        <button onClick={resetDemo} className="fixed bottom-4 left-1/2 z-[55] -translate-x-1/2 rounded-full bg-paper px-4 py-2 text-[12.5px] text-ink-2 shadow-[var(--shadow-lg)]">Reset demo week</button>
       )}
       <TimerPill
         timers={alarms.timers}

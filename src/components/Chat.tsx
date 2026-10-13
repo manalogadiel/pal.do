@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeDraft, type Card } from '../lib/agent'
 import { fmtDay, fmtHours, fmtTime, type CalEvent, type PalId, type PalState } from '../lib/core'
 import { Pal } from '../pals/Pal'
-import { Calendar, Cards, ChevronL, Clip, Glyph, Mic, Quiz, Send, Speaker, SpeakerOff, Waves, X } from './Icons'
+import { Calendar, Cards, ChevronL, Clip, Glyph, Mic, Quiz, Send, Speaker, SpeakerOff } from './Icons'
 import type { HandsFreeState } from '../lib/handsfree'
 
 /** The pal's current line: greeting or latest reply. Lives only in the speech bubble. */
@@ -56,7 +56,8 @@ interface Props {
   setOpen?: (v: boolean) => void
   onCollapse?: () => void
   /** Hands-free "Hi {pal}": its state for the status chip, and the on/off switch */
-  handsFree?: { on: boolean; state: HandsFreeState; progress?: number; toggle: () => void }
+  /** Always on once set up (no switch): just say "Hi {pal}". tap: the browser wants one tap before audio runs */
+  handsFree?: { on: boolean; state: HandsFreeState; progress?: number; mic?: boolean; tap?: boolean; error?: string; heard?: string }
   /** The AI is working on a reply: "• • •" in the log, so nobody types the same thing twice */
   thinking?: boolean
   onCancelReply?: () => void
@@ -66,12 +67,16 @@ interface Props {
 
 /** What the hands-free chip says, and its dot */
 function handsFreeChip(h: NonNullable<Props['handsFree']>, palName: string): { label: string; dot: string } {
-  if (h.state === 'loading') return { label: `Getting ready… ${Math.round((h.progress ?? 0) * 100)}%`, dot: 'bg-ink-3' }
-  if (h.state === 'awake') return { label: 'Listening…', dot: 'bg-tangerine animate-pulse' }
-  if (h.state === 'thinking') return { label: 'Got it…', dot: 'bg-tangerine' }
+  // Their words as they talk (on-device preview), then what it finally heard
+  if (h.heard && h.state !== 'loading' && h.state !== 'off') return { label: `“${h.heard}”`, dot: 'bg-accent animate-pulse' }
+  if (h.state === 'loading' && h.mic) return { label: 'Allow the microphone (the prompt by the address bar)', dot: 'bg-amber animate-pulse' }
+  if (h.state === 'loading' && h.tap) return { label: `Tap anywhere once, then say "Hi ${palName}"`, dot: 'bg-amber animate-pulse' }
+  if (h.state === 'loading') return { label: (h.progress ?? 0) >= 1 ? 'Starting the mic…' : `Getting ready… ${Math.round((h.progress ?? 0) * 100)}%`, dot: 'bg-ink-3' }
+  if (h.state === 'awake') return { label: 'Listening…', dot: 'bg-accent animate-pulse' }
+  if (h.state === 'thinking') return { label: 'Got it…', dot: 'bg-accent' }
   if (h.state === 'paused') return { label: `${palName} is talking… say "Hi ${palName}" to interrupt`, dot: 'bg-ink-3' }
-  if (h.state === 'error') return { label: "Hands-free couldn't start", dot: 'bg-rose-500' }
-  if (h.state === 'off') return { label: 'Tap anywhere to resume hands-free', dot: 'bg-ink-3' }
+  if (h.state === 'error') return { label: h.error === 'mic-blocked' ? 'Mic blocked: allow it by the address bar, then tap here' : h.error === 'no-mic' ? 'No microphone found' : "Listening couldn't start: tap to retry", dot: 'bg-rose-500' }
+  if (h.state === 'off') return { label: `Tap anywhere once, then say "Hi ${palName}"`, dot: 'bg-amber animate-pulse' }
   return { label: `Say "Hi ${palName}"`, dot: 'bg-emerald-500' }
 }
 
@@ -110,9 +115,11 @@ export function Chat(p: Props) {
     }
   }, [p.open])
 
+  // Hands-free woke ("Hi Rei"): show the same open mic as tapping it
+  const hfAwake = p.handsFree?.state === 'awake'
   useEffect(() => {
-    if (p.micOn) setVoiceMode(true)
-  }, [p.micOn])
+    if (p.micOn || hfAwake) setVoiceMode(true)
+  }, [p.micOn, hfAwake])
   // The pal row floats over the feed while the log is showing; the feed pads itself to clear it
   const overlay = !p.compact || !!p.open
   const rowRef = useRef<HTMLDivElement>(null)
@@ -174,7 +181,7 @@ export function Chat(p: Props) {
       <button
         key={p.bubble.id}
         onClick={() => speech.typing && speech.skip()}
-        className={`pop pointer-events-auto relative block max-w-full rounded-[20px] bg-paper px-3.5 py-2 text-left text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(60_44_30/0.35)] origin-bottom-left rounded-bl-[6px] ${row ? 'mb-1 w-fit min-w-0 flex-initial' : ''}`}
+        className={`pop pointer-events-auto relative block max-w-full rounded-[20px] bg-paper px-3.5 py-2 text-left text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(20_48_88/0.35)] origin-bottom-left rounded-bl-[6px] ${row ? 'mb-1 w-fit min-w-0 flex-initial' : ''}`}
         aria-label={speech.typing ? 'Show full reply' : `${p.palName} says`}
         aria-live="polite"
       >
@@ -182,7 +189,7 @@ export function Chat(p: Props) {
       </button>
     ) : (
       <div className={`pointer-events-auto flex items-center gap-1.5 pb-1 text-[12px] text-ink-3 ${row ? 'mb-1 min-w-0 flex-1' : ''}`}>
-        <span className={`size-1.5 rounded-[2px] ${shownState === 'sleeping' ? 'bg-ink-3' : 'pulse-dot bg-tangerine'}`} />
+        <span className={`size-1.5 rounded-[2px] ${shownState === 'sleeping' ? 'bg-ink-3' : 'pulse-dot bg-accent'}`} />
         <span className="font-medium text-ink-2">{p.palName}</span>
         <span>· {p.thinking ? 'thinking…' : STATE_LABEL[shownState]}</span>
       </div>
@@ -236,7 +243,7 @@ export function Chat(p: Props) {
           ) : (
             <div className="space-y-5">
               {p.msgs.map((m) => (
-                <div key={m.id} className={`land flex ${m.from === 'me' ? 'justify-end' : 'justify-start'}`}>
+                <div key={m.id} data-msg data-from={m.from} className={`land flex ${m.from === 'me' ? 'justify-end' : 'justify-start'}`}>
                   {m.from === 'me' ? (
                     <div className="max-w-[82%] rounded-[22px] rounded-br-[8px] bg-ink/[0.06] px-4 py-2.5 text-[14.5px] leading-snug">{m.text}</div>
                   ) : (
@@ -293,16 +300,10 @@ export function Chat(p: Props) {
             const chip = handsFreeChip(p.handsFree, p.palName)
             return (
               <div className="mb-2 flex justify-center">
-                <button
-                  type="button"
-                  onClick={p.handsFree.toggle}
-                  className="press inline-flex h-8 max-w-full items-center gap-2 rounded-full bg-ink/[0.05] px-3 text-[12.5px] font-medium text-ink-2 hover:text-ink"
-                  aria-label={`${chip.label}. Turn off hands-free`}
-                >
+                <div className="inline-flex h-8 max-w-full items-center gap-2 rounded-full bg-ink/[0.05] px-3 text-[12.5px] font-medium text-ink-2">
                   <span className={`size-2 shrink-0 rounded-full ${chip.dot}`} aria-hidden />
                   <span className="truncate" aria-live="polite">{chip.label}</span>
-                  <X className="size-3 shrink-0 opacity-60" />
-                </button>
+                </div>
               </div>
             )
           })()}
@@ -364,7 +365,7 @@ export function Chat(p: Props) {
                   setVoiceMode(false)
                   if (p.micOn) p.toggleMic()
                 }}
-                handsFree={p.handsFree && { on: p.handsFree.on, toggle: p.handsFree.toggle, palName: p.palName }}
+                handsFree={p.handsFree && { on: p.handsFree.on, palName: p.palName, awake: hfAwake, thinking: p.handsFree.state === 'thinking', heard: p.handsFree.heard }}
               />
             </div>
           )}
@@ -373,6 +374,9 @@ export function Chat(p: Props) {
     </div>
   )
 }
+
+/** A long sentence shows its newest words: that's the part they're saying right now */
+const latest = (t: string) => (t.length > 90 ? `…${t.slice(-90).replace(/^\S*\s/, '')}` : t)
 
 /** Big mic: tap to toggle, or press and hold to talk and release to send. */
 function MicOrb({
@@ -390,9 +394,11 @@ function MicOrb({
   size: number
   interim?: string
   onBack?: () => void
-  /** Right of the orb: turn hands-free "Hi {pal}" on or off */
-  handsFree?: { on: boolean; toggle: () => void; palName: string }
+  /** Right of the orb: turn hands-free "Hi {pal}" on or off. awake: it heard "Hi {pal}" and is taking the request */
+  handsFree?: { on: boolean; palName: string; awake?: boolean; thinking?: boolean; heard?: string }
 }) {
+  // The mic is open, by tap or by "Hi {pal}": same rings either way, so you can tell it's listening
+  const live = on || !!handsFree?.awake
   const press = useRef<{ t: number; wasOn: boolean } | null>(null)
   const [held, setHeld] = useState(false)
   const holdTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -416,7 +422,13 @@ function MicOrb({
     : held
     ? 'Release to send'
     : on
-    ? interim || 'Listening… tap to stop'
+    ? (interim && latest(interim)) || 'Listening… tap to stop'
+    : handsFree?.heard
+    ? `“${latest(handsFree.heard)}”`
+    : handsFree?.awake
+    ? "I'm listening… go ahead"
+    : handsFree?.thinking
+    ? 'Got it…'
     : handsFree?.on
     ? `Hands-free: just say "Hi ${handsFree.palName}"`
     : 'Tap or hold to talk'
@@ -447,32 +459,20 @@ function MicOrb({
             }
           }}
           style={{ width: size, height: size }}
-          className={`relative grid touch-none place-items-center rounded-full text-white transition-transform duration-200 [transition-timing-function:var(--ease-out)] select-none [-webkit-touch-callout:none] ${supported ? 'bg-tangerine shadow-[0_14px_30px_-10px_var(--tangerine)]' : 'bg-ink/25'} ${held ? 'scale-110' : 'active:scale-95'}`}
+          className={`relative grid touch-none place-items-center rounded-full text-white transition-transform duration-200 [transition-timing-function:var(--ease-out)] select-none [-webkit-touch-callout:none] ${supported ? 'bg-accent shadow-[0_14px_30px_-10px_var(--accent)]' : 'bg-ink/25'} ${held ? 'scale-110' : 'active:scale-95'}`}
           aria-label={label}
-          aria-pressed={on}
+          aria-pressed={live}
         >
-          {on && (
+          {live && (
             <>
-              <span className="ring absolute inset-0 rounded-full bg-tangerine" />
-              <span className="ring ring-2 absolute inset-0 rounded-full bg-tangerine" />
+              <span className="ring absolute inset-0 rounded-full bg-accent" />
+              <span className="ring ring-2 absolute inset-0 rounded-full bg-accent" />
             </>
           )}
           <Mic className={`relative ${size > 70 ? 'size-8' : 'size-6'}`} />
         </button>
-        {handsFree && (
-          <button
-            type="button"
-            onClick={handsFree.toggle}
-            className={`press absolute right-1 grid size-11 place-items-center rounded-full hover-lift ${handsFree.on ? 'bg-tangerine/15 text-tangerine' : 'bg-ink/[0.05] text-ink-2 hover:text-ink'}`}
-            aria-label={handsFree.on ? 'Turn off hands-free' : `Hands-free: wake me with "Hi ${handsFree.palName}"`}
-            aria-pressed={handsFree.on}
-            title={handsFree.on ? 'Hands-free is on' : `Hands-free ("Hi ${handsFree.palName}")`}
-          >
-            <Waves className="size-5" />
-          </button>
-        )}
       </div>
-      <span className={`max-w-[280px] truncate text-center text-[12px] font-medium ${on ? 'text-tangerine' : 'text-ink-3'}`}>
+      <span className={`line-clamp-2 max-w-[300px] text-center text-[12px] font-medium ${live || handsFree?.heard ? 'text-accent' : 'text-ink-3'}`}>
         {label}
       </span>
     </div>
@@ -501,7 +501,7 @@ function Btn({ children, onClick, primary }: { children: React.ReactNode; onClic
   return (
     <button
       onClick={onClick}
-      className={`press h-9 rounded-full px-4 text-[13.5px] font-medium ${primary ? 'bg-tangerine text-white shadow-[0_6px_14px_-8px_var(--tangerine)]' : 'text-ink-2 hover-lift hover:text-ink'}`}
+      className={`press h-9 rounded-full px-4 text-[13.5px] font-medium ${primary ? 'bg-accent text-white shadow-[0_6px_14px_-8px_var(--accent)]' : 'text-ink-2 hover-lift hover:text-ink'}`}
     >
       {children}
     </button>
@@ -527,7 +527,7 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
       <div className={wrap}>
         <div className="flex flex-wrap items-center gap-1.5">
           {parts.map((t, i) => (
-            <span key={i} className={`rounded-full px-3 py-1.5 text-[13.5px] ${i === 0 ? 'bg-tangerine-soft font-semibold text-ink' : 'bg-ink/[0.05] text-ink-2'}`}>{t}</span>
+            <span key={i} className={`rounded-full px-3 py-1.5 text-[13.5px] ${i === 0 ? 'bg-accent-soft font-semibold text-ink' : 'bg-ink/[0.05] text-ink-2'}`}>{t}</span>
           ))}
         </div>
         {done ? <Done t={done} /> : (
@@ -549,9 +549,9 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
             <li
               key={b.id}
               style={{ '--i': i } as React.CSSProperties}
-              className={`chip-in flex h-10 items-center gap-3 rounded-full pr-4 pl-1.5 text-[13.5px] transition-colors duration-300 ${b.status === 'proposed' ? 'bg-tangerine-soft' : 'bg-ink/[0.04]'}`}
+              className={`chip-in flex h-10 items-center gap-3 rounded-full pr-4 pl-1.5 text-[13.5px] transition-colors duration-300 ${b.status === 'proposed' ? 'bg-accent-soft' : 'bg-ink/[0.04]'}`}
             >
-              <span className={`grid size-7 place-items-center rounded-full text-[11px] font-semibold tnum ${b.status === 'proposed' ? 'bg-paper/80 text-tangerine' : 'bg-paper/80 text-ink-2'}`}>{i + 1}</span>
+              <span className={`grid size-7 place-items-center rounded-full text-[11px] font-semibold tnum ${b.status === 'proposed' ? 'bg-paper/80 text-accent' : 'bg-paper/80 text-ink-2'}`}>{i + 1}</span>
               <span className="w-[78px] shrink-0 text-ink-2">{fmtDay(b.start).replace(/,.*/, '')}</span>
               <span className="tnum font-medium">{fmtTime(b.start)} – {fmtTime(b.end)}</span>
               <span className="tnum ml-auto text-[12px] text-ink-3">{fmtHours((b.end - b.start) / 3_600_000)}</span>
@@ -615,15 +615,21 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
         <div className="inline-flex min-h-10 max-w-full items-center gap-2.5 rounded-full bg-ink/[0.04] pr-4 pl-3 text-[13.5px]">
           <Clip className="size-4 shrink-0 text-ink-2" />
           <span className="truncate font-semibold">{c.name}</span>
-          <span className="shrink-0 text-ink-2">{c.folderName}</span>
+          {c.folderName.toLowerCase() !== c.name.toLowerCase() && <span className="shrink-0 text-ink-2">{c.folderName}</span>}
         </div>
         {!c.scanned && (
-          <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
-            <Btn primary onClick={() => onCard(m.id, 'plan')}><span className="inline-flex items-center gap-1.5"><Calendar className="size-3.5" /> Plan study</span></Btn>
-            <Btn onClick={() => onCard(m.id, 'cards')}><span className="inline-flex items-center gap-1.5"><Cards className="size-3.5" /> Flashcards</span></Btn>
-            <Btn onClick={() => onCard(m.id, 'quiz')}><span className="inline-flex items-center gap-1.5"><Quiz className="size-3.5" /> Quiz me</span></Btn>
-            <Btn onClick={() => onCard(m.id, 'read')}><span className="inline-flex items-center gap-1.5"><Speaker className="size-3.5" /> Read aloud</span></Btn>
-          </div>
+          <>
+            {/* The question Pal just asked: a schedule to pull dates from, or study material */}
+            <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
+              <Btn primary={(c.dates ?? 0) >= 2} onClick={() => onCard(m.id, 'schedule')}><span className="inline-flex items-center gap-1.5"><Calendar className="size-3.5" /> Add its dates{c.dates ? ` (${c.dates})` : ''}</span></Btn>
+              <Btn primary={(c.dates ?? 0) < 2} onClick={() => onCard(m.id, 'study')}><span className="inline-flex items-center gap-1.5"><Cards className="size-3.5" /> Flashcards & quiz</span></Btn>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 pl-1 text-[12.5px] text-ink-3">
+              <button type="button" onClick={() => onCard(m.id, 'plan')} className="press inline-flex items-center gap-1 hover:text-ink"><Calendar className="size-3" /> Plan study time</button>
+              <button type="button" onClick={() => onCard(m.id, 'quiz')} className="press inline-flex items-center gap-1 hover:text-ink"><Quiz className="size-3" /> Quiz me now</button>
+              <button type="button" onClick={() => onCard(m.id, 'read')} className="press inline-flex items-center gap-1 hover:text-ink"><Speaker className="size-3" /> Read aloud</button>
+            </div>
+          </>
         )}
         {c.scanned && <div className="mt-2.5 -ml-1"><Btn onClick={() => onCard(m.id, 'read')}>Open it</Btn></div>}
       </div>
@@ -650,12 +656,12 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
           </p>
         ) : c.conflicts > 0 && (
           <p className="mt-2.5 text-[13.5px] leading-snug text-amber">
-            This overlaps {c.conflicts} planned block{c.conflicts > 1 ? 's' : ''}. I can suggest new times for them if you add it.
+            {c.blocked?.length ? `This overlaps your study block ${c.blocked.join(' and ')}${c.conflicts > c.blocked.length ? ` and ${c.conflicts - c.blocked.length} more` : ''}.` : `This overlaps ${c.conflicts} planned block${c.conflicts > 1 ? 's' : ''}.`} I can suggest new times for {c.conflicts > 1 ? 'them' : 'it'} if you add it.
           </p>
         )}
         {done ? <Done t={done} /> : (
           <div className="mt-2.5 -ml-1 flex flex-wrap gap-1">
-            {c.moveOther && <Btn primary onClick={() => onCard(m.id, 'moveOther')}>Move {c.moveOther.title} to {fmtTime(c.moveOther.to.start)}</Btn>}
+            {c.moveOther && <Btn primary onClick={() => onCard(m.id, 'moveOther')}>{c.moveOther.trimmed ? `Shorten ${c.moveOther.title} to ${fmtTime(c.moveOther.to.start)}–${fmtTime(c.moveOther.to.end)}` : `Move ${c.moveOther.title} to ${fmtTime(c.moveOther.to.start)}`}</Btn>}
             {c.alt && <Btn primary onClick={() => onCard(m.id, 'useAlt')}>Use {fmtTime(c.alt.start)}</Btn>}
             <Btn primary={!c.alt && !c.moveOther} onClick={() => onCard(m.id, 'addEvent')}>{c.clash?.length ? 'Add anyway' : c.conflicts ? 'Add and re-plan' : 'Add it'}</Btn>
             <Btn onClick={() => onCard(m.id, 'skipEvent')}>Never mind</Btn>
@@ -714,7 +720,7 @@ export function Boundary({ name }: { name: string }) {
       <ul className="mt-2.5 space-y-2 text-[14px] leading-snug text-ink-2">
         {['Write, solve, or summarize your graded work', "Predict grades or tell you what you'll score", 'Judge how stressed or tired you are', 'Change your calendar without your tap'].map((t) => (
           <li key={t} className="flex items-start gap-2.5">
-            <span className="mt-[7px] size-1.5 shrink-0 rounded-[2px] bg-tangerine" />
+            <span className="mt-[7px] size-1.5 shrink-0 rounded-[2px] bg-accent" />
             {t}
           </li>
         ))}

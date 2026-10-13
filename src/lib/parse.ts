@@ -256,6 +256,10 @@ const STRIP = [
   // Taglish fillers ("may exam ako e", "bukas pa naman"), never part of a title. "E-commerce" keeps its E.
   /(?<![\w-])(e+h*|naman|lang|daw|raw|pala|talaga|kasi|nga)(?![\w-])/gi,
   ...DAYS.map(([re]) => new RegExp(re.source, 'gi')),
+  // "I'm going to…", "I will attend…", "it is my…": how they said it, not what it is
+  /\b(i'?m|i am|we'?re|we are|i will|i'?ll|we will|gonna|going to|going|attend(?:ing)?|join(?:ing)?|it is|it was|there'?s)(?![\w-])/gi,
+  // "I would like to schedule a dinner", "can you book…": the asking, not the title
+  /\b(i would like to|i'?d like to|id like to|i would like|would like to|i want to|i wanna|want to|can you|could you|will you|set up|book|create)(?![\w-])/gi,
   /\b(i have|i've got|i got|got|there's|there is|i need to|need to|have to|gotta|i need|kailangan ko|kailangan|may|meron|ako|ko|mo|ung|yung|ang|sa|ng|para|na|pa|ba|deadline|due|until|before|by|on|at|this|next|my|a|an|the|i|is|it's|its|to|for|of|and|please|pls|po|paki|add|put|schedule|sched|plan|lagyan|ilagay|lagay|remind me|help me)\b/gi,
   /\b(every|each|tuwing|daily|weekdays|weekends?|from|klase|class(es)?)\b/gi,
   /(?:^|\s)(?:M|T|W|Th|TH|F|S|Su)(?:\/?(?:M|T|W|Th|TH|F|S|Su)){1,5}(?=\s|$)/g,
@@ -263,6 +267,8 @@ const STRIP = [
 ]
 
 export function extractTitle(text: string, fallback: string) {
+  // "birthday party of Ana" → "Ana's birthday party" (the "of" would be stripped and leave "birthday party Ana")
+  text = text.replace(/\b((?:birthday|bday)(?: party)?|party|wedding|debut|despedida|celebration|graduation)\s+of\s+(?:my\s+)?([A-Z][\w-]*|\w+)/i, "$2's $1")
   let s = ` ${text} `
   for (const re of STRIP) s = s.replace(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'), ' ')
   s = s.replace(/\s+/g, ' ').trim()

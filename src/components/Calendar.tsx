@@ -12,7 +12,7 @@ const KIND: Record<Kind, string> = {
   class: 'bg-[var(--ev-class)] [--rule:var(--ev-class-rule)] text-[var(--ev-class-ink)]',
   shift: 'bg-[var(--ev-shift)] [--rule:var(--ev-shift-rule)] text-[var(--ev-shift-ink)]',
   exam: 'bg-[var(--ev-exam)] [--rule:var(--ev-exam-rule)] text-[var(--ev-exam-ink)]',
-  work: 'bg-paper/90 [--rule:var(--tangerine)] text-ink shadow-[0_2px_10px_-4px_rgb(60_44_30/0.18)]',
+  work: 'bg-paper/90 [--rule:var(--accent)] text-ink shadow-[0_2px_10px_-4px_rgb(20_48_88/0.18)]',
   commute: 'stripes [--rule:var(--ev-sand-rule)] text-[var(--ev-sand-ink)]',
   protected: 'hatch [--rule:var(--ev-sage-rule)] text-[var(--ev-sage-ink)]',
   deadline: '',
@@ -80,12 +80,12 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
           const isToday = d === today
           return (
             <div key={d} className="px-2 pt-3 pb-2.5">
-              <div className={`text-[11px] font-medium tracking-[0.06em] uppercase ${isToday ? 'text-tangerine' : 'text-ink-3'}`}>
+              <div className={`text-[11px] font-medium tracking-[0.06em] uppercase ${isToday ? 'text-accent' : 'text-ink-3'}`}>
                 {new Date(d).toLocaleDateString('en-US', { weekday: 'short' })}
               </div>
               <div className="mt-0.5 flex items-center gap-1.5">
                 <span className={`font-serif text-[26px] leading-none tracking-[-0.02em] ${d < today ? 'text-ink-3' : ''}`}>{new Date(d).getDate()}</span>
-                {isToday && <span className="size-1.5 rounded-[2px] bg-tangerine" />}
+                {isToday && <span className="size-1.5 rounded-[2px] bg-accent" />}
               </div>
             </div>
           )
@@ -131,7 +131,7 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
                     key={e.id}
                     onClick={(ev) => onOpen(e, (ev.currentTarget as HTMLElement).getBoundingClientRect())}
                     className={`press group absolute overflow-hidden ${short ? 'rounded-[10px]' : 'rounded-[14px]'} pr-2 pl-3 text-left transition-[background-color,opacity,filter] duration-200
-                      ${ghost ? 'ghost [--rule:var(--tangerine)] text-ink' : KIND[e.kind]}
+                      ${ghost ? 'ghost [--rule:var(--accent)] text-ink' : KIND[e.kind]}
                       ${e.status === 'done' ? 'opacity-50' : ''} ${highlight.has(e.id) ? 'flash' : ''}`}
                     style={{ top: top + 1, height, left: `calc(${(p.col / p.cols) * 100}% + 3px)`, width: `calc(${100 / p.cols}% - 6px)`, '--i': gi } as React.CSSProperties}
                   >
@@ -144,7 +144,7 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
                       {e.status === 'missed' && <span className="ml-auto grid size-3.5 shrink-0 place-items-center rounded-full bg-amber text-[9px] font-bold text-paper">?</span>}
                     </div>
                     {!short && <div className="tnum mt-0.5 truncate text-[11px] opacity-70">{fmtTime(e.start)} – {fmtTime(e.end)}</div>}
-                    {!short && e.note && <div className="mt-0.5 truncate text-[11px] font-medium text-tangerine">{e.note}</div>}
+                    {!short && e.note && <div className="mt-0.5 truncate text-[11px] font-medium text-accent">{e.note}</div>}
                     {ghost && hoursOf(e) >= 1 && (
                       <span className="absolute right-1 bottom-1"><Pal id={pal} size={18} animate={false} /></span>
                     )}
@@ -169,8 +169,8 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
 
               {isToday && now >= at(d, h0) && (
                 <div className="pointer-events-none absolute inset-x-0 z-10" style={{ top: ((now - at(d, h0)) / HOUR) * PX }}>
-                  <div className="h-px bg-tangerine" />
-                  <div className="absolute -top-[3px] -left-[4px] size-[7px] rounded-[2.5px] bg-tangerine" />
+                  <div className="h-px bg-accent" />
+                  <div className="absolute -top-[3px] -left-[4px] size-[7px] rounded-[2.5px] bg-accent" />
                 </div>
               )}
             </div>
@@ -193,7 +193,7 @@ export function LoadStrip({ weekStart, events, onPick, active }: { weekStart: nu
       {load.map((h, i) => (
         <button key={i} onClick={() => onPick?.(i)} className="group flex flex-col items-center gap-1" title={`${h.toFixed(1)}h committed`}>
           <div className="relative h-6 w-3.5 overflow-hidden rounded-[3px] bg-paper-3">
-            <div className={`absolute inset-x-0 bottom-0 ${active === i ? 'bg-tangerine' : 'bg-ink/70'} transition-[height] duration-500`} style={{ height: `${Math.min(100, (h / 12) * 100)}%` }} />
+            <div className={`absolute inset-x-0 bottom-0 ${active === i ? 'bg-accent' : 'bg-ink/70'} transition-[height] duration-500`} style={{ height: `${Math.min(100, (h / 12) * 100)}%` }} />
           </div>
           <span className="tnum text-[9px] text-ink-3">{Math.round(h)}</span>
         </button>

@@ -1,75 +1,90 @@
-// Android's WebView has no speechSynthesis, so in the app Pal talks through the phone's own text-to-speech
-// (offline, free, the voices the user already has installed). On the web this is never used.
 import { Capacitor } from '@capacitor/core'
 import { TextToSpeech } from '@capacitor-community/text-to-speech'
 import type { PalId } from './core'
-
+import { cleanSpeech, maleVoice, SPEECH_STYLE } from './speech-profile'
 export const hasNativeTts = () => Capacitor.isNativePlatform()
-
-/** Same feel as the browser voices: Rei calm, Diel even, Jaypee quick, Jhyvie bright (and Filipino when installed) */
-const STYLE: Record<PalId, { pitch: number; rate: number }> = {
-  rei: { pitch: 1.05, rate: 0.95 },
-  diel: { pitch: 0.92, rate: 1.0 },
-  jaypee: { pitch: 1.0, rate: 1.1 },
-  jhyvie: { pitch: 1.2, rate: 1.03 },
+let controller: AbortController | null = null
+let playback: HTMLAudioElement | null = null
+let release: (() => void) | null = null
+let generation = 0
+export function stopSpeech() {
+  generation++; controller?.abort(); controller = null
+  if (playback) { playback.pause(); playback.src = ''; playback = null }
+  release?.(); release = null
+  if (hasNativeTts()) void TextToSpeech.stop().catch(() => {})
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel()
 }
-
-let filipino: Promise<string> | null = null
-/** Jhyvie speaks Taglish: a Filipino voice reads it best, if the phone has one; otherwise Philippine or US English */
-function jhyvieLang(): Promise<string> {
-  return (filipino ??= (async () => {
-    for (const lang of ['fil-PH', 'en-PH']) {
-      try {
-        if ((await TextToSpeech.isLanguageSupported({ lang })).supported) return lang
-      } catch {}
-    }
-    return 'en-US'
-  })())
-}
-
-/** Resolves when Pal has finished (or was stopped) */
-export async function speakNative(text: string, pal: PalId): Promise<void> {
-  const lang = pal === 'jhyvie' ? await jhyvieLang() : 'en-US'
-  try {
-    await TextToSpeech.speak({ text, lang, ...STYLE[pal], volume: 1, category: 'playback', queueStrategy: 0 })
-  } catch {
-    // stopped mid-line, or no TTS engine installed: either way Pal is done talking
+async function localSpeak(text: string, pal: PalId, signal: AbortSignal, englishRequested: boolean): Promise<boolean> {
+  if (signal.aborted) return false
+  if (hasNativeTts()) {
+    let queryTimer: ReturnType<typeof setTimeout>
+    let queryAbort: () => void = () => {}
+    const cancellation = new Promise<never>((_, reject) => { queryTimer = setTimeout(() => reject(new Error('Voice discovery timed out')), 10_000); queryAbort = () => reject(new Error('Speech cancelled')); signal.addEventListener('abort', queryAbort, { once: true }) })
+    const { voices } = await Promise.race([TextToSpeech.getSupportedVoices(), cancellation]).finally(() => { clearTimeout(queryTimer); signal.removeEventListener('abort', queryAbort) })
+    const index = voices.findIndex(v => maleVoice(v, pal, text, englishRequested))
+    if (index < 0 || signal.aborted) return false
+    return new Promise<boolean>(resolve => {
+      let settled = false
+      const end = (ok: boolean) => { if (settled) return; settled = true; clearTimeout(timeout); signal.removeEventListener('abort', cancel); resolve(ok) }
+      const cancel = () => { void TextToSpeech.stop().catch(() => {}); end(false) }
+      const timeout = setTimeout(cancel, Math.min(120_000, 5000 + text.length * 110))
+      signal.addEventListener('abort', cancel, { once: true })
+      if (signal.aborted) { cancel(); return }
+      void TextToSpeech.speak({ text, lang: voices[index].lang, voice: index, ...SPEECH_STYLE[pal], volume: 1, category: 'playback', queueStrategy: 0 }).then(() => end(true), () => end(false))
+    })
   }
-}
-
-export function stopNative() {
-  if (hasNativeTts()) TextToSpeech.stop().catch(() => {})
-}
-
-/**
- * Reading a reviewer out loud, one sentence-sized piece at a time (browsers cut off long utterances).
- * Resolves when the piece is done or stopped. The phone's voice in the app, the browser's on the web.
- */
-export function readPiece(text: string, pal: PalId): Promise<void> {
-  if (hasNativeTts()) return speakNative(text, pal)
-  if (!('speechSynthesis' in window)) return Promise.resolve()
-  return new Promise((done) => {
+  if (!('speechSynthesis' in window)) return false
+  const voice = window.speechSynthesis.getVoices().find(v => maleVoice(v, pal, text, englishRequested))
+  if (!voice) return false
+  return new Promise<boolean>(resolve => {
     const u = new SpeechSynthesisUtterance(text)
-    u.lang = pal === 'jhyvie' ? 'en-PH' : 'en-US'
-    u.rate = STYLE[pal].rate * 0.95
-    u.pitch = STYLE[pal].pitch
-    u.onend = () => done()
-    u.onerror = () => done()
-    speechSynthesis.speak(u)
+    u.voice = voice; u.lang = voice.lang; Object.assign(u, SPEECH_STYLE[pal])
+    let done = false
+    const end = (ok: boolean) => { if (done) return; done = true; clearTimeout(timer); signal.removeEventListener('abort', abort); resolve(ok) }
+    const abort = () => end(false)
+    const timer = setTimeout(() => { window.speechSynthesis.cancel(); end(false) }, Math.min(120_000, 5000 + text.length * 110))
+    u.onend = () => end(true); u.onerror = () => end(false); signal.addEventListener('abort', abort, { once: true })
+    window.speechSynthesis.speak(u)
   })
 }
-export function stopReading() {
-  stopNative()
-  if ('speechSynthesis' in window) speechSynthesis.cancel()
+/** One speech operation; cancellation resolves the prior operation and prevents stale fallback/audio. */
+export async function speakPal(raw: string, pal: PalId, onStart?: () => void, englishRequested = false): Promise<boolean | 'cancelled'> {
+  stopSpeech()
+  const id = generation, abort = new AbortController(); controller = abort
+  const text = cleanSpeech(raw).slice(0, 2000)
+  if (!text) return false
+  const url = import.meta.env.VITE_TTS_URL || '/tts'
+  const timer = setTimeout(() => abort.abort(), 10_000)
+  try {
+    if (navigator.onLine) {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pal, text }), signal: abort.signal })
+      if (!r.ok || !r.headers.get('content-type')?.includes('audio/mpeg')) throw new Error('Speech unavailable')
+      const blob = await r.blob(); clearTimeout(timer)
+      if (id !== generation) return 'cancelled'
+      if (abort.signal.aborted) throw new Error('Speech timed out')
+      const source = URL.createObjectURL(blob), audio = new Audio(source); playback = audio
+      try { const played = await new Promise<boolean>((resolve, reject) => {
+        let settled = false
+        const end = (ok: boolean) => { if (settled) return; settled = true; clearTimeout(safety); abort.signal.removeEventListener('abort', cancel); if (release === cancel) release = null; resolve(ok) }
+        const cancel = () => end(false); release = cancel
+        const safety = setTimeout(() => { audio.pause(); end(false) }, 180_000)
+        audio.onended = () => end(true); audio.onerror = () => { end(false) }; audio.onplaying = () => onStart?.()
+        abort.signal.addEventListener('abort', cancel, { once: true }); audio.play().catch(() => end(false))
+      }); if (played) return true; throw new Error('Playback unavailable') } finally { audio.pause(); URL.revokeObjectURL(source); if (playback === audio) playback = null; release = null }
+    }
+  } catch {} finally { clearTimeout(timer) }
+  if (id !== generation) return 'cancelled'
+  // Timeout aborts only the network attempt. A fresh signal permits a local fallback.
+  const local = new AbortController(); controller = local
+  onStart?.()
+  try { const ok = await localSpeak(text, pal, local.signal, englishRequested); return id === generation ? ok : 'cancelled' } catch { return id === generation ? false : 'cancelled' }
 }
-
-/** "Mitosis. Cell division that…" in pieces of a sentence or two (≤ 220 chars) */
+export const speakNative = speakPal
+export const stopNative = stopSpeech
+export async function readPiece(text: string, pal: PalId) { const result = await speakPal(text, pal); if (result !== true) throw new Error(result === 'cancelled' ? 'Reading stopped.' : 'Voice unavailable. You can still read the material here.') }
+export const stopReading = stopSpeech
 export function readingPieces(text: string): string[] {
-  const sentences = text.replace(/\s+/g, ' ').match(/[^.!?]+[.!?]*/g) ?? []
-  const out: string[] = []
-  for (const s of sentences.map((x) => x.trim()).filter(Boolean)) {
-    if (out.length && (out.at(-1)!.length + s.length) < 220) out[out.length - 1] += ` ${s}`
-    else out.push(s.length > 300 ? s.slice(0, 300) : s)
-  }
-  return out
+  const words = text.replace(/\s+/g, ' ').trim().split(' '), out: string[] = []
+  for (const word of words) { if (out.length && out[out.length - 1].length + word.length < 220) out[out.length - 1] += ` ${word}`; else out.push(word) }
+  return out.filter(Boolean)
 }

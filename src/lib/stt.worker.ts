@@ -28,7 +28,13 @@ self.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return net(url, init)
 }
 env.allowLocalModels = false
-if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = BASE + 'kokoro/ort/'
+if (env.backends.onnx.wasm) {
+  env.backends.onnx.wasm.wasmPaths = BASE + 'kokoro/ort/'
+  // Every core when the page is cross-origin isolated (the server headers allow it): several times faster on a laptop.
+  // Without isolation (the Android app) it stays on one thread, as before
+  env.backends.onnx.wasm.numThreads = self.crossOriginIsolated ? Math.min(8, Math.max(1, (navigator.hardwareConcurrency || 4) - 1)) : 1
+  if (import.meta.env.DEV && !self.crossOriginIsolated) console.warn('[hands-free] page is not cross-origin isolated: speech-to-text runs on one core (~3x slower). Check the server headers.')
+}
 
 // pipeline()'s overloads are too big for TypeScript to resolve; this is the one we use
 const asrPipeline = pipeline as unknown as (task: 'automatic-speech-recognition', model: string, opts: object) => Promise<AutomaticSpeechRecognitionPipeline>
@@ -52,7 +58,9 @@ self.onmessage = async (e: MessageEvent) => {
     } else if (m.type === 'transcribe') {
       const t = await load()
       // English decoding keeps names like "Jhyvie" close to how they sound; Taglish words come out phonetically
-      const out = (await t(m.audio as Float32Array, { language: 'english', task: 'transcribe' })) as { text: string }
+      // English-only models (".en") take no language option; the multilingual ones are told English
+      const lang = size.endsWith('.en') ? {} : { language: 'english', task: 'transcribe' }
+      const out = (await t(m.audio as Float32Array, { ...lang, ...(m.maxTokens ? { max_new_tokens: m.maxTokens } : {}) })) as { text: string }
       self.postMessage({ type: 'text', id: m.id, text: (out.text ?? '').trim() })
     }
   } catch (err) {
