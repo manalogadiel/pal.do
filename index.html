@@ -9,11 +9,18 @@
 
   <!-- PWA & Mobile Web App -->
   <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="theme-color" content="#171615" />
+  <meta name="theme-color" content="#E5F0FF" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Pal.do" />
+  <script>
+    try {
+      const dark = localStorage.getItem('paldo.theme') === 'dark';
+      document.documentElement.classList.toggle('dark', dark);
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#142843' : '#E5F0FF';
+    } catch {}
+  </script>
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />

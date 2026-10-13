@@ -177,6 +177,7 @@ export default function App() {
   const [dark, setDark] = useState(() => localStorage.getItem('paldo.theme') === 'dark')
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#142843' : '#E5F0FF')
     localStorage.setItem('paldo.theme', dark ? 'dark' : 'light')
   }, [dark])
   const themeBtn = (
@@ -2074,7 +2075,7 @@ export default function App() {
 
   const content =
     view === 'home' ? (
-      <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palName={name} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} onTalk={() => (mobile ? setChatOpen(true) : setCollapsed(false))} />
+      <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} />
     ) : view === 'study' ? (
       <Study
         session={session}
@@ -2140,12 +2141,12 @@ export default function App() {
   ) : null
 
   return (
-    <div className={`${!mobile && view === 'home' ? 'desktop-today' : ''} grain relative isolate flex h-dvh overflow-hidden p-3 pt-[max(52px,env(safe-area-inset-top))] pr-[max(12px,env(safe-area-inset-right))] pl-[max(12px,env(safe-area-inset-left))] sm:p-4 sm:pt-[max(16px,env(safe-area-inset-top))] ${mobile ? 'flex-col gap-2' : 'gap-3 sm:gap-4'}`}>
+    <div className={`${!mobile && view === 'home' ? 'desktop-today' : ''} app-shell ${mobile ? 'is-mobile' : ''} grain relative isolate flex h-dvh overflow-hidden p-3 pr-[max(12px,env(safe-area-inset-right))] pl-[max(12px,env(safe-area-inset-left))] sm:p-4 ${mobile ? 'flex-col gap-2' : 'gap-3 sm:gap-4'}`}>
       <div className="mist" aria-hidden />
 
       {mobile ? (
         <>
-          <header className="flex shrink-0 items-center gap-2 px-2 pt-1">
+          <header className="mobile-header flex shrink-0 items-center gap-2 px-2">
             <Wordmark className="shrink-0 text-[18px]" />
             <div className="min-w-0 flex-1" />
             {settings.advancedMode && (
@@ -2190,7 +2191,7 @@ export default function App() {
           ) : (
             <div
               className="liquid-solid fixed inset-x-3 z-40 flex flex-col rounded-[30px] transition-[top] duration-[420ms] [transition-timing-function:var(--ease-drawer)]"
-              style={{ top: chatOpen ? 'calc(max(44px, env(safe-area-inset-top)) + 56px)' : 'auto', bottom: chatOpen ? 'max(12px, env(safe-area-inset-bottom))' : 'calc(max(12px, env(safe-area-inset-bottom)) + 60px)' }}
+              style={{ top: chatOpen ? 'calc(env(safe-area-inset-top, 0px) + 60px)' : 'auto', bottom: chatOpen ? 'max(12px, env(safe-area-inset-bottom))' : 'calc(max(12px, env(safe-area-inset-bottom)) + 60px)' }}
             >
               {!chatOpen && (
                 <button
