@@ -1,14 +1,14 @@
 {
-  "name": "Pal.do",
-  "short_name": "Pal.do",
+  "name": "Chronos",
+  "short_name": "Chronos",
   "description": "Your AI student and productivity companion",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#171615",
-  "theme_color": "#171615",
+  "background_color": "#101B2B",
+  "theme_color": "#101B2B",
   "categories": ["education", "productivity", "utilities"],
   "icons": [
     {

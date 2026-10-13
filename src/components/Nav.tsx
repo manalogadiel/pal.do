@@ -30,7 +30,7 @@ export function Rail({ view, setView, onSyllabus, onSettings, taskCount, dark, o
       </div>
       <div className="relative flex flex-col gap-1">
         <span
-          className="absolute left-0 top-0 h-[60px] w-[52px] rounded-[18px] bg-paper shadow-[0_4px_14px_-6px_rgb(60_44_30/0.25)] transition-transform duration-[380ms] [transition-timing-function:var(--ease-drawer)]"
+          className="absolute left-0 top-0 h-[60px] w-[52px] rounded-[18px] bg-paper shadow-[0_4px_14px_-6px_rgb(23_43_77/0.25)] transition-transform duration-[380ms] [transition-timing-function:var(--ease-drawer)]"
           style={{ transform: `translateY(${i * 64}px)` }}
           aria-hidden
         />
@@ -62,7 +62,7 @@ export function TabBar({ view, setView, taskCount, studying }: Pick<Props, 'view
   return (
     <nav className="liquid relative grid grid-cols-4 rounded-full p-1" aria-label="Views">
       <span
-        className="absolute inset-y-1 left-1 w-[calc((100%-8px)/4)] rounded-full bg-paper shadow-[0_4px_14px_-6px_rgb(60_44_30/0.25)] transition-transform duration-[380ms] [transition-timing-function:var(--ease-drawer)]"
+        className="absolute inset-y-1 left-1 w-[calc((100%-8px)/4)] rounded-full bg-paper shadow-[0_4px_14px_-6px_rgb(23_43_77/0.25)] transition-transform duration-[380ms] [transition-timing-function:var(--ease-drawer)]"
         style={{ transform: `translateX(${i * 100}%)` }}
         aria-hidden
       />

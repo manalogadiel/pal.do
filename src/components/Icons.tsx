@@ -36,10 +36,8 @@ export const Glyph: Record<Kind, (p: P) => React.ReactElement> = {
 
 export function Wordmark({ className = '' }: { className?: string }) {
   return (
-    <span className={`inline-flex items-baseline gap-[3px] leading-none select-none ${className}`} aria-label="Pal.Do">
-      <span className="font-serif text-[1.55em] tracking-[-0.02em]">Pal</span>
-      <span className="mb-[0.08em] inline-block size-[0.32em] rounded-[0.09em] bg-tangerine" />
-      <span className="font-sans text-[1.05em] font-semibold tracking-[-0.03em]">Do</span>
+    <span className={`inline-flex items-baseline leading-none select-none ${className}`} aria-label="Chronos">
+      <span className="font-serif text-[1.55em] tracking-[-0.02em] text-brand">Chronos</span>
     </span>
   )
 }

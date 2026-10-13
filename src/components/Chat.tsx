@@ -174,7 +174,7 @@ export function Chat(p: Props) {
       <button
         key={p.bubble.id}
         onClick={() => speech.typing && speech.skip()}
-        className={`pop pointer-events-auto relative block max-w-full rounded-[20px] bg-paper px-3.5 py-2 text-left text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(60_44_30/0.35)] origin-bottom-left rounded-bl-[6px] ${row ? 'mb-1 w-fit min-w-0 flex-initial' : ''}`}
+        className={`pop pointer-events-auto relative block max-w-full rounded-[20px] bg-paper px-3.5 py-2 text-left text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(23_43_77/0.35)] origin-bottom-left rounded-bl-[6px] ${row ? 'mb-1 w-fit min-w-0 flex-initial' : ''}`}
         aria-label={speech.typing ? 'Show full reply' : `${p.palName} says`}
         aria-live="polite"
       >
@@ -463,7 +463,7 @@ function MicOrb({
           <button
             type="button"
             onClick={handsFree.toggle}
-            className={`press absolute right-1 grid size-11 place-items-center rounded-full hover-lift ${handsFree.on ? 'bg-tangerine/15 text-tangerine' : 'bg-ink/[0.05] text-ink-2 hover:text-ink'}`}
+            className={`press absolute right-1 grid size-11 place-items-center rounded-full hover-lift ${handsFree.on ? 'bg-tangerine/15 text-action-text' : 'bg-ink/[0.05] text-ink-2 hover:text-ink'}`}
             aria-label={handsFree.on ? 'Turn off hands-free' : `Hands-free: wake me with "Hi ${handsFree.palName}"`}
             aria-pressed={handsFree.on}
             title={handsFree.on ? 'Hands-free is on' : `Hands-free ("Hi ${handsFree.palName}")`}
@@ -472,7 +472,7 @@ function MicOrb({
           </button>
         )}
       </div>
-      <span className={`max-w-[280px] truncate text-center text-[12px] font-medium ${on ? 'text-tangerine' : 'text-ink-3'}`}>
+      <span className={`max-w-[280px] truncate text-center text-[12px] font-medium ${on ? 'text-action-text' : 'text-ink-3'}`}>
         {label}
       </span>
     </div>
@@ -551,7 +551,7 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
               style={{ '--i': i } as React.CSSProperties}
               className={`chip-in flex h-10 items-center gap-3 rounded-full pr-4 pl-1.5 text-[13.5px] transition-colors duration-300 ${b.status === 'proposed' ? 'bg-tangerine-soft' : 'bg-ink/[0.04]'}`}
             >
-              <span className={`grid size-7 place-items-center rounded-full text-[11px] font-semibold tnum ${b.status === 'proposed' ? 'bg-paper/80 text-tangerine' : 'bg-paper/80 text-ink-2'}`}>{i + 1}</span>
+              <span className={`grid size-7 place-items-center rounded-full text-[11px] font-semibold tnum ${b.status === 'proposed' ? 'bg-paper/80 text-action-text' : 'bg-paper/80 text-ink-2'}`}>{i + 1}</span>
               <span className="w-[78px] shrink-0 text-ink-2">{fmtDay(b.start).replace(/,.*/, '')}</span>
               <span className="tnum font-medium">{fmtTime(b.start)} – {fmtTime(b.end)}</span>
               <span className="tnum ml-auto text-[12px] text-ink-3">{fmtHours((b.end - b.start) / 3_600_000)}</span>

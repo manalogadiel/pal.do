@@ -40,9 +40,9 @@ function FolderArt({ folder, count, due, onOpen }: { folder: Folder; count: numb
       <span className={`folder-back absolute top-1 h-8 w-[42%] rounded-t-[12px] ${tab}`} aria-hidden />
       {/* Sheets peeking out of the top: one per file, up to three */}
       {Array.from({ length: Math.min(count, 3) }, (_, i) => (
-        <span key={i} aria-hidden className="absolute inset-x-4 h-10 rounded-[8px] bg-[#fbf9f5] shadow-[0_1px_2px_rgb(0_0_0/0.12)] transition-transform duration-300 [transition-timing-function:var(--ease-out)] group-hover:-translate-y-1" style={{ top: 9 + i * 3, rotate: `${[-2.5, 2, -0.75][i]}deg` }} />
+        <span key={i} aria-hidden className="absolute inset-x-4 h-10 rounded-[8px] bg-[#f7fafc] shadow-[0_1px_2px_rgb(0_0_0/0.12)] transition-transform duration-300 [transition-timing-function:var(--ease-out)] group-hover:-translate-y-1" style={{ top: 9 + i * 3, rotate: `${[-2.5, 2, -0.75][i]}deg` }} />
       ))}
-      <span className="folder-face relative flex min-h-[132px] flex-col justify-between rounded-[18px] p-3.5 shadow-[var(--edge),0_10px_24px_-14px_rgb(60_44_30/0.35)]" data-pattern={folder.style.pattern}>
+      <span className="folder-face relative flex min-h-[132px] flex-col justify-between rounded-[18px] p-3.5 shadow-[var(--edge),0_10px_24px_-14px_rgb(23_43_77/0.35)]" data-pattern={folder.style.pattern}>
         <span className="folder-sticker inline-block self-start rotate-[-3deg] px-2 py-1 text-[13px] leading-none">{initials(folder.name)}</span>
         <span>
           <span className="block font-serif text-[22px] leading-[1.05]">{folder.name}</span>

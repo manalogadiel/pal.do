@@ -164,6 +164,7 @@ export default function App() {
   const [dark, setDark] = useState(() => localStorage.getItem('paldo.theme') === 'dark')
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#101B2B' : '#F7FAFC')
     localStorage.setItem('paldo.theme', dark ? 'dark' : 'light')
   }, [dark])
   const themeBtn = (

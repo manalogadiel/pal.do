@@ -1,5 +1,5 @@
-// Pal.do PWA Service Worker
-const CACHE_NAME = 'paldo-pwa-v1'
+// Chronos PWA Service Worker
+const CACHE_NAME = 'chronos-pwa-v4'
 const SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -8,7 +8,8 @@ const SHELL_ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon.svg',
-  '/icons/apple-touch-icon.png'
+  '/icons/apple-touch-icon.png',
+  '/fonts/manrope-600.woff2'
 ]
 
 self.addEventListener('install', (event) => {
@@ -21,7 +22,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys.filter((key) => /^(paldo|chronos)-pwa-/.test(key) && key !== CACHE_NAME).map((key) => caches.delete(key))
       )
     ).then(() => self.clients.claim())
   )

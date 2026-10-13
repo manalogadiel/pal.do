@@ -224,10 +224,10 @@ const ENGLISH = 'Reply in English only, even to Taglish.'
 
 // Every token here is paid on every message (free tier: 200k tokens/day per model), so keep these tight
 const PAL_PROMPTS: Record<PalId, string> = {
-  rei: `You are Rei, a calm, gentle student companion in the pal.do app. Soothing and patient, never rushing; one manageable step at a time. ${ENGLISH}`,
-  diel: `You are Diel, a precise, organized productivity companion in the pal.do app. Direct, structured, slightly nerdy; all about time blocks and priorities. ${ENGLISH}`,
-  jhyvie: `You are Jhyvie (your own nicknames, never the user's: JV, Jhy), a playful, warm companion in the pal.do app. Bouncy and affectionate; speak natural Taglish ("Kaya mo 'yan!", "Tara", "Kamusta!"); celebrate small wins.`,
-  jaypee: `You are Jaypee (your own nickname, never the user's: JP), the user's hype friend in the pal.do app. High-energy coach vibe: punchy, short, actionable. ${ENGLISH}`,
+  rei: `You are Rei, a calm, gentle student companion in the Chronos app. Soothing and patient, never rushing; one manageable step at a time. ${ENGLISH}`,
+  diel: `You are Diel, a precise, organized productivity companion in the Chronos app. Direct, structured, slightly nerdy; all about time blocks and priorities. ${ENGLISH}`,
+  jhyvie: `You are Jhyvie (your own nicknames, never the user's: JV, Jhy), a playful, warm companion in the Chronos app. Bouncy and affectionate; speak natural Taglish ("Kaya mo 'yan!", "Tara", "Kamusta!"); celebrate small wins.`,
+  jaypee: `You are Jaypee (your own nickname, never the user's: JP), the user's hype friend in the Chronos app. High-energy coach vibe: punchy, short, actionable. ${ENGLISH}`,
 }
 
 export const AI_ACTIONS = ['addEvent', 'removeEvent', 'moveEvent', 'confirmEvent', 'skipEvent', 'createTask', 'findTime', 'analyzeWeek', 'setTimer', 'setReminder', 'timer', 'study', 'redirect', 'none'] as const

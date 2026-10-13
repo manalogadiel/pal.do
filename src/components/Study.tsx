@@ -120,14 +120,14 @@ function Focus({ session, pal, palState, todayMinutes, palLine, alarmsOn, onStar
         </div>
 
         {!alarmsOn && (
-          <button type="button" onClick={onEnableAlarms} className="press mt-3 rounded-full px-3 py-1.5 text-[13px] text-tangerine hover:bg-tangerine-soft">
+          <button type="button" onClick={onEnableAlarms} className="press mt-3 rounded-full px-3 py-1.5 text-[13px] text-action-text hover:bg-tangerine-soft">
             Turn on alarms so you hear when a round ends
           </button>
         )}
 
         <div className="mt-6 flex flex-col items-center">
           {palLine && (
-            <p key={palLine} className="pop mb-2 max-w-[300px] rounded-[20px] rounded-bl-[6px] bg-paper px-3.5 py-2 text-center text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(60_44_30/0.35)]" aria-live="polite">
+            <p key={palLine} className="pop mb-2 max-w-[300px] rounded-[20px] rounded-bl-[6px] bg-paper px-3.5 py-2 text-center text-[13.5px] leading-snug text-ink shadow-[var(--edge),0_8px_24px_-12px_rgb(23_43_77/0.35)]" aria-live="polite">
               {palLine}
             </p>
           )}

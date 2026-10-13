@@ -127,7 +127,7 @@ export function StatusBadge({
               </span>
               <span className="font-semibold text-[13px]">{statusText}</span>
             </div>
-            <span className="rounded-full bg-tangerine/15 px-2 py-0.5 text-[9.5px] font-semibold text-tangerine">
+            <span className="rounded-full bg-tangerine/15 px-2 py-0.5 text-[9.5px] font-semibold text-action-text">
               Advanced Mode
             </span>
           </div>

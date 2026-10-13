@@ -37,7 +37,7 @@ export function TimerPill({ timers, ringing, onPause, onResume, onCancel, onStop
               ring ? 'flash border-tangerine/40 bg-tangerine text-white' : 'border-ink/[0.08] bg-paper/80 text-ink'
             }`}
           >
-            <TimerIcon className={`size-4 shrink-0 ${ring ? '' : warning ? 'text-tangerine' : 'text-ink-2'}`} />
+            <TimerIcon className={`size-4 shrink-0 ${ring ? '' : warning ? 'text-action-text' : 'text-ink-2'}`} />
             {ring ? (
               <>
                 <span className="font-semibold">Time's up!</span>
@@ -45,7 +45,7 @@ export function TimerPill({ timers, ringing, onPause, onResume, onCancel, onStop
               </>
             ) : (
               <>
-                <span className={`tnum min-w-[3.2em] font-semibold ${warning ? 'text-tangerine' : ''} ${paused ? 'text-ink-3' : ''}`}>{fmtLeft(left)}</span>
+                <span className={`tnum min-w-[3.2em] font-semibold ${warning ? 'text-action-text' : ''} ${paused ? 'text-ink-3' : ''}`}>{fmtLeft(left)}</span>
                 <button
                   onClick={() => (paused ? onResume(t.id) : onPause(t.id))}
                   className="press h-7 rounded-full px-2.5 text-[12px] font-medium text-ink-2 hover:bg-ink/[0.06] hover:text-ink"

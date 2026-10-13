@@ -72,7 +72,7 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
   const st = () => ({ '--i': i++ } as React.CSSProperties)
 
   return (
-    <div className="mx-auto h-full max-w-[680px] overflow-y-auto overscroll-contain px-6 pt-5 pb-10 sm:px-8 min-[900px]:pt-[72px]">
+    <div role="region" aria-label="Today’s schedule" tabIndex={0} className="today-scroll mx-auto h-full max-w-[680px] overflow-y-auto overscroll-contain px-6 pt-5 pb-10 sm:px-8 min-[900px]:pt-[72px]">
       {/* Mascot hero: the pal stands centre stage, date beneath */}
       <header className="slide-in flex flex-col items-center text-center" style={st()}>
         <div className="stage relative flex w-full justify-center pt-2 min-[900px]:pt-8" data-time={d.getHours() < 12 ? 'morning' : d.getHours() < 18 ? 'afternoon' : 'night'}>
@@ -82,8 +82,8 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palName
           </div>
         </div>
         <button onClick={onTalk} className="press mt-3 min-[900px]:mt-2 h-9 rounded-full bg-ink/[0.05] px-4 text-[13px] font-medium text-ink-2 hover-lift hover:text-ink">Talk to {palName}</button>
-        <div className="mt-6 min-[900px]:mt-4 text-[13px] font-medium text-tangerine">{d.toLocaleDateString('en-US', { weekday: 'long' })}</div>
-        <h1 className="mt-0.5 font-serif text-[56px] leading-[0.95] tracking-[-0.025em]">
+        <div className="mt-6 min-[900px]:mt-4 text-[13px] font-medium text-action-text">{d.toLocaleDateString('en-US', { weekday: 'long' })}</div>
+        <h1 className="today-date mt-0.5 font-semibold text-[40px] sm:text-[56px] leading-[1.1] tracking-[-0.025em]">
           {d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
         </h1>
         <p className="mt-2.5 text-[14.5px] text-ink-2">

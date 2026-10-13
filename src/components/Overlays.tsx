@@ -102,7 +102,7 @@ function LocalAiRow() {
         <button
           type="button"
           onClick={() => { setOn(!on); setLocalAiUrl(on ? '' : url) }}
-          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-tangerine' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
+          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-action-text' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
         >
           {on ? 'On' : 'Turn on'}
         </button>
@@ -135,7 +135,7 @@ function SoundsRow() {
         <div className="text-[13px] font-medium text-ink">Sounds</div>
         <div className="text-[11.5px] text-ink-3">Soft blips when you send, Pal replies, and plans are added. Timers and reminders always ring.</div>
       </div>
-      <button type="button" onClick={() => { setSoundsOn(!on); setOn(!on); if (!on) playSound('added') }} className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-tangerine' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}>
+      <button type="button" onClick={() => { setSoundsOn(!on); setOn(!on); if (!on) playSound('added') }} className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-action-text' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}>
         {on ? 'On' : 'Off'}
       </button>
     </div>
@@ -158,7 +158,7 @@ function HandsFreeRow({ palName, on, toggle, deviceOnly, setDeviceOnly }: { palN
         <button
           type="button"
           onClick={toggle}
-          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-tangerine' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
+          className={`press h-8 shrink-0 rounded-full px-3 text-[12px] font-medium ${on ? 'bg-tangerine/15 text-action-text' : 'bg-paper text-ink shadow-sm hover:bg-paper-2'}`}
         >
           {on ? 'On' : 'Turn on'}
         </button>
@@ -306,11 +306,11 @@ export function Onboarding({
                     {!isPhoneAiPlatform() && <button
                       type="button"
                       onClick={() => { setGroqOff(!groqOff); setGroqDisabled(!groqOff) }}
-                      className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-tangerine/15 text-tangerine'}`}
+                      className={`press rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${groqOff ? 'bg-ink/10 text-ink-2' : 'bg-tangerine/15 text-action-text'}`}
                     >
                       {groqOff ? 'Off (local only)' : 'On'}
                     </button>}
-                    <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-tangerine hover:underline">Free API key ↗</a>
+                    <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-action-text hover:underline">Free API key ↗</a>
                   </div>
                 </div>
                 <input
@@ -370,7 +370,7 @@ export function Onboarding({
                 <div>
                   <div className="text-[13px] font-medium text-ink flex items-center gap-1.5">
                     <span>Advanced Mode</span>
-                    <span className="rounded-full bg-tangerine/15 px-1.5 py-0.5 text-[10px] font-semibold text-tangerine">HUD</span>
+                    <span className="rounded-full bg-tangerine/15 px-1.5 py-0.5 text-[10px] font-semibold text-action-text">HUD</span>
                   </div>
                   <div className="text-[11.5px] text-ink-3">Show live AI model, online/offline status, and response latency on interface</div>
                 </div>
@@ -523,7 +523,7 @@ export function BlockPopover({ ev, rect, onClose, onDone, onAccept, onDelete }: 
         <div className="tnum mt-1 text-[13px] text-ink-2">
           {fmtDay(ev.start)} · {ev.kind === 'deadline' ? `due ${fmtTime(ev.start)}` : `${fmtTime(ev.start)} – ${fmtTime(ev.end)} (${fmtHours(hoursOf(ev))})`}
         </div>
-        {ev.note && <div className="mt-2 text-[13px] font-medium text-tangerine">{ev.note}</div>}
+        {ev.note && <div className="mt-2 text-[13px] font-medium text-action-text">{ev.note}</div>}
         {ev.why && (
           <div className="mt-3 rounded-[12px] bg-paper-2 p-2.5 text-[12.5px] leading-snug text-ink-2">
             <span className="font-medium text-ink">Why here: </span>{ev.why}

@@ -12,7 +12,7 @@ const KIND: Record<Kind, string> = {
   class: 'bg-[var(--ev-class)] [--rule:var(--ev-class-rule)] text-[var(--ev-class-ink)]',
   shift: 'bg-[var(--ev-shift)] [--rule:var(--ev-shift-rule)] text-[var(--ev-shift-ink)]',
   exam: 'bg-[var(--ev-exam)] [--rule:var(--ev-exam-rule)] text-[var(--ev-exam-ink)]',
-  work: 'bg-paper/90 [--rule:var(--tangerine)] text-ink shadow-[0_2px_10px_-4px_rgb(60_44_30/0.18)]',
+  work: 'bg-paper/90 [--rule:var(--tangerine)] text-ink shadow-[0_2px_10px_-4px_rgb(23_43_77/0.18)]',
   commute: 'stripes [--rule:var(--ev-sand-rule)] text-[var(--ev-sand-ink)]',
   protected: 'hatch [--rule:var(--ev-sage-rule)] text-[var(--ev-sage-ink)]',
   deadline: '',
@@ -80,7 +80,7 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
           const isToday = d === today
           return (
             <div key={d} className="px-2 pt-3 pb-2.5">
-              <div className={`text-[11px] font-medium tracking-[0.06em] uppercase ${isToday ? 'text-tangerine' : 'text-ink-3'}`}>
+              <div className={`text-[11px] font-medium tracking-[0.06em] uppercase ${isToday ? 'text-action-text' : 'text-ink-3'}`}>
                 {new Date(d).toLocaleDateString('en-US', { weekday: 'short' })}
               </div>
               <div className="mt-0.5 flex items-center gap-1.5">
@@ -144,7 +144,7 @@ export function Calendar({ days, now, events, pal, highlight, onOpen, quiet }: P
                       {e.status === 'missed' && <span className="ml-auto grid size-3.5 shrink-0 place-items-center rounded-full bg-amber text-[9px] font-bold text-paper">?</span>}
                     </div>
                     {!short && <div className="tnum mt-0.5 truncate text-[11px] opacity-70">{fmtTime(e.start)} – {fmtTime(e.end)}</div>}
-                    {!short && e.note && <div className="mt-0.5 truncate text-[11px] font-medium text-tangerine">{e.note}</div>}
+                    {!short && e.note && <div className="mt-0.5 truncate text-[11px] font-medium text-action-text">{e.note}</div>}
                     {ghost && hoursOf(e) >= 1 && (
                       <span className="absolute right-1 bottom-1"><Pal id={pal} size={18} animate={false} /></span>
                     )}

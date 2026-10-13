@@ -1,22 +1,33 @@
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700&family=Silkscreen&display=swap');
 @import 'tailwindcss';
 
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/manrope-600.woff2') format('woff2');
+}
+
 :root {
-  /* Soft Liquid — warm mist canvas, apricot voice */
-  --paper: #f4f1ec;
-  --paper-2: #ece8e1;
-  --paper-3: #e4dfd6;
-  --ink: #2a2826;
-  --ink-2: #66615a;
-  --ink-3: #8c867d;
-  --hair: rgb(42 40 38 / 0.06);
-  --tangerine: #e8794d;
-  --tangerine-soft: #fbe6da;
+  --brand: #03045e;
+  --action-text: #00679e;
+  --focus: #0077b6;
+  /* Original Soft Liquid design, recolored for Chronos. */
+  --paper: #f7fafc;
+  --paper-2: #edf3f8;
+  --paper-3: #e0eaf2;
+  --ink: #172b4d;
+  --ink-2: #465b72;
+  --ink-3: #586d82;
+  --hair: rgb(23 43 77 / 0.06);
+  --tangerine: #0077b6;
+  --tangerine-soft: #caf0f8;
   --amber: #9a6514;
   --amber-soft: #f8edd8;
-  --glass: rgb(250 248 245 / 0.62);
-  --tint-a: #f6d9c8;
-  --tint-b: #dcd9ea;
+  --glass: rgb(247 250 252 / 0.62);
+  --tint-a: #caf0f8;
+  --tint-b: #90e0ef;
 
   --ev-class: #e3eaf5;
   --ev-class-rule: #7f97c2;
@@ -37,8 +48,8 @@
   --ev-lilac-rule: #9d93cf;
   --ev-lilac-ink: #463d7a;
 
-  --shadow-lg: 0 24px 60px -24px rgb(60 44 30 / 0.28), 0 4px 14px -6px rgb(60 44 30 / 0.1);
-  --edge: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 -1px 0 rgb(42 40 38 / 0.04);
+  --shadow-lg: 0 24px 60px -24px rgb(23 43 77 / 0.28), 0 4px 14px -6px rgb(23 43 77 / 0.1);
+  --edge: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 -1px 0 rgb(23 43 77 / 0.04);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -46,21 +57,24 @@
 }
 
 :root.dark {
+    --brand: #edf4fa;
+    --action-text: #90e0ef;
+    --focus: #90e0ef;
     color-scheme: dark;
-    --paper: #171615;
-    --paper-2: #1f1e1c;
-    --paper-3: #2a2826;
-    --ink: #eeeae3;
-    --ink-2: #b3ada3;
-    --ink-3: #847e74;
-    --hair: rgb(238 234 227 / 0.07);
-    --tangerine: #f0936b;
-    --tangerine-soft: rgb(240 147 107 / 0.16);
+    --paper: #101b2b;
+    --paper-2: #182638;
+    --paper-3: #172b4d;
+    --ink: #edf4fa;
+    --ink-2: #b3c3d4;
+    --ink-3: #9aacbf;
+    --hair: rgb(237 244 250 / 0.07);
+    --tangerine: #0077b6;
+    --tangerine-soft: rgb(0 180 216 / 0.16);
     --amber: #e5b061;
     --amber-soft: rgb(229 176 97 / 0.12);
-    --glass: rgb(34 32 30 / 0.58);
-    --tint-a: #4a2f22;
-    --tint-b: #2c2a3d;
+    --glass: rgb(24 38 56 / 0.58);
+    --tint-a: #093f60;
+    --tint-b: #06495d;
     --ev-class: #232a37;
     --ev-class-rule: #8ea3cc;
     --ev-class-ink: #c8d4ec;
@@ -84,6 +98,8 @@
 }
 
 @theme inline {
+  --color-brand: var(--brand);
+  --color-action-text: var(--action-text);
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
   --color-paper-3: var(--paper-3);
@@ -114,11 +130,12 @@
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior: none;
   }
+  h1, h2 { color: var(--brand); }
   button {
     cursor: pointer;
   }
   :focus-visible {
-    outline: 2px solid var(--tangerine);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
   ::selection {
@@ -203,8 +220,8 @@
 /* The label sticker: pixel type on a slightly crooked paper label with a stepped pixel edge. Always a light label. */
 .folder-sticker {
   font-family: var(--font-pixel);
-  background: #fbf9f5;
-  color: #3b352f;
+  background: #f7fafc;
+  color: #172b4d;
   box-shadow: 0 0 0 2px var(--f-rule), 2px 2px 0 2px color-mix(in srgb, var(--f-rule) 45%, transparent);
   image-rendering: pixelated;
 }
@@ -333,11 +350,11 @@
   background: radial-gradient(55% 60% at 50% 62%, var(--spot, var(--tangerine-soft)), transparent 72%);
   opacity: 0.9;
 }
-.stage[data-time='morning'] { --spot: #fdebd9; }
-.stage[data-time='afternoon'] { --spot: #fbe3d6; }
-.stage[data-time='night'] { --spot: #e2def0; }
-.dark .stage[data-time] { --spot: rgb(232 121 77 / 0.14); }
-.dark .stage[data-time='night'] { --spot: rgb(150 140 210 / 0.16); }
+.stage[data-time='morning'] { --spot: #caf0f8; }
+.stage[data-time='afternoon'] { --spot: #90e0ef; }
+.stage[data-time='night'] { --spot: #dceafa; }
+.dark .stage[data-time] { --spot: rgb(0 180 216 / 0.14); }
+.dark .stage[data-time='night'] { --spot: rgb(0 119 182 / 0.16); }
 
 /* Same glow as .stage, anchored to the composer. Stays inside its box so it never bleeds over the feed or the pal */
 .input-glow {
@@ -353,11 +370,11 @@
   background: radial-gradient(55% 60% at 50% 50%, var(--spot, var(--tangerine-soft)), transparent 72%);
   opacity: 0.9;
 }
-.input-glow[data-time='morning'] { --spot: #fdebd9; }
-.input-glow[data-time='afternoon'] { --spot: #fbe3d6; }
-.input-glow[data-time='night'] { --spot: #e2def0; }
-.dark .input-glow[data-time] { --spot: rgb(232 121 77 / 0.14); }
-.dark .input-glow[data-time='night'] { --spot: rgb(150 140 210 / 0.16); }
+.input-glow[data-time='morning'] { --spot: #caf0f8; }
+.input-glow[data-time='afternoon'] { --spot: #90e0ef; }
+.input-glow[data-time='night'] { --spot: #dceafa; }
+.dark .input-glow[data-time] { --spot: rgb(0 180 216 / 0.14); }
+.dark .input-glow[data-time='night'] { --spot: rgb(0 119 182 / 0.16); }
 
 @media (prefers-reduced-motion: reduce) {
   .slide-in, .view-in { animation: fade 200ms ease both; }
@@ -386,3 +403,9 @@
 .under-dock .overflow-y-auto { padding-bottom: calc(370px + env(safe-area-inset-bottom)); }
 /* Chat minimized to the little pal button: only the tab bar and that button to clear */
 .under-dock-min .overflow-y-auto { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+
+/* Only the Today date uses Manrope. */
+.today-date { font-family: 'Manrope', system-ui, sans-serif; }
+.today-scroll { scrollbar-width: none; }
+.today-scroll::-webkit-scrollbar { width: 0; }
+.today-scroll:focus-visible { outline-offset: -3px; }
