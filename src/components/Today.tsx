@@ -1,3 +1,5 @@
+import { bestNextStep } from '../lib/next-step'
+import type { Prefs } from '../lib/schedule'
 import { fmtDay, fmtHours, fmtTime, hoursOf, MIN, startOfDay, startOfWeek, type CalEvent, type Kind, type Task } from '../lib/core'
 import { LoadStrip } from './Calendar'
 import { Glyph } from './Icons'
@@ -52,9 +54,13 @@ interface Props {
   pal: PalId
   palState: PalState
   onPoke: () => void
+  onPrepare?: (task: Task, minutes: number) => void
+  focusActive?: boolean
+  prefs?: Prefs
 }
 
-export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palState, onPoke, onTasks }: Props) {
+export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palState, onPoke, onTasks, onPrepare, focusActive, prefs }: Props) {
+  const suggestion = !focusActive && onPrepare ? bestNextStep(now, events, tasks, prefs) : null
   const day = startOfDay(now)
   const todays = events
     .filter((e) => startOfDay(e.start) === day && e.kind !== 'deadline' && e.status !== 'proposed')
@@ -128,6 +134,13 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palStat
           <p className="slide-in mt-2 text-[14.5px] text-ink-2" style={st()}>A clear day. Tell your pal about classes or shifts and they'll show up here.</p>
         )}
       </section>
+
+      {suggestion && <section className="today-next-step mt-6" aria-labelledby="next-step-title">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-accent">Best next step</span>
+        <h3 id="next-step-title" className="mt-2 text-lg font-semibold leading-snug">{suggestion.next ? `You have ${suggestion.availableMinutes} minutes before ${suggestion.next.title}.` : `You have room for ${suggestion.minutes} minutes of focus.`}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-ink-2">Spend {suggestion.minutes} minutes on <strong className="font-medium text-ink">{suggestion.task.title}</strong>.</p>
+        <button className="tool-button-primary mt-4" onClick={() => onPrepare?.(suggestion.task, suggestion.minutes)}>Prepare focus session</button>
+      </section>}
 
       {!todays.length && upcoming && <button onClick={ev => onOpen(upcoming, ev.currentTarget.getBoundingClientRect())} className="press mt-4 w-full rounded-[18px] bg-accent-soft p-4 text-left"><span className="text-sm text-ink-2">Next scheduled · {fmtDay(upcoming.start)} · {fmtTime(upcoming.start)}</span><strong className="mt-1 block">{upcoming.title}</strong></button>}
       </div>

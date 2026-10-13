@@ -24,6 +24,7 @@
     "@huggingface/transformers": "3.8.1",
     "@ricky0123/vad-web": "0.0.31",
     "kokoro-js": "^1.2.1",
+    "msedge-tts": "2.0.8",
     "pdfjs-dist": "6.3.289",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

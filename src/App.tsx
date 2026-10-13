@@ -199,6 +199,7 @@ export default function App() {
 
   /* ---------- study session (Pomodoro). Lives here, not in the tab, so switching tabs never stops it ---------- */
   // Not ticked yet: the reconcile effect below catches up time spent closed, so those minutes get logged
+  const [focusSetup, setFocusSetup] = useState<StudyConfig | null>(null)
   const [session, setSession] = useState<Session>(() => { const saved = fromSaved(init.session); return countUp(saved) && !isPaused(saved) ? { ...saved, awayAt: saved.awayAt ?? saved.checkpointAt ?? saved.phaseStartedAt } : saved })
   // Voice timers and reminders ("set me a timer for 5 mins"). Timestamps, so a reload or a sleeping phone lands right.
   const [alarms, setAlarms] = useState<Alarms>(() => init.alarms ?? NO_ALARMS)
@@ -2075,10 +2076,12 @@ export default function App() {
 
   const content =
     view === 'home' ? (
-      <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} />
+      <Today prefs={settings.prefs} focusActive={active(session)} onPrepare={(task, minutes) => { setFocusSetup({ method: 'custom', focusMinutes: minutes, breakMinutes: 0, rounds: 1, taskId: task.id, goal: task.title }); setStudySection('focus'); setView('study') }} now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} />
     ) : view === 'study' ? (
       <Study
         session={session}
+        setupConfig={focusSetup}
+        onSetupDone={() => setFocusSetup(null)}
         pal={pal}
         palState={mood ? mood.state : session.phase === 'break' ? 'happy' : 'idle'}
         todayMinutes={Math.floor(todayFocus)}

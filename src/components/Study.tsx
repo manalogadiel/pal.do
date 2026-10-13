@@ -9,6 +9,8 @@ import type { Task } from '../lib/core'
 import { listFolders, LIBRARY_EVENT, type Folder, type LibraryFile } from '../lib/library'
 
 interface Props {
+  setupConfig?: StudyConfig | null
+  onSetupDone?: () => void
   session: Session
   pal: PalId
   palState: PalState
@@ -85,7 +87,7 @@ export function Study(props: Props) {
 export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen: (screen: 'gallery' | 'workspace') => void }) {
   const { session, onConfigure, onStart, onPause, onResume, onSkip, onStop, onNext, onRecover } = props
   const [editing, setEditing] = useState(false)
-  const [choice, setChoice] = useState<ToolId | null>(null), [now, setNow] = useState(Date.now()), [breakMinutes, setBreakMinutes] = useState(5)
+  const [choice, setChoice] = useState<ToolId | null>(() => props.setupConfig ? 'custom' : null), [now, setNow] = useState(Date.now()), [breakMinutes, setBreakMinutes] = useState(5)
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id) }, [])
   useEffect(() => { setBreakMinutes((session.breakMs ?? 300_000) / 60_000) }, [session.breakMs])
   const [folderExists, setFolderExists] = useState(true)
@@ -93,10 +95,10 @@ export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen
   const config = session.config ?? DEFAULT_CONFIG
   const ready = session.phase === 'idle' || session.phase === 'ready', finished = session.phase === 'finished'
   const tool: ToolId = config.preparation === 'frog' ? 'frog' : config.method
-  const toGallery = () => { setEditing(false); setChoice(null); props.onScreen('gallery') }
+  const toGallery = () => { props.onSetupDone?.(); setEditing(false); setChoice(null); props.onScreen('gallery') }
   const primary = 'press h-11 rounded-full bg-accent px-6 text-sm font-semibold text-white dark:text-paper'
   const secondary = 'press h-11 rounded-full bg-paper-2 px-5 text-sm text-ink'
-  if (props.screen === 'gallery') return <div className="focus-scroll tool-container">{choice ? <ToolSetup key={choice} choice={choice} initialConfig={editing ? config : undefined} tasks={props.tasks} onBack={() => setChoice(null)} onOpen={c => { setChoice(null); onConfigure(c) }}/> : <ToolGallery onSelect={tool => { setEditing(false); setChoice(tool) }} onContinue={active(session) ? () => props.onScreen('workspace') : undefined}/>}</div>
+  if (props.screen === 'gallery') return <div className="focus-scroll tool-container">{choice ? <ToolSetup key={choice} choice={choice} initialConfig={editing ? config : props.setupConfig ?? undefined} tasks={props.tasks} onBack={() => { setChoice(null); props.onSetupDone?.() }} onOpen={c => { setChoice(null); props.onSetupDone?.(); onConfigure(c) }}/> : <ToolGallery onSelect={tool => { setEditing(false); setChoice(tool) }} onContinue={active(session) ? () => props.onScreen('workspace') : undefined}/>}</div>
   const clock = mmss(finished ? session.completedFocusMs : session.phase === 'breakReady' ? session.breakMs ?? 300_000 : ready || session.phase === 'waiting' ? (config.method === 'flowtime' || config.method === 'task' ? 0 : config.method === '52-17' ? 52 : config.method === 'pomodoro' ? 25 : config.focusMinutes) * 60_000 : remaining(session, now))
   const duration = (session.phase === 'break' ? session.breakMs ? session.breakMs / 60_000 : config.method === 'pomodoro' ? session.round === 4 ? 15 : 5 : config.method === '52-17' ? 17 : config.breakMinutes : config.method === 'pomodoro' ? 25 : config.method === '52-17' ? 52 : config.focusMinutes) * 60_000
   const progress = !['focus', 'break'].includes(session.phase) || countUp(session) || !duration ? 0 : Math.max(0, Math.min(1, 1 - remaining(session, now) / duration))

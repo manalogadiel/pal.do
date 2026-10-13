@@ -5,6 +5,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/tts",
+      "destination": "/api/tts"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
