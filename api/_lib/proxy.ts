@@ -55,12 +55,13 @@ const json = (status: number, body: unknown, headers: Record<string, string>) =>
 const redisUrl = () => process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL ?? ''
 const redisToken = () => process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN ?? ''
 
-async function countToday(key: string): Promise<number | null> {
+async function countToday(key: string, signal?: AbortSignal): Promise<number | null> {
   const url = redisUrl(), token = redisToken()
   if (!url || !token) return null
   try {
     const res = await fetch(`${url}/pipeline`, {
       method: 'POST',
+      signal,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify([['INCR', key], ['EXPIRE', key, 2 * 86400]]),
     })
@@ -73,11 +74,11 @@ async function countToday(key: string): Promise<number | null> {
 }
 
 /** Over today's allowance: a 429 shaped like Groq's, so the app shows "simple answers until about …" */
-async function overLimit(req: Request, kind: 'chat' | 'audio'): Promise<{ wait: string } | null> {
+export async function overLimit(req: Request, kind: 'chat' | 'audio', signal?: AbortSignal): Promise<{ wait: string } | null> {
   const day = new Date().toISOString().slice(0, 10)
   const device = (req.headers.get('X-Pal-Device') ?? '').replace(/[^\w-]/g, '').slice(0, 64) || 'none'
   const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown'
-  const [d, n] = await Promise.all([countToday(`pal:${kind}:${day}:d:${device}`), countToday(`pal:${kind}:${day}:ip:${ip}`)])
+  const [d, n] = await Promise.all([countToday(`pal:${kind}:${day}:d:${device}`, signal), countToday(`pal:${kind}:${day}:ip:${ip}`, signal)])
   const deviceMax = kind === 'chat' ? DEVICE_DAILY : AUDIO_DAILY
   if ((d != null && d > deviceMax) || (n != null && n > IP_DAILY)) {
     const now = new Date()

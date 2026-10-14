@@ -1,5 +1,7 @@
 import {maps} from './api/_lib/maps'
-import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
+import {scheduleExtract} from './api/_lib/schedule-extract'
+import {MAX_SCHEDULE_REQUEST} from './src/lib/schedule-source'
+import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import fs from 'node:fs'
@@ -26,8 +28,30 @@ function crossOriginIsolation(): Plugin {
 
 function localMaps():Plugin{return{name:'local-maps',configureServer(server){server.middlewares.use('/api/maps',async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const request=new Request('http://localhost:8443/api/maps',{method:req.method,headers:{'Content-Type':'application/json'},...(req.method==='POST'?{body:Buffer.concat(chunks).toString()}: {})});const result=await maps(request);res.statusCode=result.status;result.headers.forEach((v,k)=>res.setHeader(k,v));res.end(await result.text())})}}}
 
+function localScheduleExtraction(key: string): Plugin {
+  const configure = (server: Pick<ViteDevServer, 'middlewares'>) => {
+    server.middlewares.use('/api/schedule-extract', async (req, res) => {
+      try {
+        const chunks: Buffer[] = []; let size = 0
+        for await (const chunk of req) {
+          const buffer = Buffer.from(chunk); size += buffer.length
+          if (size > MAX_SCHEDULE_REQUEST) { res.statusCode = 413; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ error: 'Prepared request exceeds 4.5 MB. Select fewer pages.' })); return }
+          chunks.push(buffer)
+        }
+        const headers = new Headers()
+        for (const [name, value] of Object.entries(req.headers)) if (value) headers.set(name, Array.isArray(value) ? value.join(',') : value)
+        const request = new Request(`http://${req.headers.host ?? 'localhost:8443'}/api/schedule-extract`, { method: req.method, headers, ...(req.method === 'POST' ? { body: Buffer.concat(chunks).toString() } : {}) })
+        const response = await scheduleExtract(request, key)
+        res.statusCode = response.status; response.headers.forEach((value, name) => res.setHeader(name, value)); res.end(await response.text())
+      } catch { res.statusCode = 500; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ error: 'Extraction failed. Retry or enter classes manually.' })) }
+    })
+  }
+  return { name: 'local-schedule-extraction', configureServer: configure, configurePreviewServer: configure }
+}
+
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  const serverEnv = loadEnv(mode, configDirectory, '')
   const androidPreview = mode === 'android-preview'
   // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
   const emitSourcemaps = mode === 'development'
@@ -44,6 +68,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       crossOriginIsolation(),
       localMaps(),
+      localScheduleExtraction(process.env.GEMINI_API_KEY ?? serverEnv.GEMINI_API_KEY ?? ''),
       react(),
       tailwindcss(),
       figmaSiteConfiguration(siteConfiguration),

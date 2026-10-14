@@ -4,6 +4,9 @@ import { fmtDay, fmtHours, fmtTime, type CalEvent, type PalId, type PalState } f
 import { Pal } from '../pals/Pal'
 import { Calendar, Cards, ChevronL, Clip, Glyph, Mic, Quiz, Send, Speaker, SpeakerOff } from './Icons'
 import type { HandsFreeState } from '../lib/handsfree'
+import { IMPORT_ACCEPT } from '../lib/study-files'
+import { getFile } from '../lib/library'
+import { supportedScheduleFile } from '../lib/schedule-source'
 
 /** The pal's current line: greeting or latest reply. Lives only in the speech bubble. */
 export interface MascotBubble {
@@ -318,7 +321,7 @@ export function Chat(p: Props) {
                   <button type="button" onClick={() => fileRef.current?.click()} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover:text-ink" aria-label="Attach a reviewer or notes" title="Attach a reviewer or notes">
                     <Clip className="size-[18px]" />
                   </button>
-                  <input ref={fileRef} type="file" accept=".pdf,.txt,.md,image/*" multiple hidden onChange={(e) => { const files=[...(e.target.files??[])]; if(files.length)p.onAttach!(files); e.target.value = '' }} />
+                  <input ref={fileRef} type="file" accept={IMPORT_ACCEPT} multiple hidden onChange={(e) => { const files=[...(e.target.files??[])]; if(files.length)p.onAttach!(files); e.target.value = '' }} />
                 </>
               )}
               <textarea
@@ -639,6 +642,7 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
           </>
         )}
         {c.scanned && <div className="mt-2.5 -ml-1"><Btn onClick={() => onCard(m.id, 'read')}>Open it</Btn></div>}
+        <ScheduleFileAction fileId={c.fileId} onClick={() => onCard(m.id, 'classSchedule')} />
       </div>
     )
   }
@@ -718,6 +722,16 @@ function CardView({ m, events, onCard, onHover }: { m: Msg } & Props) {
   }
 
   return null
+}
+
+function ScheduleFileAction({ fileId, onClick }: { fileId: string; onClick: () => void }) {
+  const [supported, setSupported] = useState(false)
+  useEffect(() => {
+    let active = true
+    getFile(fileId).then(file => { if (active) setSupported(!!file && supportedScheduleFile(file)) }).catch(() => {})
+    return () => { active = false }
+  }, [fileId])
+  return supported ? <div className="mt-2.5 -ml-1"><Btn onClick={onClick}>Extract class schedule</Btn></div> : null
 }
 
 export function Boundary({ name }: { name: string }) {

@@ -33,6 +33,7 @@ The web app and its AI proxy deploy together. Users never need their own API key
    | `PAL_IP_DAILY` | per network per day, default `200` | no |
 
    **Never** add `VITE_GROQ_API_KEY` to Vercel. Anything starting with `VITE_` ends up inside the app where anyone can read it.
+   **Class schedule imports:** `/api/schedule-extract` requires the server-side `GEMINI_API_KEY` and uses `gemini-3.1-flash-lite` for image/text extraction. Without it, manual entry remains available. Never use a `VITE_` variable for this key. Local Vite development reads the same key from the shell or a private `.env.local`; restart Vite after configuring it. Extraction shares the existing daily chat allowance and origin restrictions.
 5. **Deploy.** The web build finds the proxy at `/api/groq` on its own; no `VITE_GROQ_PROXY_URL` is needed for the web.
 
 ## The Android app

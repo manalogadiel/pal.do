@@ -54,7 +54,7 @@ const LOCAL_MODEL_STORAGE = 'paldo_local_ai_model'
 const GROQ_PROXY_URL = import.meta.env.VITE_GROQ_PROXY_URL || (import.meta.env.PROD && !Capacitor.isNativePlatform() ? '/api/groq' : '')
 
 /** An anonymous id for this install, so the proxy can share the free quota fairly (a daily allowance per device) */
-function deviceId(): string {
+export function deviceId(): string {
   try {
     let id = localStorage.getItem('paldo.device')
     if (!id) {
