@@ -428,7 +428,7 @@ export default function App() {
     return () => clearTimeout(t)
   }, [mood])
 
-  const palState: PalState = micOn || typing || hf.state === 'awake' ? 'listening' : mood ? mood.state : isQuiet(now) || idleLong ? 'sleeping' : 'idle'
+  const palState: PalState = micOn || typing || hf.state === 'awake' || hf.state === 'thinking' ? 'listening' : mood ? mood.state : isQuiet(now) || idleLong ? 'sleeping' : 'idle'
   const feel = (state: PalState, ms = 1600) => setMood({ state, until: Date.now() + ms })
 
   /* ---------- voice ---------- */
@@ -528,7 +528,9 @@ export default function App() {
       setHeard('')
       setInterim('')
       if (phase === 'early') {
-        setBubble({ id: uid(), mascotId: palRef.current, text: 'Opening mic…', kind: 'response' })
+        playMicSound(true)
+        feel('listening', 8000)
+        setBubble({ id: uid(), mascotId: palRef.current, text: 'Listening… go ahead', kind: 'response' })
         return
       }
       if (phase === 'late') { announceWakeReady(); return }

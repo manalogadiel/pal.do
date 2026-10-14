@@ -144,7 +144,7 @@ function previewFrame(frame: Float32Array) {
       beginWakeClip(o)
     }
     // Still the same utterance: show it (a finished one is shown by the final read). Whisper "hears" these in noise
-    if (recordingFollowUp && !wakeClipPending && text.trim() && !PHANTOM.test(text)) o.onPreview?.(stripWakePhrase(text, o.pal, o.userName))
+    if ((recordingFollowUp || earlyWake) && text.trim() && !PHANTOM.test(text)) o.onPreview?.(stripWakePhrase(text, o.pal, o.userName))
   })
 }
 
@@ -165,15 +165,16 @@ let micLevel = 0
 let speechProb = 0
 export const voiceStatus = () => ({ state, mic: +micLevel.toFixed(4), speech: +speechProb.toFixed(2), audio: audioContext()?.state, track: (() => { const t = (vad as unknown as { _stream?: MediaStream } | null)?._stream?.getAudioTracks()[0]; return t ? `${t.readyState}${t.muted ? ' muted' : ''}${t.enabled ? '' : ' disabled'} ${t.label}` : null })(), detector: wakeDetector(), msPerStep: engine ? Math.round(engine.msPerStep) : null, score: engine?.lastScore ?? null, isolated: typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated })
 if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__palVoiceStatus = voiceStatus
-/** The wake clip is trigger-only. Command capture starts at the following utterance boundary. */
+/** The wake clip: triggers immediate awake state, and preserves utterance audio for one-breath commands. */
 function beginWakeClip(o: HandsFreeOptions, sourceId = utteranceId) {
   wakeClipPending = sourceId > lastEndedUtteranceId
   earlyWake = true
   ackedWake = false
   wakeGeneration++
+  recordingGeneration = wakeGeneration
   lastWake = Date.now()
-  followUntil = 0
-  set('listening')
+  followUntil = Date.now() + FOLLOW_UP_MS
+  set('awake')
   o.onPreview?.('')
   o.onWake?.('early')
   // Keep the source audio identity through async ONNX work; never consume a newer request.
@@ -291,7 +292,7 @@ async function handle(audio: Float32Array, overPal: boolean, followUp: boolean, 
   const clip = audio.length > RATE * MAX_SECONDS ? audio.slice(0, RATE * MAX_SECONDS) : audio
   // A following clip can already be queued while the wake clip is being transcribed.
   followUp ||= !overPal && confirmedWakeUtteranceId >= 0 && sourceId > confirmedWakeUtteranceId && Date.now() < followUntil
-  if (!overPal && followUp) set('thinking')
+  if (!overPal && (followUp || earlyWake || state === 'awake')) set('thinking')
   const t0 = Date.now()
   const local = await hear(clip.slice(), undefined, followUp && !overPal && o.pal === 'jhyvie' ? 'tagalog' : 'english')
   if (import.meta.env.DEV) console.info(`[hf] read ${(clip.length / RATE).toFixed(1)}s of audio in ${Date.now() - t0}ms: "${local.trim()}"`)
@@ -327,6 +328,7 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
     const acked = ackedWake
     earlyWake = ackedWake = false
     if (again) {
+      set('thinking')
       const text = (await best(local)).trim()
       const command = stripWakePhrase(text, o.pal, o.userName)
       if (command.trim()) {
@@ -341,6 +343,7 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
     // Silence or noise that Whisper "heard" as "Thank you." / "Bye-bye.": not a request, keep listening
     if (PHANTOM.test(local)) { followUntil = Date.now() + FOLLOW_UP_MS; return set('awake') }
     followUntil = 0
+    set('thinking')
     const text = (await best(local)).trim()
     const stripped = stripWakePhrase(text, o.pal, o.userName)
     const command = acked ? dropAck(stripped) : stripped
@@ -373,6 +376,7 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
   }
 
   // A wake word was heard! Check if user spoke an inquiry in one breath: ("Hi Rei, what's my schedule?")
+  set('thinking')
   const text = (await best(local)).trim()
   const command = stripWakePhrase(text, o.pal, o.userName)
   if (command.trim()) {

@@ -473,10 +473,13 @@ function MicOrb({
               <span className="ring ring-2 absolute inset-0 rounded-full bg-accent" />
             </>
           )}
+          {!live && handsFree?.thinking && (
+            <span className="ring absolute inset-0 rounded-full bg-accent/60 animate-pulse" />
+          )}
           <Mic className={`relative ${size > 70 ? 'size-8' : 'size-6'}`} />
         </button>
       </div>
-      <span className={`line-clamp-2 max-w-[300px] text-center text-[12px] font-medium ${live || handsFree?.heard ? 'text-accent' : 'text-ink-3'}`}>
+      <span className={`line-clamp-2 max-w-[300px] text-center text-[12px] font-medium ${live || handsFree?.heard || handsFree?.thinking ? 'text-accent' : 'text-ink-3'}`}>
         {label}
       </span>
     </div>

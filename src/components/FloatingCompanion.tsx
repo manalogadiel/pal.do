@@ -91,6 +91,7 @@ export function CompanionCard({
   const upcoming = events.find((e) => e.start > now && e.status !== 'proposed' && e.kind !== 'deadline')
 
   const isListening = handsFree?.state === 'awake'
+  const isThinking = handsFree?.state === 'thinking'
   const isMicActive = handsFree?.on && handsFree?.state !== 'off' && handsFree?.state !== 'error'
 
   // Responsive mode flags
@@ -133,15 +134,17 @@ export function CompanionCard({
             className={`size-2 shrink-0 rounded-full ${
               isListening
                 ? 'bg-green-400 animate-ping'
-                : isMicActive
-                  ? 'bg-accent animate-pulse'
-                  : 'bg-ink/30'
+                : isThinking
+                  ? 'bg-amber-400 animate-pulse'
+                  : isMicActive
+                    ? 'bg-accent animate-pulse'
+                    : 'bg-ink/30'
             }`}
             aria-hidden
           />
           <span className="truncate text-xs font-semibold tracking-tight text-ink">{palName}</span>
           <span className="truncate text-[10px] text-ink-3">
-            {isListening ? '· Listening…' : isMicActive ? '· Active' : '· Chronos'}
+            {isListening ? '· Listening…' : isThinking ? '· Thinking…' : isMicActive ? '· Active' : '· Chronos'}
           </span>
         </div>
 
@@ -280,7 +283,13 @@ export function CompanionCard({
                 aria-hidden
               />
             )}
-            {isMicActive && !isListening && (
+            {isThinking && (
+              <span
+                className="absolute size-24 rounded-full ring-2 ring-amber-400/40 animate-pulse pointer-events-none"
+                aria-hidden
+              />
+            )}
+            {isMicActive && !isListening && !isThinking && (
               <span
                 className="absolute size-24 rounded-full ring-2 ring-accent/25 animate-pulse pointer-events-none"
                 aria-hidden
@@ -311,9 +320,11 @@ export function CompanionCard({
                 <p className="mt-1 text-[10px] text-ink-3 transition-colors group-hover:text-ink-2 truncate max-w-[200px]">
                   {isListening
                     ? 'Listening to you…'
-                    : handsFree?.on
-                      ? `Say "Hi ${palName}"`
-                      : 'Tap: controls · Double-tap: full app'}
+                    : isThinking
+                      ? 'Thinking…'
+                      : handsFree?.on
+                        ? `Say "Hi ${palName}"`
+                        : 'Tap: controls · Double-tap: full app'}
                 </p>
               )
             )}
