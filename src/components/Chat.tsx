@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { describeDraft, type Card } from '../lib/agent'
 import { fmtDay, fmtHours, fmtTime, type CalEvent, type PalId, type PalState } from '../lib/core'
 import { Pal } from '../pals/Pal'
@@ -62,7 +62,7 @@ interface Props {
   thinking?: boolean
   onCancelReply?: () => void
   /** The paperclip: a reviewer, handout or notes for the Study library */
-  onAttach?: (file: File) => void
+  onAttach?: (files: File[]) => void
 }
 
 /** What the hands-free chip says, and its dot */
@@ -104,7 +104,8 @@ export function Chat(p: Props) {
   const [text, setText] = useState('')
   const [voiceMode, setVoiceMode] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
-  const end = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const followBottom = useRef(true)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const speech = useSpeech(p.bubble)
@@ -139,33 +140,30 @@ export function Chat(p: Props) {
   const shownState: PalState = speech.typing && (p.palState === 'idle' || p.palState === 'sleeping') ? 'talking' : p.palState
   const logOpen = !p.compact || p.open
 
-  const scrollToBottom = useCallback((instant = false) => {
+  const scrollToBottom = useCallback(() => {
     if (feedRef.current) {
       feedRef.current.scrollTo({
         top: feedRef.current.scrollHeight,
-        behavior: instant ? 'auto' : 'smooth',
+        behavior: 'auto',
       })
     }
-    end.current?.scrollIntoView({ behavior: instant ? 'auto' : 'smooth', block: 'end' })
   }, [])
 
-  // Auto-scroll when messages update, card resolves, log opens, pal height settles, or the hands-free chip
-  // appears/goes (it makes the composer taller, which would tuck the newest message under the pal row)
-  useEffect(() => {
-    scrollToBottom(false)
-  }, [p.msgs.length, p.msgs.at(-1)?.resolved, p.open, rowH, p.handsFree?.on, p.thinking, scrollToBottom])
+  // Follow growing replies and composer changes, while allowing people to scroll back through history.
+  useLayoutEffect(() => {
+    if (followBottom.current) scrollToBottom()
+  }, [p.msgs, p.open, rowH, p.thinking, voiceMode, p.micOn, p.interim, p.handsFree?.heard, scrollToBottom])
 
-  // On page mount / reload, ensure feed immediately scrolls to bottom so the last bubble is on top of the mascot
   useEffect(() => {
-    scrollToBottom(true)
-    const t1 = setTimeout(() => scrollToBottom(true), 50)
-    const t2 = setTimeout(() => scrollToBottom(true), 150)
-    const t3 = setTimeout(() => scrollToBottom(false), 300)
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-      clearTimeout(t3)
-    }
+    const feed = feedRef.current
+    const content = contentRef.current
+    if (!feed || !content) return
+    const resize = new ResizeObserver(() => {
+      if (followBottom.current) scrollToBottom()
+    })
+    resize.observe(feed)
+    resize.observe(content)
+    return () => resize.disconnect()
   }, [scrollToBottom])
 
   const send = () => {
@@ -224,7 +222,11 @@ export function Chat(p: Props) {
 
       {/* Log */}
       <div className={`grid min-h-0 overflow-hidden ${p.compact ? 'drawer' : 'flex-1 grid-rows-[minmax(0,1fr)]'}`} style={p.compact ? { gridTemplateRows: p.open ? '1fr' : '0fr', flex: p.open ? '1 1 0%' : '0 0 auto' } : undefined}>
-        <div ref={feedRef} className={`fade-top min-h-0 overflow-y-auto overscroll-contain px-6 ${logOpen ? 'pt-4 pb-2' : 'invisible'}`} role="log" aria-live="polite">
+        <div ref={feedRef} onScroll={() => {
+          const feed = feedRef.current
+          if (feed) followBottom.current = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 96
+        }} className={`fade-top min-h-0 overflow-y-auto overscroll-contain px-6 ${logOpen ? 'pt-4 pb-2' : 'invisible'}`} role="log" aria-live="polite">
+          <div ref={contentRef}>
           {firstRun ? (
             <div className="land pt-[6vh] pb-6">
               <div className="text-[13px] font-medium text-ink-3">{greetingTime()}</div>
@@ -279,7 +281,8 @@ export function Chat(p: Props) {
             </div>
           )}
           {/* Spacer = pal row height, so scrolling to the end lifts the newest message above the pal */}
-          <div ref={end} aria-hidden style={overlay ? { height: rowH + 20 } : undefined} />
+          <div aria-hidden style={overlay ? { height: rowH + 20 } : undefined} />
+          </div>
         </div>
       </div>
 
@@ -314,7 +317,7 @@ export function Chat(p: Props) {
                   <button type="button" onClick={() => fileRef.current?.click()} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover:text-ink" aria-label="Attach a reviewer or notes" title="Attach a reviewer or notes">
                     <Clip className="size-[18px]" />
                   </button>
-                  <input ref={fileRef} type="file" accept=".pdf,.txt,.md,image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onAttach!(f); e.target.value = '' }} />
+                  <input ref={fileRef} type="file" accept=".pdf,.txt,.md,image/*" multiple hidden onChange={(e) => { const files=[...(e.target.files??[])]; if(files.length)p.onAttach!(files); e.target.value = '' }} />
                 </>
               )}
               <textarea

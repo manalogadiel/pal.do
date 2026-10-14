@@ -72,7 +72,8 @@ const cloudHeaders = (apiKey: string): Record<string, string> => (apiKey ? { Aut
 /* ---------- Your PC's AI (Ollama): unlimited, used when the cloud is out ---------- */
 export const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 // The smartest local model in the bake-off (docs/local-model-comparison.md): 34/42, ~3 s a reply on a 16 GB M1
-export const DEFAULT_OLLAMA_MODEL = 'qwen3.5:9b'
+/** The same Qwen2.5 1.5B Instruct (Q4_K_M) the phone app ships, so the PC and the phone answer alike */
+export const DEFAULT_OLLAMA_MODEL = 'qwen2.5:1.5b-instruct'
 /** Evals run in Node, where there's no localStorage */
 let localOverride: { url: string; model: string } | null = null
 export function useLocalAiForEval(url: string, model: string) {
@@ -121,16 +122,8 @@ export async function listOllamaModels(url: string): Promise<string[] | null> {
   }
 }
 
-/**
- * The model this computer can run well. Chrome reports memory up to 8 (GB): 8 means 16 GB-class machines in practice,
- * which run the 9B. Less memory, or no report and few cores, gets the 4B.
- */
-export function recommendedOllamaModel(): string {
-  const nav = typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number })
-  const memory = nav?.deviceMemory
-  const cores = nav?.hardwareConcurrency ?? 8
-  return memory != null ? (memory >= 8 ? 'qwen3.5:9b' : 'qwen3.5:4b') : cores >= 8 ? 'qwen3.5:9b' : 'qwen3.5:4b'
-}
+/** The model to install on this computer: one model everywhere (1.1 GB, runs on any laptop) */
+export const recommendedOllamaModel = (): string => DEFAULT_OLLAMA_MODEL
 
 /**
  * Download a model into Ollama, reporting 0–1 as it goes. Ollama streams one JSON line per update; each layer has its
@@ -168,9 +161,9 @@ export async function pullOllamaModel(url: string, model: string, onProgress: (f
  */
 /**
  * If a model is too slow on this machine (see measureOllama), the faster one to use instead. From the bake-off
- * (docs/local-model-comparison.md): Gemma 4 E4B is twice as fast as the 9B and smarter than qwen3.5:4b
+ * (docs/local-model-comparison.md): Gemma 4 E2B is about twice as fast as E4B
  */
-export const FASTER_LOCAL: Record<string, string> = { 'qwen3.5:9b': 'gemma4:e4b-it-qat' }
+export const FASTER_LOCAL: Record<string, string> = {}
 /** A short reply slower than this (seconds, warm) means the machine needs the faster model */
 export const LOCAL_SPEED_BUDGET_S = 6
 
@@ -318,7 +311,7 @@ const OWN_NICKNAMES: Partial<Record<PalId, string>> = { jhyvie: 'jv|jhy|jhyvie',
 const ENGLISH = 'Reply in English only, even to Taglish.'
 
 // Every token here is paid on every message (free tier: 200k tokens/day per model), so keep these tight
-const SPOKEN_TEXT = 'Speech text: brief, no markdown/emojis; spell numbers/dates. Keep JSON/actions intact.'
+const SPOKEN_TEXT = 'Plain text. Times: digits; AM/PM on both ends (4 PM–6 PM).'
 const PAL_PROMPTS: Record<PalId, string> = {
   rei: `You are Rei, a male companion in pal.do. Direct, concise and respectful: answer first, one short reason if useful, no filler or flattery. Plainly flag bad ideas and suggest a better option. Up to three short sentences unless asked for more. ${ENGLISH}`,
   diel: `You are Diel, a male companion in pal.do. Gentle, warm, calm and patient. Acknowledge feelings only when expressed, then help with one manageable next step. Be honest with care; avoid unnecessary reassurance on factual questions. ${ENGLISH}`,

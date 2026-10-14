@@ -1,7 +1,8 @@
+import { datedTasks, isTaskDone } from './tasks'
 // Questions about their own schedule, answered from the calendar itself: instant, exact, the same on every model and
 // offline. "What are my plans tomorrow?", "when am I free today?", "what's my next schedule?", "how much time before my
 // Bio exam?", "what's due this week?". Advice ("what do you suggest?") is the model's; this only states facts.
-import { at, DAY, fmtDay, fmtDur, fmtTime, HOUR, startOfDay, startOfWeek, type CalEvent, type Kind, type Task } from './core'
+import { at, DAY, fmtDay, fmtDur, fmtReplyTime as fmtTime, HOUR, startOfDay, startOfWeek, type CalEvent, type Kind, type Task } from './core'
 import { clockTime, namedDay, parseHours, parseWhen } from './parse'
 import { freeGaps, type Prefs } from './schedule'
 import { weekInsights } from './insights'
@@ -31,7 +32,7 @@ const KIND_WORDS: [RegExp, Kind[]][] = [
   [/\b(shifts?|duty|work)\b/i, ['shift']],
   [/\b(deadlines?|due|submissions?|requirements?)\b/i, ['deadline']],
 ]
-const SCHEDULE_WORDS = /\b(plans?|schedules?|sched|agenda|calendar|ganap|gagawin|lakad|happening|on my plate|do i have|have i got|may .* ba|meron (ba )?ako|anong? (meron|ganap|sched\w*)|what'?s on|what is on|what do i have)\b/i
+const SCHEDULE_WORDS = /\b(plans?|schedules?|sched|agenda|calendar|ganap|gagawin|lakad|happening|on my plate|do i have|have i got|may .* ba|meron (ba )?ako|anong? (mga )?plano|plano ko|anong? (meron|ganap|sched\w*)|what'?s on|what is on|what do i have)\b/i
 
 /** "tonight" → 5pm–midnight; "this afternoon" → noon–6pm; "this morning" → 5am–noon */
 function partOfDay(text: string, day: number): { from?: number; to?: number; label?: string } {
@@ -111,7 +112,7 @@ function until(ms: number) {
   if (d >= 1) return `${d} day${d > 1 ? 's' : ''}${rest >= HOUR ? ` ${Math.floor(rest / HOUR)}h` : ''}`
   return fmtDur(ms / HOUR)
 }
-const span = (e: CalEvent) => (e.kind === 'deadline' ? `${e.title}, due ${fmtTime(e.start)}` : `${e.title} ${fmtTime(e.start)}–${fmtTime(e.end)}`)
+const span = (e: CalEvent) => (e.kind === 'deadline' ? `${e.title}, due ${fmtTime(e.start)}` : `${e.title} ${fmtTime(e.start)}–${fmtTime(e.end)}${startOfDay(e.end) !== startOfDay(e.start) ? ` (${fmtDay(e.end)})` : ''}`)
 const list = (items: string[], max = 6) => (items.length > max ? `${items.slice(0, max).join('; ')}; and ${items.length - max} more` : items.join('; '))
 const words = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !/^(my|the|ang|ko|yung|sa|na|ba|is|are|of|for|to)$/.test(w))
 
@@ -126,7 +127,7 @@ export function answerScheduleQuestion(q: ScheduleQuestion, d: ScheduleData): st
 
   if (q.type === 'day') {
     const items = ev.filter((e) => startOfDay(e.start) === q.day && (q.day !== startOfDay(now) || e.end > now) && (!q.kinds || q.kinds.includes(e.kind) || (q.kinds.includes('deadline') && !!e.taskId && e.kind === 'deadline')))
-    const tasks = q.kinds?.includes('exam') ? d.tasks.filter((t) => t.kind === 'exam' && startOfDay(t.due) === q.day && !items.some((e) => e.taskId === t.id)) : []
+    const tasks = q.kinds?.includes('exam') ? datedTasks(d.tasks).filter((t) => t.kind === 'exam' && startOfDay(t.due) === q.day && !items.some((e) => e.taskId === t.id)) : []
     const all = [...items.map(span), ...tasks.map((t) => `${t.title} ${fmtTime(t.due)}`)]
     const what = q.kinds ? (q.kinds[0] === 'exam' ? L('exams', 'exam') : q.kinds[0] === 'class' ? L('classes', 'klase') : q.kinds[0] === 'shift' ? L('shifts', 'shift') : L('deadlines', 'deadline')) : ''
     const label = q.day === startOfDay(now) && !q.kinds ? L('Still today', 'Natitira ngayon') : `${q.label[0].toUpperCase()}${q.label.slice(1)}`
@@ -182,7 +183,7 @@ export function answerScheduleQuestion(q: ScheduleQuestion, d: ScheduleData): st
     if (!want.length) return L('Which one? Tell me its name.', 'Alin? Sabihin mo ang pangalan.')
     const score = (title: string) => words(title).filter((w) => want.includes(w)).length
     const evs = ev.filter((e) => e.end > now && score(e.title) > 0 && fitsKind(e.kind)).map((e) => ({ title: e.title, at: e.start, kind: e.kind as string, s: score(e.title), taskId: e.taskId }))
-    const tks = d.tasks.filter((t) => t.due > now && score(t.title) > 0 && fitsKind(t.kind)).map((t) => ({ title: t.title, at: t.due, kind: t.kind as string, s: score(t.title) + 0.5, taskId: t.id }))
+    const tks = datedTasks(d.tasks).filter((t) => t.due > now && score(t.title) > 0 && fitsKind(t.kind)).map((t) => ({ title: t.title, at: t.due, kind: t.kind as string, s: score(t.title) + 0.5, taskId: t.id }))
     // The best name match, soonest first; the exam itself over its own review blocks
     const best = [...evs.filter((e) => e.kind !== 'work'), ...tks, ...evs.filter((e) => e.kind === 'work')].sort((a, b) => b.s - a.s || a.at - b.at)[0]
     if (!best) return L(`I don't see "${q.query}" on your calendar. Want to add it?`, `Wala akong nakitang "${q.query}" sa calendar mo. I-add natin?`)
@@ -203,7 +204,7 @@ export function answerScheduleQuestion(q: ScheduleQuestion, d: ScheduleData): st
 
   if (q.type === 'due') {
     const end = startOfDay(now) + q.days * DAY
-    const due = d.tasks.filter((t) => t.due > now && t.due < end).sort((a, b) => a.due - b.due)
+    const due = datedTasks(d.tasks).filter((t) => t.due > now && t.due < end).sort((a, b) => a.due - b.due)
     const label = q.days === 1 ? 'today' : q.days === 14 ? 'in the next two weeks' : 'this week'
     if (!due.length) return L(`Nothing due ${label}.`, `Walang due ${label}.`)
     const items = due.map((t) => `${t.title} (${fmtDay(t.due).replace(/,.*/, '')} ${fmtTime(t.due)}, in ${until(t.due - now)})`)

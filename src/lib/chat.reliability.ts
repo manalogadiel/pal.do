@@ -21,7 +21,7 @@ export async function runChatReliabilityTests() {
   })
   await check('exam task facts retain the exact deadline clock time', () => {
     const facts = buildContext(now, [], [{ id: 't', title: 'App Dev exam', kind: 'exam', due: at(day + 86400000, 16), hours: 2, doneHours: 0 }], null)
-    return facts.full.includes('4pm')
+    return facts.full.includes('4 PM')
   })
   await check('non-string model text is rejected without crashing', () => sanitizeAi({ text: { bad: true } as unknown as string }, 'hi', now) === null)
   await check('forced local calls never contact the cloud even with a key', async () => {
@@ -411,7 +411,7 @@ export async function runChatReliabilityTests() {
     const exam: CalEvent = { id: 'x', title: 'Bio exam', kind: 'exam', start: at(day + 86400000, 15), end: at(day + 86400000, 17), status: 'planned' }
     const ask = (t: string) => { const q = parseScheduleQuestion(t, now); return q ? answerScheduleQuestion(q, { events: [exam], tasks: [], now }) : '' }
     const focus = updateConversationFocus(emptyFocus(), 'do i have an exam tomorrow', now)
-    return /Yes.*Bio exam 3pm/.test(ask('do i have an exam tomorrow')) && /Yes.*Bio exam/.test(ask("no i'm asking if i have an exam tomorrow"))
+    return /Yes.*Bio exam 3 PM/.test(ask('do i have an exam tomorrow')) && /Yes.*Bio exam/.test(ask("no i'm asking if i have an exam tomorrow"))
       && /Bio exam.*in/.test(ask('when is my bio exam?')) && /left before Bio exam/.test(ask('how much time do i have before my bio exam'))
       && focus.directive === 'question' && focus.focus.intent === 'none'
       && parseScheduleQuestion('can you add gym at 5pm tomorrow?', now) === null && parseScheduleQuestion('what schedule do you suggest for this', now) === null

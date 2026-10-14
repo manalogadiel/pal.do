@@ -1,9 +1,14 @@
 import unittest
+from pathlib import Path
 from server import validate_request, PROFILE, allowed_origin, Budget
 class ServiceTests(unittest.TestCase):
-    def test_profiles_are_male(self):
-        self.assertEqual(PROFILE['jhyvie']['voice'], 'fil-PH-AngeloNeural')
-        self.assertEqual(PROFILE['diel']['voice'], 'en-US-BrianNeural')
+    def test_distinct_natural_profiles(self):
+        expected = {'rei':'en-US-GuyNeural', 'diel':'en-US-ChristopherNeural', 'jhyvie':'fil-PH-AngeloNeural', 'jaypee':'en-US-RogerNeural'}
+        api = (Path(__file__).resolve().parents[2] / 'api/tts.ts').read_text()
+        for pal, voice in expected.items():
+            self.assertEqual(PROFILE[pal], {'voice':voice, 'rate':'+0%', 'pitch':'+0Hz'})
+            self.assertIn(f"{pal}: {{ voice: '{voice}', rate: '+0%', pitch: '+0Hz' }}", api)
+        self.assertEqual(len({p['voice'] for p in PROFILE.values()}), 4)
     def test_reject_bad_requests(self):
         for payload in ({}, {'pal':'unknown','text':'hi'}, {'pal':'rei','text':''}, {'pal':'rei','text':'x'*2001}, {'pal':'rei','text':3}):
             with self.assertRaises(ValueError): validate_request(payload)

@@ -11,7 +11,7 @@
 // through the speaker are ignored.
 import type { MicVAD } from '@ricky0123/vad-web'
 import type { PalId } from './core'
-import { isEcho, matchWake, wakesOtherPal } from './wake'
+import { isEcho, matchWake, stripWakePhrase, wakesOtherPal } from './wake'
 import { WakeEngine, type Ort } from './wakeword'
 
 export type HandsFreeState = 'off' | 'loading' | 'listening' | 'awake' | 'thinking' | 'paused' | 'error'
@@ -26,11 +26,7 @@ export interface HandsFreeOptions {
   oneShot?: boolean
   /** mic: waiting for the browser's microphone permission. tap: ready, but the browser wants one tap first */
   onState: (s: HandsFreeState, info?: { progress?: number; error?: string; mic?: boolean; tap?: boolean }) => void
-  /** "Hi Jhyvie" with nothing after it: Pal says "yes?" and takes the next sentence without the wake word */
-  /**
-   * "Hi {pal}" heard. early: the wake-word engine (or the live preview) caught it while they may still be talking, so
-   * the mic-open sound and rings come now; late: they stopped after the name (open the live words); full: both at once
-   */
+  /** early: wake audio detected; full: wake clip ended, open capture; late: following speech is already captured. */
   onWake?: (phase: 'early' | 'late' | 'full') => void
   onCommand: (text: string) => void
   /** "Hey Jhyvie" heard while another pal listens: the name they used, and the request after it ('' when none) */
@@ -59,6 +55,12 @@ let speaking = false
 let line = ''
 /** The clip being recorded began while Pal was talking */
 let startedSpeaking = false
+let recordingFollowUp = false
+let recordingGeneration = 0
+let wakeGeneration = 0
+let utteranceId = 0
+let lastEndedUtteranceId = -1
+let confirmedWakeUtteranceId = -1
 let followUntil = 0
 let lastWake = 0
 let wakeLock: { release: () => Promise<void> } | null = null
@@ -109,6 +111,8 @@ const PREVIEW_MIN_SAMPLES = RATE * 0.6
 let liveFrames: Float32Array[] | null = null
 /** This utterance already woke Pal from its preview: its end decides "Yes?" (just the name) or the request */
 let earlyWake = false
+/** The detector already identified this audio as the wake call, regardless of its transcript. */
+let wakeClipPending = false
 /** …and they already stopped after the name (the live words took over): its end mustn't wake again */
 let ackedWake = false
 let liveSamples = 0
@@ -121,6 +125,7 @@ function previewFrame(frame: Float32Array) {
   if (previewBusy || liveSamples < PREVIEW_MIN_SAMPLES || Date.now() - lastPreview < PREVIEW_MS || liveSamples > RATE * MAX_SECONDS) return
   // The engine listens for "Hi {pal}": no need to read every passing sentence just to look for it
   if (state === 'listening' && engine?.ready) return
+  const utterance = liveFrames
   const audio = new Float32Array(liveSamples)
   let at = 0
   for (const f of liveFrames) { audio.set(f, at); at += f.length }
@@ -130,19 +135,16 @@ function previewFrame(frame: Float32Array) {
   // While waiting for "Hi {pal}", a short read is enough to spot it; once awake, the whole thing for the words
   const t0 = Date.now()
   const seconds = audio.length / RATE
-  void hear(audio, state === 'listening' ? 12 : undefined).then((text) => {
+  void hear(audio, recordingFollowUp && !wakeClipPending ? undefined : 12, recordingFollowUp && !wakeClipPending && o?.pal === 'jhyvie' ? 'tagalog' : 'english').then((text) => {
     previewBusy = false
     if (import.meta.env.DEV) console.info(`[hf] preview ${seconds.toFixed(1)}s in ${Date.now() - t0}ms: "${text.trim()}"`)
+    if (liveFrames !== utterance || !o || opts !== o || handedOff) return
     // "Hi Rei" caught mid-utterance: the mic-open sound and rings now, not after the clip ends and is re-read
     if (liveFrames && o && opts === o && state === 'listening' && !earlyWake && !speaking && matchWake(text, o.pal, o.userName)) {
-      earlyWake = true
-      lastWake = Date.now()
-      followUntil = Date.now() + FOLLOW_UP_MS
-      set('awake')
-      o.onWake?.('early')
+      beginWakeClip(o)
     }
     // Still the same utterance: show it (a finished one is shown by the final read). Whisper "hears" these in noise
-    if (liveFrames && opts === o && text.trim() && !PHANTOM.test(text)) o?.onPreview?.(text.trim())
+    if (recordingFollowUp && !wakeClipPending && text.trim() && !PHANTOM.test(text)) o.onPreview?.(stripWakePhrase(text, o.pal, o.userName))
   })
 }
 
@@ -163,47 +165,38 @@ let micLevel = 0
 let speechProb = 0
 export const voiceStatus = () => ({ state, mic: +micLevel.toFixed(4), speech: +speechProb.toFixed(2), audio: audioContext()?.state, track: (() => { const t = (vad as unknown as { _stream?: MediaStream } | null)?._stream?.getAudioTracks()[0]; return t ? `${t.readyState}${t.muted ? ' muted' : ''}${t.enabled ? '' : ' disabled'} ${t.label}` : null })(), detector: wakeDetector(), msPerStep: engine ? Math.round(engine.msPerStep) : null, score: engine?.lastScore ?? null, isolated: typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated })
 if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__palVoiceStatus = voiceStatus
-/** Quiet this long right after the name: they stopped, say "Yes?". Talking this long (past the name's own tail): a request */
-const QUIET_MS = 250
-const TALKING_ON_MS = 200
-const NAME_TAIL_MS = 150
-let watchQuiet = -1
-let watchedMs = 0
-let talkingMs = 0
-let engineAt = 0
-function engineWake(score: number) {
-  const o = opts
-  if (import.meta.env.DEV) console.info(`[wakeword] heard "Hi ${o?.pal}" (${score.toFixed(2)}) while ${state}${speaking ? ', Pal talking' : ''}`)
-  // Over Pal's voice, Whisper confirms it isn't Pal's own words coming back; awake/thinking: already listening
-  if (!o || state !== 'listening' || speaking || handedOff || earlyWake) return
+/** The wake clip is trigger-only. Command capture starts at the following utterance boundary. */
+function beginWakeClip(o: HandsFreeOptions, sourceId = utteranceId) {
+  wakeClipPending = sourceId > lastEndedUtteranceId
   earlyWake = true
   ackedWake = false
-  lastWake = engineAt = Date.now()
-  followUntil = Date.now() + FOLLOW_UP_MS
-  watchQuiet = watchedMs = talkingMs = 0
-  set('awake')
+  wakeGeneration++
+  lastWake = Date.now()
+  followUntil = 0
+  set('listening')
+  o.onPreview?.('')
   o.onWake?.('early')
+  // Keep the source audio identity through async ONNX work; never consume a newer request.
+  if (!wakeClipPending) {
+    finishWakeClip(o, sourceId)
+  }
 }
-function watchFrame(isSpeech: number, ms: number) {
-  if (watchQuiet < 0) return
-  if (state !== 'awake' || handedOff || !earlyWake) { watchQuiet = -1; return }
-  watchedMs += ms
-  if (isSpeech < 0.35) watchQuiet += ms
-  else {
-    watchQuiet = 0
-    // Talking on past the name's own tail: a request
-    if (watchedMs > NAME_TAIL_MS) talkingMs += ms
-  }
-  if (talkingMs >= TALKING_ON_MS || watchedMs > 1500) {
-    // "Hi Rei, what's next?": a request, and the end of this utterance decides (no "Yes?" over them)
-    watchQuiet = -1
-    if (import.meta.env.DEV) console.info('[wakeword] they kept talking: taking it as the request')
-  } else if (watchQuiet >= QUIET_MS) {
-    watchQuiet = -1
-    ackedWake = true
-    if (import.meta.env.DEV) console.info('[wakeword] they stopped after the name: listening')
-    opts?.onWake?.('late')
-  }
+function finishWakeClip(o: HandsFreeOptions, sourceId = utteranceId) {
+  const followingSpeech = utteranceId > sourceId
+  if (followingSpeech && liveFrames) { recordingFollowUp = true; recordingGeneration = wakeGeneration }
+  confirmedWakeUtteranceId = sourceId
+  wakeClipPending = false
+  earlyWake = ackedWake = false
+  followUntil = Date.now() + FOLLOW_UP_MS
+  set('awake')
+  o.onPreview?.('')
+  o.onWake?.(followingSpeech ? 'late' : 'full')
+}
+function engineWake(score: number, sourceId = utteranceId) {
+  const o = opts
+  if (import.meta.env.DEV) console.info(`[wakeword] heard "Hi ${o?.pal}" (${score.toFixed(2)}) while ${state}`)
+  if (!o || state !== 'listening' || speaking || handedOff || earlyWake) return
+  beginWakeClip(o, sourceId)
 }
 /** "Yes? Add gym at 5": Pal's own "Yes?" caught at the start of the request */
 function dropAck(text: string) {
@@ -250,12 +243,12 @@ function loadWhisper(onProgress: (p: number) => void) {
 }
 
 /** maxTokens: stop after that many words-ish (a preview only needs to spot "Hi {pal}", and it's much faster) */
-function hear(audio: Float32Array, maxTokens?: number): Promise<string> {
+function hear(audio: Float32Array, maxTokens?: number, language = 'english'): Promise<string> {
   if (!worker) return Promise.resolve('')
   const id = ++seq
   return new Promise((resolve) => {
     waiting.set(id, resolve)
-    worker!.postMessage({ type: 'transcribe', id, audio, maxTokens }, [audio.buffer])
+    worker!.postMessage({ type: 'transcribe', id, audio, maxTokens, language }, [audio.buffer])
   })
 }
 
@@ -292,22 +285,23 @@ async function bestText(audio: Float32Array, local: string): Promise<string> {
 }
 
 /** One utterance, in order: a second sentence never overtakes the first. overPal: it began while Pal was talking. */
-async function handle(audio: Float32Array, overPal: boolean) {
+async function handle(audio: Float32Array, overPal: boolean, followUp: boolean, generation: number, sourceId: number) {
   const o = opts
-  if (!o || handedOff) return
+  if (!o || handedOff || generation !== wakeGeneration) return
   const clip = audio.length > RATE * MAX_SECONDS ? audio.slice(0, RATE * MAX_SECONDS) : audio
-  const followUp = !overPal && (o.oneShot || Date.now() < followUntil)
-  if (!overPal && !earlyWake) set('thinking')
+  // A following clip can already be queued while the wake clip is being transcribed.
+  followUp ||= !overPal && confirmedWakeUtteranceId >= 0 && sourceId > confirmedWakeUtteranceId && Date.now() < followUntil
+  if (!overPal && followUp) set('thinking')
   const t0 = Date.now()
-  const local = await hear(clip.slice())
+  const local = await hear(clip.slice(), undefined, followUp && !overPal && o.pal === 'jhyvie' ? 'tagalog' : 'english')
   if (import.meta.env.DEV) console.info(`[hf] read ${(clip.length / RATE).toFixed(1)}s of audio in ${Date.now() - t0}ms: "${local.trim()}"`)
-  if (opts !== o || handedOff) return
+  if (opts !== o || handedOff || generation !== wakeGeneration) return
   heard = local.trim()
   window.dispatchEvent(new Event(HEARD_EVENT))
   // The finished read replaces the step-by-step preview
-  if (!overPal) o.onPreview?.(heard)
+  if (!overPal && followUp) o.onPreview?.(stripWakePhrase(heard, o.pal, o.userName))
   if (overPal) return interrupt(o, local, clip)
-  await route(o, local, clip, followUp)
+  await route(o, local, clip, followUp, sourceId)
 }
 
 /** Heard while Pal was talking: only "Hi {pal}" that isn't Pal's own voice coming back stops it */
@@ -320,7 +314,7 @@ async function interrupt(o: HandsFreeOptions, local: string, clip: Float32Array 
 }
 
 /** What the device heard → wake, follow-up, or dropped. `clip` null: text only (tests), no cloud re-hearing. */
-async function route(o: HandsFreeOptions, local: string, clip: Float32Array | null, followUp: boolean) {
+async function route(o: HandsFreeOptions, local: string, clip: Float32Array | null, followUp: boolean, sourceId = utteranceId) {
   const best = (fallback: string) => (clip ? bestText(clip, fallback) : Promise.resolve(fallback))
   // Right after "Hi Jhyvie…" or a question from Pal: this sentence is for Pal, no wake word needed
   if (followUp) {
@@ -332,21 +326,20 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
     const early = earlyWake
     const acked = ackedWake
     earlyWake = ackedWake = false
-    if (again && (!again.command || (ack && isEcho(again.command, ack, o.pal)))) {
-      lastWake = Date.now()
-      followUntil = Date.now() + FOLLOW_UP_MS
-      set('awake')
-      // The engine's wake already said "Yes?" for this one: just keep listening
-      if (acked) return
-      return o.onWake?.(early ? 'late' : 'full')
-    }
+    if (again) return finishWakeClip(o, sourceId)
     // Silence or noise that Whisper "heard" as "Thank you." / "Bye-bye.": not a request, keep listening
     if (PHANTOM.test(local)) { followUntil = Date.now() + FOLLOW_UP_MS; return set('awake') }
     followUntil = 0
     const text = (await best(local)).trim()
+    const stripped = stripWakePhrase(text, o.pal, o.userName)
+    const command = acked ? dropAck(stripped) : stripped
+    if (!command.trim()) {
+      followUntil = Date.now() + FOLLOW_UP_MS
+      o.onPreview?.('')
+      return set('awake')
+    }
     if (o.oneShot) await stopHandsFree()
     else set('listening')
-    const command = acked ? dropAck(matchWake(text, o.pal, o.userName)?.command || text) : matchWake(text, o.pal, o.userName)?.command || text
     if (import.meta.env.DEV) console.info(`[hf] request: "${command}"`)
     if (command.trim()) o.onCommand(command)
     return
@@ -367,18 +360,8 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
     }
     return // not for Pal: dropped right here
   }
-  lastWake = Date.now()
-  if (!wake.command) {
-    followUntil = Date.now() + FOLLOW_UP_MS
-    set('awake')
-    o.onPreview?.('')
-    return o.onWake?.('full')
-  }
-  // The cloud re-hears the whole clip, wake phrase included; keep what came after the name
-  const heard = await best(local)
-  const command = matchWake(heard, o.pal, o.userName)?.command || wake.command
-  set('listening')
-  o.onCommand(command)
+  // A wake utterance only opens capture; even its transcription remainder is never a request.
+  finishWakeClip(o, sourceId)
 }
 
 async function keepScreenOn() {
@@ -426,7 +409,7 @@ async function begin(o: HandsFreeOptions) {
   try {
     if (o.noMic) {
       // Tests: the same loop and states, with heard text injected instead of a microphone
-      vad = { start: async () => {}, pause: async () => {}, destroy: async () => {} } as unknown as MicVAD
+      vad = { start: async () => {}, pause: async () => {}, destroy: async () => {}, setOptions: () => {} } as unknown as MicVAD
       lastWake = Date.now()
       return set('listening')
     }
@@ -465,28 +448,35 @@ async function begin(o: HandsFreeOptions) {
         for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i]
         micLevel = Math.max(Math.sqrt(sum / frame.length), micLevel * 0.9)
         speechProb = probs.isSpeech
-        engine?.push(frame)
-        watchFrame(probs.isSpeech, (frame.length / RATE) * 1000)
+        engine?.push(frame, utteranceId)
         previewFrame(frame)
       },
       onSpeechStart: () => {
+        utteranceId++
         liveFrames = []
         // A wake the engine caught just before the voice detector noticed speech belongs to this utterance
-        if (Date.now() - engineAt > 1500) earlyWake = ackedWake = false
+        if (!wakeClipPending) earlyWake = ackedWake = false
+        recordingFollowUp = !speaking && (!!opts?.oneShot || Date.now() < followUntil)
+        recordingGeneration = wakeGeneration
         opts?.onSpeech?.(true)
         liveSamples = 0
         lastPreview = Date.now() - PREVIEW_MS + 700 // first words after ~0.7s
         startedSpeaking = speaking
-        if (!speaking && opts) set(Date.now() < followUntil || opts.oneShot ? 'awake' : 'listening')
+        if (!speaking && opts) set(recordingFollowUp && !wakeClipPending ? 'awake' : 'listening')
       },
-      onVADMisfire: () => { liveFrames = null; opts?.onPreview?.(''); opts?.onSpeech?.(false) },
+      onVADMisfire: () => { lastEndedUtteranceId = utteranceId; liveFrames = null; opts?.onPreview?.(''); opts?.onSpeech?.(false); if (wakeClipPending && opts) finishWakeClip(opts) },
       onSpeechEnd: (audio: Float32Array) => {
         if (import.meta.env.DEV) console.info(`[hf] utterance ended (${(audio.length / RATE).toFixed(1)}s)`)
+        lastEndedUtteranceId = utteranceId
         liveFrames = null
         opts?.onSpeech?.(false)
         // A clip that began while Pal talked is judged as heard over Pal, even if it ends after
+        if (wakeClipPending && opts) return finishWakeClip(opts)
         const overPal = startedSpeaking || speaking
-        queue = queue.then(() => handle(audio, overPal)).catch(() => {})
+        const followUp = recordingFollowUp
+        const generation = recordingGeneration
+        const sourceId = utteranceId
+        queue = queue.then(() => handle(audio, overPal, followUp, generation, sourceId)).catch(() => {})
       },
     })
     // The wake-word engine on the same runtime; without it, Whisper is the wake detector (slower, still works)
@@ -524,7 +514,11 @@ export async function stopHandsFree(report = true) {
   clearTimeout(awakeTimer)
   engine?.dispose()
   engine = null
-  watchQuiet = -1
+  wakeClipPending = earlyWake = ackedWake = false
+  wakeGeneration++
+  lastEndedUtteranceId = utteranceId
+  confirmedWakeUtteranceId = -1
+  liveFrames = null
   document.removeEventListener('visibilitychange', onVisible)
   wakeLock?.release().catch(() => {})
   wakeLock = null
@@ -553,11 +547,29 @@ export function expectFollowUp(ms = FOLLOW_UP_MS) {
 
 export const isHandsFreeOn = () => vad != null
 
+/** Dev/tests: the wake detector fired before the completed audio is transcribed. */
+export function simulateWakeWord(boundary: 'current' | 'ended' | 'next' = 'current') {
+  const sourceId = ++utteranceId
+  liveFrames = boundary === 'current' ? [] : null
+  if (boundary !== 'current') lastEndedUtteranceId = sourceId
+  if (boundary === 'next') { utteranceId++; liveFrames = [] }
+  engineWake(1, sourceId)
+}
+
 /** Dev/tests: as if the device just heard this sentence (skips the audio stage) */
-export function simulateHeard(text: string) {
+export function simulateHeard(text: string, followingSpeech?: 'started' | 'ended') {
   const o = opts
   if (!o) return Promise.resolve()
+  const sourceId = liveFrames ? utteranceId : ++utteranceId
+  lastEndedUtteranceId = sourceId
+  liveFrames = null
+  if (followingSpeech) {
+    utteranceId++
+    liveFrames = followingSpeech === 'started' ? [] : null
+    if (followingSpeech === 'ended') lastEndedUtteranceId = utteranceId
+  }
+  if (wakeClipPending) { finishWakeClip(o); return Promise.resolve() }
   if (speaking) return (queue = queue.then(() => interrupt(o, text, null)).catch(() => {}))
   const followUp = !!o.oneShot || Date.now() < followUntil
-  return (queue = queue.then(() => route(o, text, null, followUp)).catch(() => {}))
+  return (queue = queue.then(() => route(o, text, null, followUp, sourceId)).catch(() => {}))
 }

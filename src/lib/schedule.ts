@@ -44,10 +44,12 @@ export interface Proposal {
 
 /** perDay: "study every day before the 17th" fills each day up to that many hours instead of spreading thin. */
 export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now: number, energy: Energy = 'afternoon', prefs: Prefs = {}, perDay?: number): Proposal {
+  if (task.due == null) return { blocks: [], shortfall: hoursNeeded, freeHours: 0, why: 'Choose a deadline before planning study time.' }
+  const due = task.due
   const busy = events.filter((e) => e.status !== 'done' && e.status !== 'missed')
   const startAt = Math.ceil(now / (15 * MIN)) * (15 * MIN)
   const days: number[] = []
-  for (let d = startOfDay(startAt); d <= task.due; d = addDays(d, 1)) days.push(d)
+  for (let d = startOfDay(startAt); d <= due; d = addDays(d, 1)) days.push(d)
   // Exams: leave the night before for a light review, not a cram.
   const perBlock = task.kind === 'exam' ? 1.5 : 1.25
   // "Review: Prelims", so a study block never looks like the exam itself moved
@@ -64,7 +66,7 @@ export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now
       for (let first = true; ; first = false) {
         const room = perDay ? perDay - placedOn(d).reduce((a, b) => a + (b.end - b.start) / HOUR, 0) : Infinity
         // 15-min break after each placed block, so two blocks never run back to back
-        const gaps = freeGaps(d, startAt, task.due, [...busy, ...out.map((b) => ({ ...b, end: b.end + 15 * MIN }))], prefs)
+        const gaps = freeGaps(d, startAt, due, [...busy, ...out.map((b) => ({ ...b, end: b.end + 15 * MIN }))], prefs)
         if (pass === 1 && first) freeHours += gaps.reduce((a, g) => a + (g.e - g.s) / HOUR, 0)
         let slot: { s: number; e: number } | null = null
         for (const h of SEARCH_FROM[energy]) {
@@ -92,7 +94,7 @@ export function propose(task: Task, hoursNeeded: number, events: CalEvent[], now
   out.sort((a, b) => a.start - b.start)
   out.forEach((b, i) => (b.seg = `${i + 1}/${out.length}`))
   const spread = new Set(out.map((b) => startOfDay(b.start))).size
-  const hasShift = busy.some((e) => e.kind === 'shift' && e.start < task.due && e.end > now)
+  const hasShift = busy.some((e) => e.kind === 'shift' && e.start < due && e.end > now)
   const why = out.length
     ? `${perDay ? `Up to ${fmtHours(perDay)} a day until the deadline, in sessions of at most ${perBlock}h with a break between` : `Spread over ${spread} day${spread > 1 ? 's' : ''} so no session runs longer than ${perBlock}h`}, placed around your classes${hasShift ? ' and shifts' : ''}, with a 15-min buffer after commutes. Nothing after ${fmtTime(at(startOfDay(now), Math.min(DAY_END, prefs.latestHour ?? DAY_END)))}${prefs.blockedDays?.length ? ', and your rest days stay free' : ''}.`
     : 'There are no free 45-minute windows left before the deadline.'
@@ -121,7 +123,7 @@ export function clashes(slots: Slot[], events: CalEvent[], skipId?: string) {
  * Null unless the only thing in the way is one commute, or nothing fits that day.
  */
 export function moveAside(slot: Slot, hit: CalEvent[], events: CalEvent[], now: number): { event: CalEvent; to: Slot } | null {
-  if (hit.length !== 1 || hit[0].kind !== 'commute') return null
+  if (hit.length !== 1 || (hit[0].kind !== 'commute' || hit[0].transportSource === 'user-trip')) return null
   const e = hit[0]
   const len = e.end - e.start
   const later = e.start >= slot.start
@@ -146,6 +148,7 @@ const MOVABLE_MAX = 3
 export function resolveClash(slot: Slot, kind: string, hit: CalEvent[], events: CalEvent[], now: number): { event: CalEvent; to: Slot; trimmed?: boolean } | null {
   if (hit.length !== 1) return null
   const other = hit[0]
+  if(other.transportSource==='user-trip')return null
   const rank = (k: string) => KEEP_RANK[k] ?? 3
   // Two equally flexible things (dinner over gym): no call to make, the new one gets a free time instead
   if (rank(other.kind) > MOVABLE_MAX || rank(other.kind) >= rank(kind)) return null

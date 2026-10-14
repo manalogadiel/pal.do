@@ -124,10 +124,10 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
   const finish = () => onDone({ pal, name: palName, userName: name || undefined, notify: notify === 'granted' })
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-paper">
+    <div className="welcome-screen fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-paper" data-step={step}>
       <div className="welcome-glow pointer-events-none absolute inset-0" aria-hidden />
-      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-[600px] flex-col px-5 pt-[max(20px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]">
-        <header className="flex h-10 items-center justify-between">
+      <div className="welcome-shell relative mx-auto flex min-h-[100dvh] w-full flex-col">
+        <header className="welcome-header flex min-h-11 items-center justify-between gap-4">
           <Wordmark className="text-[18px]" />
           {step !== 'intro' && (
             <div className="flex gap-1.5" aria-label={`Step ${at} of ${STEPS.length - 1}`}>
@@ -136,21 +136,33 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
           )}
         </header>
 
-        <main key={step} className="welcome-step flex flex-1 flex-col justify-center py-6">
-          {step === 'intro' && (
-            <div className="text-center">
-              <div className="flex items-end justify-center gap-[3vw] sm:gap-5">
+        <div className="welcome-layout">
+          <aside className="welcome-companion" aria-label={step === 'intro' ? 'Meet your Pals' : `Your Pal, ${palName}`}>
+            {step === 'intro' ? (
+              <div className="welcome-intro-pals">
                 {IDS.map((id, i) => (
                   <div key={id} className="welcome-rise" style={{ '--i': i } as React.CSSProperties}>
                     <IntroPal id={id} delay={900 + i * 180} />
                   </div>
                 ))}
               </div>
+            ) : (
+              <div className="welcome-selected-pal">
+                <Pal id={step === 'name' ? 'rei' : pal} size={240} state={step === 'ready' ? 'cheer' : 'idle'} className="welcome-companion-pal" float />
+                <p className="mt-5 font-serif text-[40px] leading-tight">{step === 'name' ? 'Rei' : palName}</p>
+                <p className="mt-2 text-[15px] text-ink-2">{PALS[step === 'name' ? 'rei' : pal].line}</p>
+              </div>
+            )}
+          </aside>
+          <main key={step} className="welcome-step min-w-0 py-6">
+
+          {step === 'intro' && (
+            <div className="welcome-intro text-center">
               <h1 className="welcome-fade mt-8 font-serif text-[clamp(34px,9vw,52px)] leading-[1.02] tracking-[-0.02em]" style={{ '--d': '700ms' } as React.CSSProperties}>
-                Hi! We’re your study pals.
+                Hi! We’re your Pals.
               </h1>
               <p className="welcome-fade mx-auto mt-3 max-w-[420px] text-[15px] leading-relaxed text-ink-2" style={{ '--d': '900ms' } as React.CSSProperties}>
-                Plan your week, beat deadlines and study smarter. Just talk to us.
+                Plan your day, keep up with deadlines and make time for what matters. Just talk to us.
               </p>
               <button onClick={next} className="welcome-fade press mt-8 h-12 w-full max-w-[320px] rounded-full bg-ink text-[16px] font-medium text-paper" style={{ '--d': '1100ms' } as React.CSSProperties}>
                 Get started
@@ -160,7 +172,7 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
 
           {step === 'name' && (
             <form onSubmit={(e) => { e.preventDefault(); next() }} className="text-center">
-              <Pal id="rei" size={110} state={name ? 'happy' : 'talking'} className="mx-auto" />
+              <Pal id="rei" size={110} state={name ? 'happy' : 'talking'} className="welcome-inline-pal mx-auto" />
               <h1 className="mt-5 font-serif text-[clamp(30px,8vw,42px)] leading-[1.05] tracking-[-0.02em]">First, what should we call you?</h1>
               <input
                 autoFocus
@@ -179,7 +191,7 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
           {step === 'pal' && (
             <div>
               <p className="text-center text-[15px] text-ink-2">{name ? `Nice to meet you, ${name}!` : 'Nice to meet you!'}</p>
-              <h1 className="mt-1 text-center font-serif text-[clamp(30px,8vw,42px)] leading-[1.05] tracking-[-0.02em]">Pick your pal.</h1>
+              <h1 className="mt-1 text-center font-serif text-[clamp(30px,8vw,42px)] leading-[1.05] tracking-[-0.02em]">Pick your Pal.</h1>
               <PalStage pal={pal} hello={hello} onPick={(id) => { setPal(id); setHello(id) }} />
               <Nav onBack={back} next={<button onClick={next} className="press h-12 flex-1 rounded-full bg-ink text-[15px] font-medium text-paper">Continue with {palName}</button>} />
             </div>
@@ -188,7 +200,7 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
           {step === 'permissions' && (
             <div>
               <div className="flex items-center gap-3">
-                <Pal id={pal} size={64} state="talking" />
+                <Pal id={pal} size={64} state="talking" className="welcome-inline-pal" />
                 <h1 className="font-serif text-[clamp(26px,7vw,36px)] leading-[1.05] tracking-[-0.02em]">A few permissions, so I can help</h1>
               </div>
               <div className="mt-5 space-y-2.5">
@@ -203,7 +215,7 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
           {step === 'ai' && (
             <div>
               <div className="flex items-center gap-3">
-                <Pal id={pal} size={64} state={ai.phase === 'ready' ? 'cheer' : ai.phase === 'installing' ? 'listening' : 'talking'} />
+                <Pal id={pal} size={64} className="welcome-inline-pal" state={ai.phase === 'ready' ? 'cheer' : ai.phase === 'installing' ? 'listening' : 'talking'} />
                 <h1 className="font-serif text-[clamp(26px,7vw,36px)] leading-[1.05] tracking-[-0.02em]">{palName}’s offline brain</h1>
               </div>
               <p className="mt-3 text-[14.5px] leading-relaxed text-ink-2">
@@ -219,7 +231,7 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
 
           {step === 'ready' && (
             <div className="text-center">
-              <Pal id={pal} size={130} state="cheer" className="mx-auto" float />
+              <Pal id={pal} size={130} state="cheer" className="welcome-inline-pal mx-auto" float />
               <h1 className="mt-5 font-serif text-[clamp(30px,8vw,44px)] leading-[1.05] tracking-[-0.02em]">{name ? `You’re all set, ${name}!` : 'You’re all set!'}</h1>
               <ul className="mx-auto mt-5 max-w-[400px] space-y-2 text-left text-[14px] text-ink-2">
                 <Tip>Tell {palName} about your week: “Bio exam Friday 3pm”.</Tip>
@@ -229,7 +241,8 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
               <Nav onBack={back} next={<button onClick={finish} className="press h-12 flex-1 rounded-full bg-accent text-[16px] font-medium text-white shadow-[0_14px_30px_-12px_var(--accent)]">Start with {palName}</button>} />
             </div>
           )}
-        </main>
+          </main>
+        </div>
       </div>
     </div>
   )
@@ -244,13 +257,12 @@ function IntroPal({ id, delay }: { id: PalId; delay: number }) {
     return () => { clearTimeout(t); clearTimeout(u) }
   }, [delay])
   // Four across on a 320px phone, bigger on wider screens
-  const size = Math.round(Math.min(88, Math.max(52, (window.innerWidth - 80) / 4.4)))
-  return <Pal id={id} size={size} state={state} />
+  return <Pal id={id} size={88} state={state} className="welcome-intro-pal" />
 }
 
 function Nav({ onBack, next }: { onBack: () => void; next: React.ReactNode }) {
   return (
-    <div className="mx-auto mt-8 flex w-full max-w-[400px] gap-2">
+    <div className="welcome-nav mx-auto mt-8 flex w-full max-w-[400px] gap-2">
       <button type="button" onClick={onBack} className="press h-12 shrink-0 rounded-full px-5 text-[15px] text-ink-2 hover:bg-paper-3">Back</button>
       {next}
     </div>
@@ -263,7 +275,7 @@ function Tip({ children }: { children: React.ReactNode }) {
 
 function PermRow({ title, body, state, onAllow, doneLabel }: { title: string; body: string; state: Perm; onAllow?: () => void; doneLabel?: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-[18px] bg-ink/[0.035] p-3.5">
+    <div className="welcome-permission flex items-center gap-3 rounded-[18px] bg-ink/[0.035] p-3.5">
       <div className="min-w-0 flex-1">
         <div className="text-[14px] font-medium text-ink">{title}</div>
         <div className="text-[12.5px] leading-snug text-ink-3">{body}</div>

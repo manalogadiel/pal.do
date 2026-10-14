@@ -185,7 +185,7 @@ export function LoadStrip({ weekStart, events, onPick, active }: { weekStart: nu
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const load = days.map((d) =>
     events
-      .filter((e) => startOfDay(e.start) === d && e.kind !== 'deadline' && e.kind !== 'commute' && e.status !== 'proposed')
+      .filter((e) => startOfDay(e.start) === d && e.kind !== 'deadline' && (e.kind !== 'commute' || e.transportSource === 'user-trip') && e.status !== 'proposed')
       .reduce((a, e) => a + hoursOf(e), 0),
   )
   return (

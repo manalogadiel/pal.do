@@ -1,12 +1,13 @@
+import CardPractice from './CardPractice'
+import { datedTasks, isTaskDone } from '../lib/tasks'
 import { ToolChooser } from './StudyTools'
 import type { StudyConfig } from '../lib/session'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fmtDay, type PalId, type Task } from '../lib/core'
-import { generateStudyAids } from '../lib/groq'
-import { deleteFile, deleteFolder, getDeck, getFile, getQuiz, LIBRARY_EVENT, listFiles, listFolders, newFolder, saveDeck, saveFolder, saveQuiz, type Deck, type Folder, type LibraryFile, type Quiz } from '../lib/library'
+import { deleteFile, deleteFolder, getFile, moveFileToFolder, LIBRARY_EVENT, listFiles, listFolders, newFolder, saveFolder, type Folder, type LibraryFile } from '../lib/library'
 import { readingPieces, readPiece, stopReading } from '../lib/native-tts'
 import { IMPORT_ACCEPT, importFile, openPdf } from '../lib/study-files'
-import { extractCards, quizFromCards, search, terms, titleFromFileName } from '../lib/study-material'
+import { search, terms, titleFromFileName } from '../lib/study-material'
 import { Calendar, Cards, ChevronL, ChevronR, Clip, Pause, Play, Plus, Quiz as QuizIcon, Speaker, Trash } from './Icons'
 
 export type LibraryMode = 'read' | 'cards' | 'quiz'
@@ -29,7 +30,7 @@ interface Props {
 /** The subject's next exam or deadline: a task whose title shares a word with the folder name */
 function nextDue(folder: Folder, tasks: Task[], now: number) {
   const words = new Set(terms(folder.name))
-  return tasks.filter((t) => t.due > now && terms(t.title).some((w) => words.has(w))).sort((a, b) => a.due - b.due)[0]
+  return datedTasks(tasks).filter((t) => t.due > now && terms(t.title).some((w) => words.has(w))).sort((a, b) => a.due - b.due)[0]
 }
 
 const initials = (name: string) => {
@@ -38,7 +39,7 @@ const initials = (name: string) => {
 }
 
 /* ---------- One folder: its colour family, its paper, its tab, a pixel label, and sheets for its files ---------- */
-function FolderArt({ folder, count, due, onOpen }: { folder: Folder; count: number; due?: Task; onOpen: () => void }) {
+function FolderArt({ folder, count, due, onOpen }: { folder: Folder; count: number; due?: Task & { due: number }; onOpen: () => void }) {
   const tab = ['left-4', 'left-1/2 -translate-x-1/2', 'right-4'][folder.style.tab]
   return (
     <button type="button" onClick={onOpen} className="folder press group relative block w-full pt-5 text-left" data-tone={folder.style.tone} aria-label={`${folder.name}, ${count} file${count === 1 ? '' : 's'}`}>
@@ -112,7 +113,8 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
 
   if (toolFolder) return <ToolChooser folder={toolFolder} tasks={tasks} onClose={() => setToolFolder(null)} onOpen={c => { setToolFolder(null); onStudy?.(c) }} onBrowse={() => { setOpenFolder(toolFolder.id); setToolFolder(null) }} />
 
-  if (open && folder) return <FileView key={open.file.id + open.mode} file={open.file} folder={folder} mode={open.mode} topic={open.topic} pal={pal} onMode={(mode) => setOpen({ ...open, mode, topic: undefined })} onBack={() => { stopReading(); setOpen(null) }} onPlan={() => onPlan(open.file, folder)} />
+  const displayFolder=folder??(open?{id:'',name:'Chat attachment',createdAt:0,style:{tone:'class' as const,pattern:'lines' as const,tab:0 as const}}:undefined)
+  if (open && displayFolder) return <FileView key={open.file.id + open.mode} file={open.file} folder={displayFolder} mode={open.mode} topic={open.topic} pal={pal} onMode={(mode) => setOpen({ ...open, mode, topic: undefined })} onBack={() => { stopReading(); setOpen(null) }} onPlan={()=>folder?onPlan(open.file,folder):onToast('Move this file to a folder before planning study.')} />
 
   /* ---------- Inside a folder ---------- */
   if (folder) {
@@ -175,7 +177,7 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
     <div className="h-full overflow-y-auto px-4 pt-5 pb-10 sm:px-6">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="font-serif text-[40px] leading-none">Library</h2>
+          <h2 className="font-serif text-[40px] leading-none">Folders</h2>
           <p className="mt-1.5 text-[13px] text-ink-3">Your reviewers and notes, by subject. Kept on this device.</p>
         </div>
         {naming == null && <button type="button" onClick={() => setNaming('')} className="press flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-ink px-4 text-[13.5px] font-medium text-paper"><Plus /> Folder</button>}
@@ -187,13 +189,14 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
           <button type="button" onClick={() => setNaming(null)} className="press h-10 rounded-full px-3 text-[13.5px] text-ink-2">Cancel</button>
         </form>
       )}
+      {files.some(f=>f.folderId===null)&&<section className="mt-6"><h3 className="font-medium">Chat attachments</h3><ul className="mt-3 space-y-3">{files.filter(f=>f.folderId===null).map(f=><li key={f.id} className="flex flex-wrap items-center gap-3 rounded-[16px] bg-paper/80 p-3"><button className="flex-1 min-w-0 text-left break-words" onClick={()=>setOpen({file:f,mode:'read'})}>{f.name}</button><label className="text-sm">Move to folder<select aria-label={`Move ${f.name} to folder`} className="study-input" value="" onChange={e=>{if(e.target.value)void moveFileToFolder(f.id,e.target.value).catch(err=>onToast(err.message))}}><option value="">Choose a folder</option>{folders.map(folder=><option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label></li>)}</ul></section>}
       {folders.length === 0 && naming == null ? (
         <div className="mt-10 max-w-[360px] text-[14px] leading-relaxed text-ink-2">
           Make a folder for each subject, or attach a reviewer in the chat with the <Clip className="inline size-3.5 align-[-2px]" /> button and Pal files it for you.
         </div>
       ) : (
         <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4">
-          {folders.map((f) => <FolderArt key={f.id} folder={f} count={files.filter((x) => x.folderId === f.id).length} due={nextDue(f, tasks, now)} onOpen={() => setToolFolder(f)} />)}
+          {folders.map((f) => <FolderArt key={f.id} folder={f} count={files.filter((x) => x.folderId === f.id).length} due={nextDue(f, tasks, now)} onOpen={() => setOpenFolder(f.id)} />)}
         </div>
       )}
     </div>
@@ -206,7 +209,7 @@ const Chip = ({ onClick, children }: { onClick: () => void; children: React.Reac
 
 /* ---------- One file: read it (and hear it), flip its flashcards, or take its quiz ---------- */
 function FileView({ file, folder, mode, topic, pal, onMode, onBack, onPlan }: { file: LibraryFile; folder: Folder; mode: LibraryMode; topic?: string; pal: PalId; onMode: (m: LibraryMode) => void; onBack: () => void; onPlan: () => void }) {
-  const tabs: [LibraryMode, string][] = file.scanned ? [['read', 'Read']] : [['read', 'Read'], ['cards', 'Flashcards'], ['quiz', 'Quiz']]
+  const tabs: [LibraryMode, string][] = file.scanned ? [['read', 'Read']] : [['read', 'Read'], ['cards', 'Flashcards'], ['quiz','Quiz']]
   return (
     <div className="folder flex h-full flex-col overflow-hidden" data-tone={folder.style.tone}>
       <div className="flex shrink-0 items-center gap-2 px-4 pt-4 sm:px-6">
@@ -225,7 +228,7 @@ function FileView({ file, folder, mode, topic, pal, onMode, onBack, onPlan }: { 
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-10 sm:px-6">
-        {mode === 'read' ? <Reader file={file} pal={pal} /> : mode === 'cards' ? <Flashcards file={file} pal={pal} topic={topic} /> : <QuizPlayer file={file} topic={topic} />}
+        {mode === 'read' ? <Reader file={file} pal={pal} /> : <CardPractice key={`${file.id}:${topic??''}`} file={file} pal={pal} topic={topic} initialMode={mode==='quiz'?'quiz':'swipe'} />}
       </div>
     </div>
   )
@@ -310,131 +313,5 @@ function Reader({ file, pal }: { file: LibraryFile; pal: PalId }) {
 }
 
 /** Which passages a topic means ("quiz me on osmosis"), or the whole reviewer */
-const passagesFor = (file: LibraryFile, topic?: string) => (topic ? search(file.chunks, topic, 4) : file.chunks.slice(0, 6))
-
-/* ---------- Flashcards: the app's own from "Term: definition" lines, or better ones from the cloud ---------- */
-function Flashcards({ file, pal, topic }: { file: LibraryFile; pal: PalId; topic?: string }) {
-  const [deck, setDeck] = useState<Deck | null | undefined>(undefined)
-  const [i, setI] = useState(0)
-  const [flipped, setFlipped] = useState(false)
-  const [making, setMaking] = useState(false)
-
-  useEffect(() => {
-    void getDeck(file.id).then(async (d) => {
-      if (d && !topic) return setDeck(d)
-      const cards = extractCards(topic ? passagesFor(file, topic) : file.chunks)
-      const own: Deck = { fileId: file.id, cards, source: 'app', madeAt: Date.now() }
-      if (!topic && cards.length) await saveDeck(own)
-      setDeck(cards.length ? own : null)
-      if (!cards.length) void better()
-    })
-  }, [file, topic]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function better() {
-    setMaking(true)
-    const cards = await generateStudyAids('cards', passagesFor(file, topic), topic)
-    setMaking(false)
-    if (!cards || !('front' in (cards[0] ?? {}))) return
-    const d: Deck = { fileId: file.id, cards: (cards as { front: string; back: string; page?: number }[]).map((c, n) => ({ id: `a${n + 1}`, ...c })), source: 'ai', madeAt: Date.now() }
-    if (!topic) await saveDeck(d)
-    setDeck(d); setI(0); setFlipped(false)
-  }
-
-  if (deck === undefined) return <p className="text-[14px] text-ink-3">Getting the cards ready…</p>
-  if (!deck) return <p className="max-w-[360px] text-[14px] leading-relaxed text-ink-2">{making ? 'Writing flashcards from this file…' : 'No "term: definition" lines in this file, and the cloud AI isn\'t available right now to write cards. Try again when you\'re online.'}</p>
-  const card = deck.cards[i]
-  const next = (d: number) => { stopReading(); setFlipped(false); setI((x) => (x + d + deck.cards.length) % deck.cards.length) }
-  return (
-    <div className="mx-auto max-w-[460px]">
-      <button type="button" onClick={() => setFlipped((f) => !f)} className="block w-full [perspective:1200px]" aria-label={flipped ? 'Show the term' : 'Show the answer'}>
-        <div className="flip relative min-h-[220px]" data-flipped={flipped}>
-          <div className="folder-face absolute inset-0 flex flex-col items-center justify-center rounded-[22px] p-6 text-center shadow-[var(--edge),var(--shadow-lg)]" data-pattern="lines">
-            <span className="font-serif text-[30px] leading-tight">{card.front}</span>
-            <span className="mt-3 text-[12px] opacity-70">Tap to flip</span>
-          </div>
-          <div className="flip-back absolute inset-0 flex items-center justify-center rounded-[22px] bg-paper p-6 text-center text-[16px] leading-relaxed text-ink shadow-[var(--edge),var(--shadow-lg)]">{card.back}</div>
-        </div>
-      </button>
-      <div className="mt-4 flex items-center gap-2">
-        <button type="button" onClick={() => next(-1)} className="press grid size-10 place-items-center rounded-full bg-ink/[0.05]" aria-label="Previous card"><ChevronL /></button>
-        <span className="tnum flex-1 text-center text-[13px] text-ink-2">{i + 1} of {deck.cards.length}{card.page ? `, page ${card.page}` : ''}</span>
-        <button type="button" onClick={() => { void readPiece(card.front, pal).then(() => new Promise((r) => setTimeout(r, 1200))).then(() => { setFlipped(true); return readPiece(card.back, pal) }) }} className="press grid size-10 place-items-center rounded-full bg-ink/[0.05]" aria-label="Read this card aloud"><Speaker /></button>
-        <button type="button" onClick={() => next(1)} className="press grid size-10 place-items-center rounded-full bg-ink/[0.05]" aria-label="Next card"><ChevronR /></button>
-      </div>
-      <p className="mt-4 text-center text-[12px] text-ink-3">
-        {deck.source === 'ai' ? 'Written by the cloud AI from this file only.' : 'Pulled from this file\'s own definitions.'}{' '}
-        {deck.source === 'app' && <button type="button" disabled={making} onClick={() => void better()} className="underline disabled:no-underline disabled:opacity-60">{making ? 'Writing better ones…' : 'Make better cards with AI'}</button>}
-      </p>
-    </div>
-  )
-}
-
-/* ---------- Practice quiz ---------- */
-function QuizPlayer({ file, topic }: { file: LibraryFile; topic?: string }) {
-  const [quiz, setQuiz] = useState<Quiz | null | undefined>(undefined)
-  const [i, setI] = useState(0)
-  const [picked, setPicked] = useState<number | null>(null)
-  const [score, setScore] = useState(0)
-  const [making, setMaking] = useState(false)
-
-  async function make(fresh = false) {
-    setMaking(true); setI(0); setPicked(null); setScore(0)
-    const saved = fresh || topic ? undefined : await getQuiz(file.id)
-    if (saved) { setQuiz(saved); setMaking(false); return }
-    // The cloud writes real questions; otherwise the app builds one from the flashcards
-    const ai = await generateStudyAids('quiz', passagesFor(file, topic), topic)
-    let q: Quiz | null = null
-    if (ai && 'question' in (ai[0] ?? {})) q = { fileId: file.id, items: (ai as { question: string; choices: string[]; answer: number; page?: number }[]).map((x, n) => ({ id: `a${n + 1}`, ...x })), source: 'ai', madeAt: Date.now() }
-    else {
-      const deck = await getDeck(file.id)
-      const items = quizFromCards(deck?.cards.length ? deck.cards : extractCards(topic ? passagesFor(file, topic) : file.chunks), 8)
-      if (items.length) q = { fileId: file.id, items, source: 'app', madeAt: Date.now() }
-    }
-    if (q && !topic) await saveQuiz(q)
-    setQuiz(q)
-    setMaking(false)
-  }
-  useEffect(() => { void make() }, [file, topic]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (quiz === undefined || making) return <p className="text-[14px] text-ink-3">Writing your quiz…</p>
-  if (!quiz) return <p className="max-w-[360px] text-[14px] leading-relaxed text-ink-2">This file needs at least four "term: definition" lines for a quiz, or the cloud AI to write one. Try again when you're online.</p>
-  if (i >= quiz.items.length) return (
-    <div className="mx-auto max-w-[460px] text-center">
-      <p className="font-serif text-[44px] leading-none">{score} of {quiz.items.length}</p>
-      <p className="mt-2 text-[14px] text-ink-2">{score === quiz.items.length ? 'Every one. Nice.' : 'Review the ones you missed, then try a fresh set.'}</p>
-      <div className="mt-5 flex justify-center gap-2">
-        <button type="button" onClick={() => { setI(0); setPicked(null); setScore(0) }} className="press h-10 rounded-full bg-ink/[0.05] px-4 text-[13.5px]">Same questions</button>
-        <button type="button" onClick={() => void make(true)} className="press h-10 rounded-full bg-ink px-4 text-[13.5px] font-medium text-paper">New quiz</button>
-      </div>
-    </div>
-  )
-  const q = quiz.items[i]
-  return (
-    <div className="mx-auto max-w-[520px]">
-      <p className="tnum text-[12.5px] text-ink-3">Question {i + 1} of {quiz.items.length}{q.page ? `, from page ${q.page}` : ''}</p>
-      <p className="mt-1.5 font-serif text-[24px] leading-snug">{q.question}</p>
-      <ul className="mt-4 space-y-2">
-        {q.choices.map((c, n) => {
-          const state = picked == null ? '' : n === q.answer ? 'right' : n === picked ? 'wrong' : 'dim'
-          return (
-            <li key={n}>
-              <button type="button" disabled={picked != null} onClick={() => { setPicked(n); if (n === q.answer) setScore((s) => s + 1) }}
-                className={`press w-full rounded-[16px] px-4 py-3 text-left text-[14.5px] leading-snug transition-colors ${state === 'right' ? 'bg-[var(--ev-sage)] text-[var(--ev-sage-ink)] shadow-[inset_0_0_0_2px_var(--ev-sage-rule)]' : state === 'wrong' ? 'bg-[var(--ev-exam)] text-[var(--ev-exam-ink)] shadow-[inset_0_0_0_2px_var(--ev-exam-rule)]' : state === 'dim' ? 'bg-ink/[0.03] text-ink-3' : 'bg-ink/[0.05] text-ink hover:bg-ink/[0.08]'}`}>
-                {c}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-      {picked != null && (
-        <div className="pop mt-4 flex items-center justify-between gap-3">
-          <p className="text-[13.5px] text-ink-2">{picked === q.answer ? 'Right.' : `It's “${q.choices[q.answer]}”.`}</p>
-          <button type="button" onClick={() => { setI(i + 1); setPicked(null) }} className="press h-10 shrink-0 rounded-full bg-ink px-4 text-[13.5px] font-medium text-paper">{i + 1 < quiz.items.length ? 'Next' : 'See score'}</button>
-        </div>
-      )}
-      <p className="mt-6 text-[12px] text-ink-3">{quiz.source === 'ai' ? 'Written by the cloud AI from this file only.' : 'Built from this file\'s own definitions.'}</p>
-    </div>
-  )
-}
 
 export default Library

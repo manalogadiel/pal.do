@@ -4,10 +4,10 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 
 const PROFILE: Record<string, { voice: string; rate: string; pitch: string }> = {
-  rei: { voice: 'en-PH-RosaNeural', rate: '-2%', pitch: '-2Hz' },
-  diel: { voice: 'fil-PH-AngeloNeural', rate: '+2%', pitch: '-1Hz' },
-  jhyvie: { voice: 'fil-PH-BlessicaNeural', rate: '+4%', pitch: '+3Hz' },
-  jaypee: { voice: 'en-PH-JamesNeural', rate: '-3%', pitch: '-3Hz' },
+  rei: { voice: 'en-US-GuyNeural', rate: '+0%', pitch: '+0Hz' },
+  diel: { voice: 'en-US-ChristopherNeural', rate: '+0%', pitch: '+0Hz' },
+  jhyvie: { voice: 'fil-PH-AngeloNeural', rate: '+0%', pitch: '+0Hz' },
+  jaypee: { voice: 'en-US-RogerNeural', rate: '+0%', pitch: '+0Hz' },
 }
 const MAX_TEXT = 2000
 const MAX_AUDIO = 8 * 1024 * 1024
@@ -73,10 +73,10 @@ export async function POST(req: Request) {
   let pal: unknown, text: unknown
   try {
     const body = await req.json()
-    if (!body || typeof body !== 'object') throw new Error()
+    if (!body || typeof body !== 'object' || Object.keys(body).sort().join() !== 'pal,text') throw new Error()
     ;({ pal, text } = body as Record<string, unknown>)
   } catch {
-    return fail(req, 400, 'Expected pal and text in body')
+    return fail(req, 400, 'Expected pal and text only')
   }
   if (typeof pal !== 'string' || !PROFILE[pal]) return fail(req, 400, 'Unknown pal')
   if (typeof text !== 'string' || !text.trim() || text.length > MAX_TEXT) return fail(req, 400, 'Text must contain 1–2000 characters')

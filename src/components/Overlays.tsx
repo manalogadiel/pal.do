@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { defaultHours } from '../lib/agent'
 import { fmtDay, fmtHours, fmtTime, hoursOf, type CalEvent, type PalId, type TaskKind } from '../lib/core'
 import { extractTitle, parseWhen, taskKind } from '../lib/parse'
@@ -65,7 +66,9 @@ export function PalStage({ pal, hello, onPick }: { pal: PalId; hello: PalId | nu
 }
 
 /* ---------- Your PC's AI (Ollama): unlimited replies when the free cloud runs out ---------- */
-function LocalAiRow() {
+const localModelLabel = (model: string) => /^(paldo-phone|qwen2\.5:1\.5b-instruct)(:latest)?$/.test(model) ? 'Qwen2.5 1.5B Instruct' : model
+
+export function LocalAiRow() {
   const [on, setOn] = useState(() => Boolean(getLocalAiUrl()))
   const [url, setUrl] = useState(() => getLocalAiUrl() || DEFAULT_OLLAMA_URL)
   const [model, setModel] = useState(getLocalAiModel)
@@ -91,7 +94,7 @@ function LocalAiRow() {
     : models === undefined ? 'Checking…'
     : models === null ? `Ollama isn't reachable here. Start it${location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? '' : ' with OLLAMA_ORIGINS="*" ollama serve'}, then reopen settings.`
     : !models.length ? `Connected, but no models yet. Run: ollama pull ${DEFAULT_OLLAMA_MODEL}`
-    : `Connected · ${model}. Takes over when the cloud AI runs out.${models.includes(DEFAULT_OLLAMA_MODEL) ? '' : ` Recommended: ollama pull ${DEFAULT_OLLAMA_MODEL}`}`
+    : `Connected · ${localModelLabel(model)}. Takes over when the cloud AI runs out.${models.includes(DEFAULT_OLLAMA_MODEL) ? '' : ` Recommended: ollama pull ${DEFAULT_OLLAMA_MODEL}`}`
   const field = 'rounded-[12px] bg-ink/[0.045] px-3 py-1.5 font-mono text-[13px] outline-none focus:bg-ink/[0.08]'
   return (
     <div className="mt-4 rounded-[16px] bg-ink/[0.035] p-3">
@@ -118,7 +121,7 @@ function LocalAiRow() {
           />
           {models?.length ? (
             <select value={model} onChange={(e) => { setModel(e.target.value); setLocalAiModel(e.target.value); preloadOllama() }} aria-label="Model" className={field}>
-              {models.map((m) => <option key={m} value={m}>{m}</option>)}
+              {models.map((m) => <option key={m} value={m}>{localModelLabel(m)}</option>)}
             </select>
           ) : null}
         </div>
@@ -128,7 +131,7 @@ function LocalAiRow() {
 }
 
 /* ---------- Reset app: back to a fresh install, after a second tap to be sure ---------- */
-function ResetRow() {
+export function ResetRow() {
   const [sure, setSure] = useState(false)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -171,7 +174,7 @@ function SoundsRow() {
 }
 
 /* ---------- Hands-free "Hi {pal}": privacy in plain words, and the device-only switch ---------- */
-function HandsFreeRow({ palName, on, deviceOnly, setDeviceOnly }: { palName: string; on: boolean; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void }) {
+export function HandsFreeRow({ palName, on, deviceOnly, setDeviceOnly, showDiagnostics = true }: { palName: string; on: boolean; deviceOnly: boolean; setDeviceOnly: (v: boolean) => void; showDiagnostics?: boolean }) {
   const [heard, setHeard] = useState(lastHeard)
   useEffect(() => {
     const update = () => setHeard(lastHeard())
@@ -193,8 +196,8 @@ function HandsFreeRow({ palName, on, deviceOnly, setDeviceOnly }: { palName: str
         <input type="checkbox" checked={deviceOnly} onChange={(e) => setDeviceOnly(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
         <span>Write out what I say on this device only <span className="text-ink-3">(most private, but weaker with Taglish)</span></span>
       </label>
-      {on && <div className="mt-2 text-[11.5px] text-ink-3">{wakeDetector() === 'engine' ? `Instant wake word: on (catches "Hi ${palName}" as you say it)` : 'Instant wake word: not loaded, the speech model listens for the name (a little slower)'}</div>}
-      {on && heard && <div className="mt-1 text-[11.5px] text-ink-3">Last heard: <span className="font-mono text-ink-2">"{heard}"</span></div>}
+      {on && showDiagnostics && <div className="mt-2 text-[11.5px] text-ink-3">{wakeDetector() === 'engine' ? `Instant wake word: on (catches "Hi ${palName}" as you say it)` : 'Instant wake word: not loaded, the speech model listens for the name (a little slower)'}</div>}
+      {on && showDiagnostics && heard && <div className="mt-1 text-[11.5px] text-ink-3">Last heard: <span className="font-mono text-ink-2">"{heard}"</span></div>}
     </div>
   )
 }
@@ -479,6 +482,25 @@ export function Onboarding({
 }
 
 /* ---------- Syllabus paste ---------- */
+function Sheet({ children, titleId, onClose, className = '' }: { children: React.ReactNode; titleId: string; onClose: () => void; className?: string }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    const dialog = ref.current
+    dialog?.showModal()
+    return () => { dialog?.close(); if (previous?.isConnected) previous.focus() }
+  }, [])
+  return createPortal(
+    <dialog ref={ref} className={`app-sheet liquid-solid text-ink ${className}`} aria-labelledby={titleId}
+      onCancel={(e) => { e.preventDefault(); onClose() }}
+      onClick={(e) => {
+        if (e.target !== e.currentTarget) return
+        const rect = e.currentTarget.getBoundingClientRect()
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) onClose()
+      }}>{children}</dialog>, document.body,
+  )
+}
+
 export interface SyllabusItem { title: string; kind: TaskKind; due: number; hours: number; on: boolean }
 
 /** The dated deadlines in a syllabus, course outline or timeline: one per line ("Quiz 2 on Oct 20", "Paper due Nov 3") */
@@ -505,14 +527,14 @@ export function SyllabusSheet({ now, onClose, onAdd, initialText, source }: { no
   const [items, setItems] = useState<SyllabusItem[] | null>(() => (initialText ? scanDeadlines(initialText, now) : null))
   const scan = () => setItems(scanDeadlines(text, now))
   return (
-    <div className="fixed inset-0 z-50 grid place-items-end bg-ink/25 sm:place-items-center sm:p-4" onClick={onClose}>
-      <div className="pop w-full max-w-[520px] rounded-t-[32px] liquid-solid p-6 sm:rounded-[32px]" onClick={(e) => e.stopPropagation()}>
+    <Sheet titleId="syllabus-title" onClose={onClose}>
+      <div className="min-w-0">
         <div className="flex items-start justify-between">
-          <div>
-            <h2 className="font-serif text-[32px] leading-none tracking-[-0.02em]">{source ? 'Dates found' : 'Syllabus drop'}</h2>
+          <div className="min-w-0">
+            <h2 id="syllabus-title" className="font-serif text-[32px] leading-none tracking-[-0.02em]">{source ? 'Dates found' : 'Syllabus drop'}</h2>
             <p className="mt-1.5 text-[14px] text-ink-2">{source ? <>From <span className="font-medium text-ink">{source}</span>. Tick the ones to add to your schedule.</> : "Paste it in. You confirm every deadline before it's added."}</p>
           </div>
-          <button onClick={onClose} className="press grid size-9 place-items-center rounded-full text-ink-2 hover:bg-paper-3" aria-label="Close"><X /></button>
+          <button onClick={onClose} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-paper-3" aria-label="Close"><X /></button>
         </div>
         {!items ? (
           <>
@@ -556,23 +578,40 @@ export function SyllabusSheet({ now, onClose, onAdd, initialText, source }: { no
           </>
         )}
       </div>
-    </div>
+    </Sheet>
   )
 }
 
 /* ---------- Block popover (grows from the block) ---------- */
-const KIND_LABEL: Record<string, string> = { class: 'Class', shift: 'Work shift', exam: 'Exam', work: 'Planned work', commute: 'Commute', protected: 'Protected time', deadline: 'Deadline' }
+const KIND_LABEL: Record<string, string> = { class: 'Class', shift: 'Work shift', exam: 'Exam', work: 'Planned work', commute: 'Transportation', protected: 'Protected time', deadline: 'Deadline' }
 
-export function BlockPopover({ ev, rect, onClose, onDone, onAccept, onDelete }: { ev: CalEvent; rect: DOMRect; onClose: () => void; onDone: () => void; onAccept: () => void; onDelete: () => void }) {
+export function BlockPopover({ ev, rect, onClose, onDone, onAccept, onDelete, onEdit }: { onEdit?:()=>void; ev: CalEvent; rect: DOMRect; onClose: () => void; onDone: () => void; onAccept: () => void; onDelete: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: rect.right + 8, top: rect.top, origin: 'left top' })
   useLayoutEffect(() => {
-    const w = ref.current?.offsetWidth ?? 280
-    const h = ref.current?.offsetHeight ?? 160
-    const right = rect.right + 8 + w < window.innerWidth
-    const left = right ? rect.right + 8 : Math.max(8, rect.left - 8 - w)
-    const top = Math.min(Math.max(8, rect.top), window.innerHeight - h - 8)
-    setPos({ left, top, origin: right ? 'left top' : 'right top' })
+    const place = () => {
+      const panel = ref.current
+      if (!panel) return
+      const viewport = window.visualViewport
+      const x = viewport?.offsetLeft ?? 0, y = viewport?.offsetTop ?? 0
+      const width = viewport?.width ?? window.innerWidth, height = viewport?.height ?? window.innerHeight
+      panel.style.maxHeight = `${Math.max(0, height - 16)}px`
+      panel.style.maxWidth = `${Math.max(0, width - 16)}px`
+      const w = panel.offsetWidth, h = panel.offsetHeight
+      const right = rect.right + 8 + w <= x + width - 8
+      const left = Math.max(x + 8, Math.min(right ? rect.right + 8 : rect.left - 8 - w, x + width - w - 8))
+      const top = Math.max(y + 8, Math.min(rect.top, y + height - h - 8))
+      setPos({ left, top, origin: right ? 'left top' : 'right top' })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.visualViewport?.addEventListener('resize', place)
+    window.visualViewport?.addEventListener('scroll', place)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.visualViewport?.removeEventListener('resize', place)
+      window.visualViewport?.removeEventListener('scroll', place)
+    }
   }, [rect])
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -583,7 +622,7 @@ export function BlockPopover({ ev, rect, onClose, onDone, onAccept, onDelete }: 
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div ref={ref} role="dialog" className="pop fixed z-50 w-[280px] rounded-[22px] liquid-solid p-4" style={{ left: pos.left, top: pos.top, transformOrigin: pos.origin }}>
+      <div ref={ref} role="dialog" aria-label={ev.title} className="pop event-popover fixed z-50 w-[280px] overflow-y-auto overscroll-contain rounded-[22px] liquid-solid p-4" style={{ left: pos.left, top: pos.top, transformOrigin: pos.origin }}>
         <div className="flex items-center gap-1.5 text-[11px] font-medium tracking-[0.04em] text-ink-3 uppercase">
           <G className="size-3" /> {ev.status === 'proposed' ? 'Suggested' : KIND_LABEL[ev.kind]} {ev.seg && `· ${ev.seg}`}
         </div>
@@ -591,13 +630,13 @@ export function BlockPopover({ ev, rect, onClose, onDone, onAccept, onDelete }: 
         <div className="tnum mt-1 text-[13px] text-ink-2">
           {fmtDay(ev.start)} · {ev.kind === 'deadline' ? `due ${fmtTime(ev.start)}` : `${fmtTime(ev.start)} – ${fmtTime(ev.end)} (${fmtHours(hoursOf(ev))})`}
         </div>
-        {ev.note && <div className="mt-2 text-[13px] font-medium text-accent">{ev.note}</div>}
+        {ev.note && <div className="mt-2 text-[13px] font-medium text-accent whitespace-pre-wrap break-words">{ev.note}</div>}
         {ev.why && (
           <div className="mt-3 rounded-[12px] bg-paper-2 p-2.5 text-[12.5px] leading-snug text-ink-2">
             <span className="font-medium text-ink">Why here: </span>{ev.why}
           </div>
         )}
-        <div className="mt-3 flex gap-1">
+        <div className="mt-3 flex flex-wrap gap-1">{onEdit&&<button className="press min-h-11 rounded-full px-3 text-sm text-accent" onClick={onEdit}>Edit schedule</button>}
           {ev.status === 'proposed' && <button onClick={onAccept} className="press h-8 rounded-full bg-ink px-3.5 text-[13px] font-medium text-paper">Accept</button>}
           {ev.kind === 'work' && (ev.status === 'planned' || ev.status === 'missed') && (
             <button onClick={onDone} className="press h-8 rounded-full bg-ink px-3.5 text-[13px] font-medium text-paper">Mark done</button>
@@ -614,7 +653,7 @@ export interface Toast { id: string; text: string; pal?: PalId; action?: { label
 
 export function Toasts({ items, dismiss }: { items: Toast[]; dismiss: (id: string) => void }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex flex-col items-center gap-2 px-4" aria-live="polite">
+    <div className="app-toasts pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex flex-col items-center gap-2 px-4" aria-live="polite">
       {items.map((t) => (
         <ToastItem key={t.id} t={t} dismiss={dismiss} />
       ))}
@@ -627,11 +666,11 @@ function ToastItem({ t, dismiss }: { t: Toast; dismiss: (id: string) => void }) 
     return () => clearTimeout(i)
   }, [t.id, dismiss])
   return (
-    <div className="pop pointer-events-auto flex items-center gap-3 rounded-full bg-ink py-1.5 pr-1.5 pl-2 text-[13.5px] text-paper shadow-[var(--shadow-lg)]">
+    <div className="pop app-toast pointer-events-auto flex max-w-full items-center gap-3 rounded-[20px] bg-ink py-1.5 pr-1.5 pl-2 text-[13.5px] text-paper shadow-[var(--shadow-lg)]">
       {t.pal ? <Pal id={t.pal} size={24} state="alert" /> : <span className="ml-1.5 size-1.5 rounded-[2px] bg-accent" />}
-      <span className="pr-1">{t.text}</span>
+      <span className="min-w-0 flex-1 break-words py-1 pr-1">{t.text}</span>
       {t.action ? (
-        <button onClick={() => { t.action!.fn(); dismiss(t.id) }} className="press h-7 rounded-full bg-paper/15 px-3 text-[12.5px] font-medium">{t.action.label}</button>
+        <button onClick={() => { t.action!.fn(); dismiss(t.id) }} className="press min-h-11 shrink-0 rounded-full bg-paper/15 px-3 text-[12.5px] font-medium">{t.action.label}</button>
       ) : (
         <span className="w-1.5" />
       )}
@@ -644,13 +683,13 @@ export function DeletePlansSheet({ count, onClose, onConfirm }: { count: number;
   const [text, setText] = useState('')
   const ok = text === 'Delete'
   return (
-    <div className="fixed inset-0 z-50 grid place-items-end bg-ink/25 sm:place-items-center sm:p-4" onClick={onClose}>
-      <div className="pop w-full max-w-[420px] rounded-t-[32px] liquid-solid p-6 sm:rounded-[32px]" onClick={(e) => e.stopPropagation()}>
+    <Sheet titleId="delete-plans-title" onClose={onClose} className="delete-sheet">
+      <div className="min-w-0">
         <div className="flex items-start justify-between">
           <div className="grid size-11 place-items-center rounded-full bg-red-500/15 text-red-500"><Trash className="size-5" /></div>
           <button onClick={onClose} className="press grid size-9 place-items-center rounded-full text-ink-2 hover:bg-paper-3" aria-label="Close"><X /></button>
         </div>
-        <h2 className="mt-3 font-serif text-[30px] leading-none tracking-[-0.02em]">Delete all plans?</h2>
+        <h2 id="delete-plans-title" className="mt-3 font-serif text-[30px] leading-none tracking-[-0.02em]">Delete all plans?</h2>
         <p className="mt-2 text-[14px] text-ink-2">This clears {count} calendar block{count === 1 ? '' : 's'} and every deadline from your planner. You can undo right after.</p>
         <label className="mt-4 block text-[12px] font-medium text-ink-3">
           Type <span className="font-semibold text-red-500">Delete</span> to confirm
@@ -668,6 +707,6 @@ export function DeletePlansSheet({ count, onClose, onConfirm }: { count: number;
           <button disabled={!ok} onClick={onConfirm} className="press h-11 flex-1 rounded-full bg-red-600 text-[15px] font-medium text-white transition-opacity disabled:opacity-35">Delete everything</button>
         </div>
       </div>
-    </div>
+    </Sheet>
   )
 }

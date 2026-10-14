@@ -1,3 +1,7 @@
+import { datedTasks, isTaskDone } from '../lib/tasks'
+import { bestNextStep } from '../lib/next-step'
+import { sayLength } from '../lib/timers'
+import type { Prefs } from '../lib/schedule'
 import { fmtDay, fmtHours, fmtTime, hoursOf, MIN, startOfDay, startOfWeek, type CalEvent, type Kind, type Task } from '../lib/core'
 import { LoadStrip } from './Calendar'
 import { Glyph, Pip } from './Icons'
@@ -48,23 +52,29 @@ interface Props {
   onOpen: (e: CalEvent, r: DOMRect) => void
   onPlan: (t: Task) => void
   onWeek: (dayIdx: number) => void
+  onAddSchedule?:()=>void
   onTasks: () => void
+  onStudy?: (section: 'focus' | 'library') => void
   pal: PalId
   palState: PalState
   onPoke: () => void
+  onPrepare?: (task: Task, minutes: number) => void
+  focusActive?: boolean
+  prefs?: Prefs
   onPip?: () => void
 }
 
-export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palState, onPoke, onTasks, onPip }: Props) {
+export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palState, onPoke, onAddSchedule, onTasks, onStudy, onPrepare, focusActive, prefs, onPip }: Props) {
+  const suggestion = !focusActive && onPrepare ? bestNextStep(now, events, tasks, prefs) : null
   const day = startOfDay(now)
   const todays = events
     .filter((e) => startOfDay(e.start) === day && e.kind !== 'deadline' && e.status !== 'proposed')
     .sort((a, b) => a.start - b.start || a.end - b.end || a.id.localeCompare(b.id))
-  const current = todays.find((e) => e.start <= now && e.end > now && e.kind !== 'commute')
-  const next = todays.find((e) => e.start > now && e.kind !== 'commute')
+  const current = todays.find((e) => e.start <= now && e.end > now && (e.kind !== 'commute' || e.transportSource === 'user-trip'))
+  const next = todays.find((e) => e.start > now && (e.kind !== 'commute' || e.transportSource === 'user-trip'))
   const left = todays.filter((e) => e.end > now)
-  const hoursLeft = left.filter((e) => e.kind !== 'commute').reduce((a, e) => a + hoursOf(e) - (e.start < now ? (now - e.start) / 3_600_000 : 0), 0)
-  const deadlines = tasks.filter((t) => t.doneHours < t.hours).sort((a, b) => a.due - b.due || a.id.localeCompare(b.id)).slice(0, 4)
+  const hoursLeft = left.filter((e) => (e.kind !== 'commute' || e.transportSource === 'user-trip')).reduce((a, e) => a + hoursOf(e) - (e.start < now ? (now - e.start) / 3_600_000 : 0), 0)
+  const deadlines = datedTasks(tasks).sort((a, b) => a.due - b.due || a.id.localeCompare(b.id)).slice(0, 4)
   const upcoming = events.filter(e => e.start > now && startOfDay(e.start) > day && e.status !== 'proposed' && e.kind !== 'deadline').sort((a,b) => a.start - b.start)[0]
   const d = new Date(now)
   const ws = startOfWeek(now)
@@ -107,6 +117,7 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palStat
       </header>
 
       <div className="min-w-0">
+      <div className="today-shortcuts" aria-label="Shortcuts">{onAddSchedule&&<button onClick={onAddSchedule}>Add schedule</button>}<button onClick={onTasks}>Block Yard</button>{onStudy&&<><button onClick={()=>onStudy('focus')}>Pomodoro</button><button onClick={()=>onStudy('library')}>Folders</button></>}</div>
       {(current || next) && <div className="mb-4 flex flex-wrap gap-2" aria-label="Current and next event">
         {[current && { e: current, label: 'Now' }, next && { e: next, label: 'Next' }].filter(Boolean).map(x => { const { e, label } = x as { e: CalEvent; label: string }; return <button key={label} onClick={ev => onOpen(e, ev.currentTarget.getBoundingClientRect())} className="press min-h-11 rounded-[16px] bg-accent-soft px-4 py-2 text-left text-sm"><strong>{label}</strong> · {e.title}<span className="ml-2 text-ink-2">{fmtTime(e.start)}–{fmtTime(e.end)}</span></button> })}
       </div>}
@@ -141,6 +152,13 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palStat
         )}
       </section>
 
+      {suggestion && <section className="today-next-step mt-6" aria-labelledby="next-step-title">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.08em] text-accent">Best next step</span>
+        <h3 id="next-step-title" className="mt-2 text-lg font-semibold leading-snug">{suggestion.next ? `You have ${sayLength(suggestion.availableMinutes * 60)} before ${suggestion.next.title}.` : `You have room for ${sayLength(suggestion.minutes * 60)} of focus.`}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-ink-2">Spend {sayLength(suggestion.minutes * 60)} on <strong className="font-medium text-ink">{suggestion.task.title}</strong>.</p>
+        <button className="tool-button-primary mt-4" onClick={() => onPrepare?.(suggestion.task, suggestion.minutes)}>Prepare focus session</button>
+      </section>}
+
       {!todays.length && upcoming && <button onClick={ev => onOpen(upcoming, ev.currentTarget.getBoundingClientRect())} className="press mt-4 w-full rounded-[18px] bg-accent-soft p-4 text-left"><span className="text-sm text-ink-2">Next scheduled · {fmtDay(upcoming.start)} · {fmtTime(upcoming.start)}</span><strong className="mt-1 block">{upcoming.title}</strong></button>}
       </div>
       <div className="today-summaries">
@@ -165,12 +183,12 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palStat
               const planned = events.some((e) => e.taskId === t.id && e.kind === 'work' && e.status === 'planned' && e.start > now)
               return (
                 <li key={t.id} className="today-deadline slide-in flex items-center gap-3.5 rounded-[20px] py-2" style={st()}>
-                  <Ring value={t.doneHours / t.hours} label={`${t.title}: ${fmtHours(t.doneHours)} of ${fmtHours(t.hours)} done`} />
+                  <Ring value={t.hours > 0 ? t.doneHours / t.hours : 0} label={`${t.title}: ${fmtHours(t.doneHours)} of ${fmtHours(t.hours)} done`} />
                   <div className="min-w-0 flex-1">
                     <div className="break-words text-[16px] font-medium">{t.title}</div>
                     <div className="text-[12.5px] text-ink-3">
                       <span className={days <= 2 ? 'font-medium text-amber' : ''}>{t.due < now ? 'Overdue' : days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : fmtDay(t.due).replace(/,.*/, '') + (days > 6 ? ` ${new Date(t.due).getDate()}` : '')}</span>
-                      {' · '}{fmtHours(Math.max(0, t.hours - t.doneHours))} left
+                      {t.hours>0&&<> · {fmtHours(Math.max(0, t.hours - t.doneHours))} left</>}
                     </div>
                   </div>
                   {!planned && t.hours - t.doneHours > 0.25 && (

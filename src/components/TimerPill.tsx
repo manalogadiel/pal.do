@@ -22,7 +22,7 @@ export function TimerPill({ timers, ringing, onPause, onResume, onCancel, onStop
   if (!shown.length) return null
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[max(10px,env(safe-area-inset-top))] z-[55] flex justify-center gap-2 px-4">
+    <div className="pointer-events-none fixed inset-x-0 top-[max(10px,env(safe-area-inset-top))] z-[55] flex max-h-[40dvh] flex-wrap justify-center gap-2 overflow-y-auto px-4">
       {shown.map((t) => {
         const ring = t.id === ringing
         const paused = isPaused(t)
@@ -33,7 +33,7 @@ export function TimerPill({ timers, ringing, onPause, onResume, onCancel, onStop
             key={t.id}
             role="timer"
             aria-label={ring ? `${t.label}: time's up` : `${t.label}: ${fmtLeft(left)} left${paused ? ', paused' : ''}`}
-            className={`pointer-events-auto pop flex h-10 items-center gap-2 rounded-full border pr-1.5 pl-3 text-[13px] shadow-[var(--edge)] backdrop-blur-xl ${
+            className={`pointer-events-auto pop flex h-10 max-w-full shrink-0 items-center gap-2 rounded-full border pr-1.5 pl-3 text-[13px] shadow-[var(--edge)] backdrop-blur-xl ${
               ring ? 'flash border-accent/40 bg-accent text-white' : 'border-ink/[0.08] bg-paper/80 text-ink'
             }`}
           >

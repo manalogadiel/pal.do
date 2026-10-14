@@ -1,0 +1,4 @@
+import type {ResolvedPlace,RouteEstimate,TravelDraft} from './travel'
+async function request(body:unknown,signal?:AbortSignal){const r=await fetch('/api/maps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:signal??AbortSignal.timeout(15000)});const d=await r.json();if(!r.ok)throw new Error(d.error??'Maps unavailable');return d}
+export async function findPlaceCandidates(query:string):Promise<ResolvedPlace[]>{return request({kind:'search',query:query.replace(/\bkessons?\b/gi,'Quezon')})}
+export async function estimateRoute(draft:TravelDraft,signal:AbortSignal):Promise<RouteEstimate|null>{if(!draft.origin||!draft.destination||!draft.mode)return null;return request({kind:'route',origin:draft.origin,destination:draft.destination,mode:draft.mode,departure:draft.departure},signal)}

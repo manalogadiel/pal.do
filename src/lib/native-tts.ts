@@ -55,7 +55,7 @@ async function localSpeak(text: string, pal: PalId, signal: AbortSignal, english
 export async function speakPal(raw: string, pal: PalId, onStart?: () => void, englishRequested = false): Promise<boolean | 'cancelled'> {
   stopSpeech()
   const id = generation, abort = new AbortController(); controller = abort
-  const text = cleanSpeech(raw).slice(0, 2000)
+  const text = cleanSpeech(raw, pal, englishRequested).slice(0, 2000)
   if (!text) return false
   const url = import.meta.env.VITE_TTS_URL || '/tts'
   const timer = setTimeout(() => abort.abort(), 10_000)

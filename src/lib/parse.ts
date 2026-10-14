@@ -13,7 +13,7 @@ const DAYS: [RegExp, number][] = [
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 
 const NEXT_WEEK = /\b(next week|sa susunod na linggo|susunod na linggo)\b/i
-const RANGE = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|nn)?\s*(?:-|–|—|to|until|till|hanggang)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|nn|noon)?(?![\d/:])/i
+const RANGE = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|nn)?\s*(?:-|–|—|to|until|till|hanggang|ang\s+gang)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|nn|noon)?(?![\d/:])/i
 const CLOCK = /\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)/i
 
 export interface When {
@@ -257,7 +257,7 @@ const STRIP = [
   /(?<![\w-])(e+h*|naman|lang|daw|raw|pala|talaga|kasi|nga)(?![\w-])/gi,
   ...DAYS.map(([re]) => new RegExp(re.source, 'gi')),
   // "I'm going to…", "I will attend…", "it is my…": how they said it, not what it is
-  /\b(i'?m|i am|we'?re|we are|i will|i'?ll|we will|gonna|going to|going|attend(?:ing)?|join(?:ing)?|it is|it was|there'?s)(?![\w-])/gi,
+  /\b(it will|it would|it starts?|it ends?|i'?m|i am|we'?re|we are|i will|i'?ll|we will|gonna|going to|going|attend(?:ing)?|join(?:ing)?|it is|it was|there'?s)(?![\w-])/gi,
   // "I would like to schedule a dinner", "can you book…": the asking, not the title
   /\b(i would like to|i'?d like to|id like to|i would like|would like to|i want to|i wanna|want to|can you|could you|will you|set up|book|create)(?![\w-])/gi,
   /\b(i have|i've got|i got|got|there's|there is|i need to|need to|have to|gotta|i need|kailangan ko|kailangan|may|meron|ako|ko|mo|ung|yung|ang|sa|ng|para|na|pa|ba|deadline|due|until|before|by|on|at|this|next|my|a|an|the|i|is|it's|its|to|for|of|and|please|pls|po|paki|add|put|schedule|sched|plan|lagyan|ilagay|lagay|remind me|help me)\b/gi,
@@ -265,6 +265,20 @@ const STRIP = [
   /(?:^|\s)(?:M|T|W|Th|TH|F|S|Su)(?:\/?(?:M|T|W|Th|TH|F|S|Su)){1,5}(?=\s|$)/g,
   /[,.!?;:]/g,
 ]
+
+/** A title explicitly supplied by the user keeps its words, including Tagalog prepositions. */
+export function suppliedEventTitle(text: string): string | null {
+  const named = text.match(/^\s*(?:ang\s+)?(?:title|pangalan|name)(?:\s+(?:nito|niya|ng\s+(?:plano|plan)|of\s+(?:it|this|the\s+plan)))?\s+(?:ay|is|:)\s*(.+)$/i)
+    ?? text.match(/^\s*(?:the\s+)?title\s+(?:is|of\s+this\s+is)\s+(.+)$/i)
+    ?? text.match(/^\s*(?:title|pangalan|name)\s*:\s*(.+)$/i)
+  if (!named) return null
+  const details = named[1]
+  const clock = [details.match(RANGE)?.index, details.match(CLOCK)?.index].filter((i): i is number => i != null)
+  const title = details.slice(0, clock.length ? Math.min(...clock) : undefined)
+    .replace(/[\s,;]+(?:from|at|mula|starts?\s+at)\s*$/i, '')
+    .replace(/^[\s"“]+|[\s,;.!"”]+$/g, '')
+  return title || null
+}
 
 export function extractTitle(text: string, fallback: string) {
   // "birthday party of Ana" → "Ana's birthday party" (the "of" would be stripped and leave "birthday party Ana")

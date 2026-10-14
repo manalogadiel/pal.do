@@ -45,6 +45,7 @@ export class WakeEngine {
   onScore?: (score: number) => void
   private clf: Session | null = null
   private frames: Float32Array[] = []
+  private frameIds: number[] = []
   private queued = 0
   private tail = new Float32Array(CONTEXT)
   // openWakeWord starts the mel buffer as ones; scoring waits until it's real audio (see `skip`)
@@ -60,10 +61,10 @@ export class WakeEngine {
     private melModel: Session,
     private embModel: Session,
     private manifest: Manifest,
-    private onWake: (score: number) => void,
+    private onWake: (score: number, utteranceId: number) => void,
   ) {}
 
-  static async load(ort: Ort, pal: PalId, onWake: (score: number) => void) {
+  static async load(ort: Ort, pal: PalId, onWake: (score: number, utteranceId: number) => void) {
     const opts = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' as const }
     const [manifest, mel, emb] = await Promise.all([
       fetch(DIR + 'models.json').then((r) => { if (!r.ok) throw new Error(`models.json: ${r.status}`); return r.json() as Promise<Manifest> }),
@@ -100,9 +101,10 @@ export class WakeEngine {
   get ready() { return !!this.clf && !this.failed }
 
   /** Mic audio, 16 kHz, -1..1, any frame size */
-  push(frame: Float32Array) {
+  push(frame: Float32Array, utteranceId = 0) {
     if (this.failed) return
     this.frames.push(frame.slice())
+    this.frameIds.push(utteranceId)
     this.queued += frame.length
     // Fell far behind (a background tab): drop the backlog instead of firing on old audio
     if (this.queued > CHUNK * 25) this.reset()
@@ -117,6 +119,7 @@ export class WakeEngine {
   /** Audio stopped and starts again (the mic was handed off): what's still in view is old, don't fire on it */
   reset() {
     this.frames = []
+    this.frameIds = []
     this.queued = 0
     this.skip = Math.max(this.skip, EMBEDDINGS)
   }
@@ -124,16 +127,18 @@ export class WakeEngine {
   private take(n: number) {
     const out = new Float32Array(n)
     let at = 0
+    let utteranceId = 0
     while (at < n) {
       const f = this.frames[0]
+      utteranceId = this.frameIds[0]
       const k = Math.min(f.length, n - at)
       out.set(f.subarray(0, k), at)
       at += k
-      if (k === f.length) this.frames.shift()
+      if (k === f.length) { this.frames.shift(); this.frameIds.shift() }
       else this.frames[0] = f.subarray(k)
     }
     this.queued -= n
-    return out
+    return { audio: out, utteranceId }
   }
 
   private async pump() {
@@ -141,7 +146,8 @@ export class WakeEngine {
     try {
       while (this.queued >= CHUNK) {
         const t0 = performance.now()
-        await this.step(this.take(CHUNK))
+        const chunk = this.take(CHUNK)
+        await this.step(chunk.audio, chunk.utteranceId)
         const ms = performance.now() - t0
         this.steps++
         this.msPerStep = this.steps === 1 ? ms : this.msPerStep * 0.95 + ms * 0.05
@@ -156,7 +162,7 @@ export class WakeEngine {
     }
   }
 
-  private async step(chunk: Float32Array) {
+  private async step(chunk: Float32Array, utteranceId: number) {
     const { Tensor } = this.ort
     // The features expect 16-bit sample values (as floats), like openWakeWord
     const audio = new Float32Array(CONTEXT + CHUNK)
@@ -179,18 +185,21 @@ export class WakeEngine {
     const x = new Float32Array(EMBEDDINGS * 96)
     this.emb.forEach((e, i) => x.set(e, i * 96))
     const out = await this.clf.run({ input: new Tensor('float32', x, [1, EMBEDDINGS, 96]) })
+    if (this.failed) return
     const score = (out.score.data as Float32Array)[0]
     this.lastScore = score
     this.onScore?.(score)
     if (score >= this.threshold) {
       this.skip = REFRACTORY_STEPS
-      this.onWake(score)
+      this.onWake(score, utteranceId)
     }
   }
 
   dispose() {
     this.failed = true
     this.frames = []
+    this.frameIds = []
+    this.queued = 0
     for (const s of [this.melModel, this.embModel, this.clf]) void s?.release?.()
     this.clf = null
   }

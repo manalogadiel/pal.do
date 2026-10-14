@@ -4,7 +4,7 @@ export type View = 'home' | 'week' | 'tasks' | 'study'
 const ITEMS: { id: View; label: string; Icon: (p: { className?: string }) => React.ReactElement }[] = [
   { id: 'home', label: 'Today', Icon: HomeIcon },
   { id: 'week', label: 'Week', Icon: WeekIcon },
-  { id: 'tasks', label: 'Tasks', Icon: TasksIcon },
+  { id: 'tasks', label: 'Block Yard', Icon: TasksIcon },
   { id: 'study', label: 'Study', Icon: TimerIcon },
 ]
 
@@ -25,11 +25,11 @@ interface Props {
 export function Rail({ view, setView, onSyllabus, onSettings, onPip, taskCount, dark, onTheme, studying }: Props) {
   const i = ITEMS.findIndex((x) => x.id === view)
   return (
-    <nav className="liquid relative z-30 flex w-[68px] shrink-0 flex-col items-center gap-1 rounded-[30px] py-4" aria-label="Views">
-      <div className="mb-4 grid size-10 place-items-center" aria-hidden>
+    <nav className="liquid relative z-30 flex w-[68px] overflow-y-auto overscroll-contain shrink-0 flex-col items-center gap-1 rounded-[30px] py-4" aria-label="Views">
+      <div className="mb-4 grid size-10 shrink-0 place-items-center" aria-hidden>
         <span className="size-3 rounded-[4px] bg-accent shadow-[0_4px_12px_-3px_var(--accent)]" />
       </div>
-      <div className="relative flex flex-col gap-1">
+      <div className="relative flex shrink-0 flex-col gap-1">
         <span
           className="absolute left-0 top-0 h-[60px] w-[52px] rounded-[18px] bg-paper shadow-[0_4px_14px_-6px_rgb(20_48_88/0.25)] transition-transform duration-[380ms] [transition-timing-function:var(--ease-drawer)]"
           style={{ transform: `translateY(${i * 64}px)` }}
@@ -50,10 +50,10 @@ export function Rail({ view, setView, onSyllabus, onSettings, onPip, taskCount, 
         ))}
       </div>
       <div className="flex-1" />
-      {onPip && <button onClick={onPip} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift hover:text-accent" aria-label="Pop out floating companion" title="Floating Pal on Desktop"><Pip className="size-[18px]" /></button>}
-      <button onClick={onSyllabus} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Paste a syllabus" title="Paste a syllabus"><Doc className="size-[18px]" /></button>
-      <button onClick={onTheme} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} title={dark ? 'Light mode' : 'Dark mode'}>{dark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}</button>
-      <button onClick={onSettings} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Pal and preferences" title="Pal and preferences"><Gear className="size-[18px]" /></button>
+      {onPip && <button onClick={onPip} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover-lift hover:text-accent" aria-label="Pop out floating companion" title="Floating Pal on Desktop"><Pip className="size-[18px]" /></button>}
+      <button onClick={onSyllabus} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Paste a syllabus" title="Paste a syllabus"><Doc className="size-[18px]" /></button>
+      <button onClick={onTheme} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover-lift" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} title={dark ? 'Light mode' : 'Dark mode'}>{dark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}</button>
+      <button onClick={onSettings} className="press grid size-11 shrink-0 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Pal and preferences" title="Pal and preferences"><Gear className="size-[18px]" /></button>
     </nav>
   )
 }

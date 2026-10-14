@@ -57,9 +57,8 @@ self.onmessage = async (e: MessageEvent) => {
       self.postMessage({ type: 'ready' })
     } else if (m.type === 'transcribe') {
       const t = await load()
-      // English decoding keeps names like "Jhyvie" close to how they sound; Taglish words come out phonetically
-      // English-only models (".en") take no language option; the multilingual ones are told English
-      const lang = size.endsWith('.en') ? {} : { language: 'english', task: 'transcribe' }
+      // Wake names use English; an awake Jhyvie request uses Tagalog transcription, never translation.
+      const lang = size.endsWith('.en') ? {} : { language: m.language ?? 'english', task: 'transcribe' }
       const out = (await t(m.audio as Float32Array, { ...lang, ...(m.maxTokens ? { max_new_tokens: m.maxTokens } : {}) })) as { text: string }
       self.postMessage({ type: 'text', id: m.id, text: (out.text ?? '').trim() })
     }
