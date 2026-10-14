@@ -1,3 +1,4 @@
+import SelectField from './SelectField'
 import CardPractice from './CardPractice'
 import { datedTasks, isTaskDone } from '../lib/tasks'
 import { ToolChooser } from './StudyTools'
@@ -189,7 +190,7 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
           <button type="button" onClick={() => setNaming(null)} className="press h-10 rounded-full px-3 text-[13.5px] text-ink-2">Cancel</button>
         </form>
       )}
-      {files.some(f=>f.folderId===null)&&<section className="mt-6"><h3 className="font-medium">Chat attachments</h3><ul className="mt-3 space-y-3">{files.filter(f=>f.folderId===null).map(f=><li key={f.id} className="flex flex-wrap items-center gap-3 rounded-[16px] bg-paper/80 p-3"><button className="flex-1 min-w-0 text-left break-words" onClick={()=>setOpen({file:f,mode:'read'})}>{f.name}</button><label className="text-sm">Move to folder<select aria-label={`Move ${f.name} to folder`} className="study-input" value="" onChange={e=>{if(e.target.value)void moveFileToFolder(f.id,e.target.value).catch(err=>onToast(err.message))}}><option value="">Choose a folder</option>{folders.map(folder=><option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label></li>)}</ul></section>}
+      {files.some(f=>f.folderId===null)&&<section className="mt-6"><h3 className="font-medium">Chat attachments</h3><ul className="mt-3 space-y-3">{files.filter(f=>f.folderId===null).map(f=><li key={f.id} className="flex flex-wrap items-center gap-3 rounded-[16px] bg-paper/80 p-3"><button className="flex-1 min-w-0 text-left break-words" onClick={()=>setOpen({file:f,mode:'read'})}>{f.name}</button><label className="text-sm">Move to folder<SelectField aria-label={`Move ${f.name} to folder`} value="" onValueChange={v=>{if(v)void moveFileToFolder(f.id,v).catch(err=>onToast(err.message))}} options={[{value:'',label:'Choose a folder'},...folders.map(folder=>({value:folder.id,label:folder.name}))]} /></label></li>)}</ul></section>}
       {folders.length === 0 && naming == null ? (
         <div className="mt-10 max-w-[360px] text-[14px] leading-relaxed text-ink-2">
           Make a folder for each subject, or attach a reviewer in the chat with the <Clip className="inline size-3.5 align-[-2px]" /> button and Pal files it for you.

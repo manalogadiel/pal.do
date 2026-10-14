@@ -9,6 +9,6 @@ try{
  const empty=renderToStaticMarkup(React.createElement(Placement,props))
  for(const text of ['Create folder','Keep in chat','Cancel'])assert.ok(empty.includes(text))
  const existing=renderToStaticMarkup(React.createElement(Placement,{...props,folders:[{id:'bio',name:'Biology'}]}))
- assert.ok(existing.includes('Biology'));assert.ok(existing.includes('Choose a folder'));assert.ok(!existing.includes('value="bio" selected'))
+ assert.ok(existing.includes('role="combobox"'));assert.ok(existing.includes('aria-expanded="false"'));assert.ok(existing.includes('Choose a folder'));assert.ok(!existing.includes('value="bio" selected'))
  console.log('attachment placement: explicit choice, empty/existing folders and unfiled option pass')
 }finally{await v.close()}

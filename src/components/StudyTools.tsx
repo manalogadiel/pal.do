@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import SelectField from './SelectField'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ToolInstrument, type ToolId } from './ToolInstrument'
 import { DEFAULT_CONFIG, validateConfig, type Method, type StudyConfig } from '../lib/session'
@@ -13,9 +14,9 @@ export const METHODS: Record<Method | 'frog', { name: string; description: strin
   frog: { name: 'Eat the Frog', description: 'Choose the task you have been putting off.' },
 }
 export function StudyDialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  const ref = useRef<HTMLDialogElement>(null)
+  const ref = useRef<HTMLDialogElement>(null), titleId = useId()
   useEffect(() => { const previous = document.activeElement as HTMLElement; ref.current?.showModal(); return () => { ref.current?.close(); requestAnimationFrame(() => { if (previous?.isConnected) previous.focus(); else { const label = previous?.getAttribute('aria-label'); const text = previous?.textContent; const target = [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => label ? b.getAttribute('aria-label') === label : b.textContent === text); target?.focus() } }) } }, [])
-  return createPortal(<dialog ref={ref} className="study-dialog liquid-solid text-ink" onCancel={e => { e.preventDefault(); onClose() }} onClick={e => { if (e.target === e.currentTarget) onClose() }} aria-labelledby="study-dialog-title"><header className="flex items-center justify-between gap-4"><h2 id="study-dialog-title" className="text-xl font-semibold">{title}</h2><button className="press size-11 shrink-0 rounded-full hover:bg-paper-2" onClick={onClose} aria-label="Close study setup">×</button></header>{children}</dialog>, document.body)
+  return createPortal(<dialog ref={ref} className="study-dialog liquid-solid text-ink" onCancel={e => { e.preventDefault(); onClose() }} onClick={e => { if (e.target !== e.currentTarget) return; const r=e.currentTarget.getBoundingClientRect(); if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose() }} aria-labelledby={titleId}><header className="flex items-center justify-between gap-4"><h2 id={titleId} className="text-xl font-semibold">{title}</h2><button className="press size-11 shrink-0 rounded-full hover:bg-paper-2" onClick={onClose} aria-label="Close study setup">×</button></header>{children}</dialog>, document.body)
 }
 export function ToolGallery({ onSelect, onContinue, onBrowse, context }: { onSelect: (tool: ToolId) => void; onContinue?: () => void; onBrowse?: () => void; context?: string }) {
   const [clock, setClock] = useState(() => Date.now())
@@ -49,7 +50,7 @@ export function ToolSetup({ choice, folder, tasks, onBack, onOpen, initialConfig
     onOpen(config)
   }
   return <div className="tool-setup" data-setup={choice}>
-    <button className="tool-back" onClick={onBack}>← All tools</button>
+    <button className="tool-back" onClick={onBack}>← Back</button>
     <div className="tool-setup-layout">
       <div className="tool-setup-preview"><ToolInstrument tool={choice}/><h2 className="text-[28px] font-semibold tracking-[-0.025em]">{METHODS[choice].name}</h2><p className="mt-2 text-sm leading-relaxed text-ink-2">{METHODS[choice].description}</p>{config.folderName && <p className="mt-4 text-sm font-medium">{config.folderName}</p>}
         {choice === 'pomodoro' && <div className="tool-rounds mt-5" aria-label="Four focus rounds">{[1,2,3,4].map(n=><span key={n}>{n}</span>)}</div>}
@@ -60,7 +61,7 @@ export function ToolSetup({ choice, folder, tasks, onBack, onOpen, initialConfig
       <form className="tool-setup-form" onSubmit={e=>{e.preventDefault();open()}}>
         <h3 className="text-lg font-semibold">{choice === 'frog' ? 'Pick your one important task' : 'Make room for focus'}</h3>
         {choice !== 'pomodoro' && <label className="mt-5 block text-sm font-medium">{requiredGoal ? 'Your goal (required)' : 'Your goal (optional)'}<input autoFocus className="study-input mt-2" maxLength={240} value={config.goal ?? ''} onChange={e=>setConfig(c=>({...c,goal:e.target.value,taskId:undefined}))} placeholder="For example, finish ten practice problems"/></label>}
-        {requiredGoal && <label className="mt-4 block text-sm">Or choose an existing task<select className="study-input mt-2" value={config.taskId ?? ''} onChange={e=>{const task=tasks.find(t=>t.id===e.target.value);setConfig(c=>({...c,taskId:task?.id,goal:task?.title??''}))}}><option value="">Write my own goal</option>{tasks.filter(t=>t.doneHours<t.hours).map(t=><option key={t.id} value={t.id}>{t.title} · {t.due ? fmtDay(t.due) : 'No deadline'}</option>)}</select></label>}
+        {requiredGoal && <label className="mt-4 block text-sm">Or choose an existing task<SelectField aria-label="Choose an existing task" value={config.taskId ?? ''} onValueChange={v=>{const task=tasks.find(t=>t.id===v);setConfig(c=>({...c,taskId:task?.id,goal:task?.title??''}))}} options={[{value:'',label:'Write my own goal'},...tasks.filter(t=>t.doneHours<t.hours).map(t=>({value:t.id,label:`${t.title} · ${t.due?fmtDay(t.due):'No deadline'}`}))]} /></label>}
         {choice === 'frog' && <fieldset className="mt-5"><legend className="text-sm font-medium">Choose your timer</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{(['pomodoro','task'] as const).map(method=><label key={method} className={`frog-timer-choice ${frogTimer===method?'is-selected':''}`}><input type="radio" name="frog-timer" checked={frogTimer===method} onChange={()=>{setFrogTimer(method);setConfig(c=>({...c,method}))}}/><span>{method==='pomodoro'?'Pomodoro timer':'Task-based timer'}</span></label>)}</div></fieldset>}
         {choice === 'custom' && <div className="custom-controls mt-5">{([['focusMinutes','Focus minutes',1,180],['breakMinutes','Break minutes',0,60],['rounds','Rounds',1,8]] as const).map(([key,label,min,max])=><label className="text-sm" key={key}>{label}<input className="study-input mt-2" type="number" min={min} max={max} value={config[key]} onChange={e=>setConfig(c=>({...c,[key]:Number(e.target.value)}))}/></label>)}</div>}
         {choice==='flowtime'&&<p className="mt-5 text-sm leading-relaxed text-ink-2">Work until you want to rest. You can adjust the suggested break when you get there.</p>}

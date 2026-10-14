@@ -142,19 +142,17 @@ try {
   for (let i = 1; i <= 3; i++) {
     await page.getByLabel("Quick add task").fill("Task " + i)
     await page.getByLabel("Quick add task").press("Enter")
-    await page
-      .getByLabel("Move Task " + i, { exact: true })
-      .selectOption("doing")
+    await page.getByLabel("Move Task " + i, {exact:true}).click()
+    await page.getByRole('option',{name:'Workbench',exact:true}).click()
   }
-  await page
-    .getByLabel("Move Buy groceries today", { exact: true })
-    .selectOption("doing")
+  await page.getByLabel("Move Buy groceries today",{exact:true}).click()
+  await page.getByRole('option',{name:'Workbench',exact:true}).click()
   state = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("paldo-v1")),
   )
   assert.equal(state.tasks.filter((t) => t.status === "doing").length, 3)
   assert.equal(state.tasks[0].status, "pile")
-  const moveOne=page.getByLabel('Move Task 1',{exact:true});await moveOne.focus();await moveOne.selectOption('pile')
+  const moveOne=page.getByLabel('Move Task 1',{exact:true});await moveOne.focus();await moveOne.click();await page.getByRole('option',{name:'Pile',exact:true}).click()
   await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='Move Task 1')
   const grip=page.getByRole('button',{name:'Drag Task 1',exact:true})
   await grip.scrollIntoViewIfNeeded()
@@ -197,7 +195,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button',{name:'Switch to dark mode',exact:true}).click()
   await page.getByRole('button',{name:'New task',exact:true}).click()
-  await page.screenshot({path:'.playwright-mcp/adaptive/task-editor-dark.png'})
+  await page.screenshot({path:process.env.TASK_CAPTURE_PATH||'.playwright-mcp/adaptive/task-editor-dark.png'})
   await page.getByRole('button',{name:'Cancel',exact:true}).click()
   await page
     .getByRole("navigation", { name: "Views" })

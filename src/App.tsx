@@ -39,7 +39,7 @@ import { importFile } from './lib/study-files'
 import { studyHours, suggestFolder, terms, titleFromFileName, topicsOf } from './lib/study-material'
 import type { LibraryMode, LibraryTarget } from './components/Library'
 import { cancelSessionAlarms, enableAlarms, isNative, notifyWeb, playChime, playMicSound, playSound, scheduleSessionAlarms, scheduleTimerAlarms, setSoundsOn, syncEventAlarms, unlockChime } from './lib/notifications'
-import { focusElapsed, fromSaved, isPaused, LONG_EVERY, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, active, running, countUp, configure, finish, nextRound, checkpoint, recoverAway, DEFAULT_CONFIG, type StudyConfig, type Session } from './lib/session'
+import { focusElapsed, fromSaved, isPaused, LONG_EVERY, pause, phaseEnds, phaseLabel, remaining, resume, skip, start, stop, tick, active, running, countUp, configure, validateConfig, finish, nextRound, checkpoint, recoverAway, DEFAULT_CONFIG, type StudyConfig, type Session } from './lib/session'
 import { addReminder, addTime, cancelTimer, fmtLeft, isPaused as isTimerPaused, newestTimer, NO_ALARMS, pauseTimer, resumeTimer, sayLength, startTimer, tickAlarms, timeLeft, upcomingAlarms, type Alarms, type Alert } from './lib/timers'
 import { parseCommand, type Command } from './lib/commands'
 import { TimerPill } from './components/TimerPill'
@@ -358,7 +358,7 @@ export default function App() {
     applySession(next, prev)
     setStudyLine('Focused time saved. Take a moment before your next session.')
   }
-  const studyConfigure = (config: StudyConfig) => { const next = configure(config); sessionRef.current = next; setSession(next); setStudyLine('') }
+  const studyConfigure = (config: StudyConfig) => { if (!validateConfig(config)) { toast({ text: 'Check the timer duration and task description. Your current session was kept.' }); return } const next = configure(config); sessionRef.current = next; setSession(next); setStudyLine('') }
   const studyNext = (minutes?: number) => { unlockChime(); const prev = sessionRef.current; const next = nextRound(prev, Date.now(), minutes); applySession(next, prev); armSession(next) }
   const studyRecover = (include: boolean) => { const prev = sessionRef.current; applySession(recoverAway(prev, Date.now(), include), prev) }
   useEffect(() => {

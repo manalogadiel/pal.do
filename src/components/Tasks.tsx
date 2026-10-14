@@ -1,3 +1,4 @@
+import SelectField from './SelectField'
 import {createPortal} from 'react-dom'
 import { useRef, useState } from "react"
 import { fmtDay, fmtTime, type CalEvent, type Task } from "../lib/core"
@@ -64,7 +65,7 @@ export function Tasks({
     onMove?.(id, next)
     setZone(next)
     const task=tasks.find(t=>t.id===id)
-    requestAnimationFrame(()=>{const control=[...document.querySelectorAll<HTMLSelectElement>('select[aria-label]')].find(el=>el.getAttribute('aria-label')===`Move ${task?.title}`);control?.focus({preventScroll:true})})
+    requestAnimationFrame(()=>{const control=[...document.querySelectorAll<HTMLButtonElement>('[role=combobox][aria-label]')].find(el=>el.getAttribute('aria-label')===`Move ${task?.title}`);control?.focus({preventScroll:true})})
   }
   const clearDropTarget=()=>document.querySelectorAll<HTMLElement>('[data-drag-over]').forEach(el=>delete el.dataset.dragOver)
   const startDrag = (e: React.PointerEvent, id: string) => {
@@ -195,15 +196,7 @@ export function Tasks({
           )}
           {cool && <p className="task-help">Waiting for your attention</p>}
           <div className="yard-block-actions">
-            <select
-              aria-label={`Move ${task.title}`}
-              value={st}
-              onChange={(e) => move(task.id, e.target.value as Zone)}
-            >
-              <option value="pile">Pile</option>
-              <option value="doing">Workbench</option>
-              <option value="done">Done</option>
-            </select>
+            <SelectField aria-label={`Move ${task.title}`} value={st} onValueChange={v => move(task.id,v as Zone)} options={[{value:'pile',label:'Pile'},{value:'doing',label:'Workbench'},{value:'done',label:'Done'}]} />
             {st !== "done" ? (
               <button
                 type="button"

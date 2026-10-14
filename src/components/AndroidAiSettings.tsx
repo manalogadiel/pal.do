@@ -1,3 +1,4 @@
+import SelectField from './SelectField'
 import { useEffect, useState } from 'react'
 import AiModeSelector from './AiModeSelector'
 import { LocalAi, nativeErrorMessage, phoneAi, type NativeModel, type NativeStatus } from '../lib/native-ai'
@@ -30,9 +31,7 @@ export default function AndroidAiSettings() {
     <AiModeSelector />
     <div className="mt-3 text-[12px] text-ink-2" role="status">{status?.setup ? status.setup.stage === 'checking' ? 'Checking the included model…' : `Setting up Offline AI… ${Math.min(100, Math.round(status.setup.bytes / status.setup.total * 100))}%` : busy ? 'Preparing Offline AI…' : status?.model ? `Model ready · ${status.model.name} · ${Math.round(status.model.bytes / 1_000_000)} MB${status.loaded ? ' · loaded' : ''}` : status && !status.available ? 'Offline AI is unavailable on this device.' : 'Offline AI is included. Retry setup to activate it.'}</div>
     {models.length > 1 && <div className="mt-2 flex items-center gap-2">
-      <select value={selected?.sha256 ?? ''} disabled={busy} onChange={(e) => void run(() => LocalAi.selectModel!({ sha256: e.target.value }))} aria-label="Phone model" className={`min-w-0 flex-1 ${field}`}>
-        {models.map((m) => <option key={m.sha256} value={m.sha256}>{m.name}{m.bundled ? ' (included)' : ''} · {Math.round(m.bytes / 1_000_000)} MB</option>)}
-      </select>
+      <SelectField value={selected?.sha256 ?? ''} disabled={busy} onValueChange={v => void run(() => LocalAi.selectModel!({sha256:v}))} aria-label="Phone model" options={models.map(m => ({value:m.sha256,label:`${m.name}${m.bundled?' (included)':''} · ${Math.round(m.bytes/1_000_000)} MB`}))} />
     </div>}
     {models.some((m) => !m.selected && !m.bundled) && <div className="mt-1.5 flex flex-wrap gap-x-3 text-[11px] text-ink-3">
       {models.filter((m) => !m.selected && !m.bundled).map((m) => <button key={m.sha256} type="button" disabled={busy} onClick={() => void run(() => LocalAi.removeModel!({ sha256: m.sha256 }))} className="press underline disabled:opacity-50">Delete {m.name}</button>)}

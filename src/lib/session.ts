@@ -14,7 +14,7 @@ export const active = (s: Session) => ['focus', 'break', 'breakReady', 'waiting'
 export const running = (s: Session) => ['focus', 'break'].includes(s.phase) && !isPaused(s) && s.awayAt === undefined
 export const countUp = (s: Session) => s.phase === 'focus' && ['flowtime', 'task'].includes(s.config?.method ?? '')
 export function validateConfig(c: StudyConfig) {
-  return !!c && ['pomodoro', 'flowtime', '52-17', 'task', 'custom'].includes(c.method) && Number.isInteger(c.focusMinutes) && c.focusMinutes >= 1 && c.focusMinutes <= 180 && Number.isInteger(c.breakMinutes) && c.breakMinutes >= 0 && c.breakMinutes <= 60 && Number.isInteger(c.rounds) && c.rounds >= 1 && c.rounds <= 8 && (!['task'].includes(c.method) || !!c.goal?.trim()) && (!c.preparation || !!c.goal?.trim())
+  return !!c && ['pomodoro', 'flowtime', '52-17', 'task', 'custom'].includes(c.method) && Number.isInteger(c.focusMinutes) && c.focusMinutes >= (['flowtime', 'task'].includes(c.method) ? 0 : 1) && c.focusMinutes <= 180 && Number.isInteger(c.breakMinutes) && c.breakMinutes >= 0 && c.breakMinutes <= 60 && Number.isInteger(c.rounds) && c.rounds >= 1 && c.rounds <= 8 && (!['task'].includes(c.method) || !!c.goal?.trim()) && (!c.preparation || !!c.goal?.trim())
 }
 export function configure(config: StudyConfig): Session { return validateConfig(config) ? { ...IDLE, version: 2, phase: 'ready', config: { ...config } } : IDLE }
 const duration = (c: StudyConfig) => (c.method === 'pomodoro' ? 25 : c.method === '52-17' ? 52 : c.focusMinutes) * 60_000

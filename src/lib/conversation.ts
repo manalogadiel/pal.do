@@ -34,7 +34,11 @@ export function isQuestion(text: string, previous?: ConversationFocus) {
     || /^\W*(?:no+[,.!]?\s+)?(do|does|did|am|is|are|was|were|will|would|can|could|what|when|where|which|who|how|why|ano|anong|kailan|saan|sino|bakit|ilang|meron ba|may .+ ba)\b/i.test(t)
 }
 export const emptyFocus = (): ConversationFocus => ({ intent: 'none', rejected: [] })
-export const isGreeting = (text: string) => /^\s*(hi|hello|hey|yo|uy|oy|hoy|kamusta|kumusta|how are you|how are u|how's it going|how is your day|whats up|what's up|good (?:morning|afternoon|evening|day))(?:\s+(?:po|rei|diel|jhyvie|jhivie|jhy|jv|jaypee|jp|pal|bosing|boss))?[.!?\s]*$/i.test(text)
+// Only a bare hello gets the instant greeting. "How are you?", "what's up?" go to the model, which talks back
+// (the fixed greeting answered them with "What needs planning?")
+export const isGreeting = (text: string) => /^\s*(hi|hello|hey|yo|uy|oy|hoy|good (?:morning|afternoon|evening|day))(?:\s+(?:po|rei|diel|jhyvie|jhivie|jhy|jv|jaypee|jp|pal|bosing|boss))?[.!?\s]*$/i.test(text)
+/** A sentence about something ("ang init ngayon", "my friend is coming over tomorrow"), not an activity's name */
+const SENTENCE = /\b(is|are|was|were|am|i|i'?m|me|my|you|your|we|our|they|their|he|she|his|her|it|ang|ako|ko|ka|mo|siya|kami|tayo|sila|sobrang|grabe|so|very|really|too)\b/i
 /** Everyday lines with a day in them that aren't an activity: "see you tomorrow", "okay bukas na lang" */
 const CHAT_LINE = /^\s*(see|i|i'?m|you|we|it|it'?s|that|this|thanks|thank|good|ok|okay|bye|maybe|sure|yes|yeah|no|nope|oo|sige|hindi|wala|tara|ayos|bahala|until|till|bukas na|next time|how|what|who|where|why|when|ano|anong|kailan|saan|sino|bakit|my\s+(?:plan|sched|day)|plans?|sched(?:ule)?|plano|shut|fuck|stop|never ?mind|tell|talk|just)\b/i
 const NEW = /\b(new (?:one|event|schedule|plan)|another (?:event|schedule)|bagong (?:event|schedule|sched|plano))\b|^\W*(?:(?:hi|hey|hello|uy|oy)\W+)?(?:(?:can|could|will) (?:you|u) |pls |please |pa-?)?(?:sched(?:ule)?|add|plan|lagay|ilagay)(?: (?:something|smth|sth|an event|me|for me|po|mo|ka))*\W*$/i
@@ -142,7 +146,7 @@ export function updateConversationFocus(previous: ConversationFocus, userText: s
   } else if (!suppliedTitle && previous.intent === 'event' && !previous.title && hasTime) {
     const title = extractTitle(userText, '')
     if (title) focus = { ...focus, title, kind: kind ?? 'protected', needsSubject: false }
-  } else if (!kind && day != null && !(previous.intent === 'event' && previous.title) && userText.trim().split(/\s+/).length <= 6 && !CHAT_LINE.test(userText)) {
+  } else if (!kind && day != null && !(previous.intent === 'event' && previous.title) && userText.trim().split(/\s+/).length <= 6 && !CHAT_LINE.test(userText) && !SENTENCE.test(userText)) {
     // "mall shopping tomorrow", "haircut sa sabado": an activity and a day, with no kind word the app knows. Still
     // something to add, so Pal asks the time itself (a small model only talked about it: "found a time…", no card)
     const title = extractTitle(userText.replace(/\blater\b/gi, ''), '')

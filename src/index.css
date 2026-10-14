@@ -1,6 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700&family=Silkscreen&display=swap');
 @import 'tailwindcss';
 
+.select-field { display: block; min-width: 0; flex: 1; }
+.select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; min-height: 46px; padding: 10px 13px; border: 1px solid var(--hair); border-radius: 10px; background: var(--paper-2); color: var(--ink); font-size: 16px; font-weight: 400; text-align: left; cursor: pointer; }
+.select-value { min-width: 0; overflow-wrap: anywhere; }
+.select-trigger:disabled { cursor: default; opacity: .5; }
+.select-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.select-trigger[aria-expanded=true] { border-color: var(--accent); }
+.select-popup { margin: 0; padding: 6px; border: 1px solid var(--hair); border-radius: 12px; background: var(--paper); color: var(--ink); box-shadow: 0 10px 28px -10px rgb(20 38 63 / .3); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; z-index: 1; }
+.select-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; width: 100%; padding: 10px 12px; border: 0; border-radius: 7px; font-size: 14px; line-height: 1.45; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.select-option > span { min-width: 0; }
+.select-option[aria-selected=true] { color: var(--accent); font-weight: 600; }
+.select-option[data-highlighted=true] { background: var(--paper-2); }
+.select-option[aria-disabled=true] { opacity: .45; cursor: default; }
+.task-field > .select-field { margin-top: 8px; }
+
 .class-schedule-dialog { margin: auto; width: min(1240px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 24px; border: 0; border-radius: 24px; overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
 .class-schedule-dialog::backdrop { background: rgb(10 25 48 / .35); }
 .class-schedule-layout { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 28px; margin-top: 24px; align-items: start; }

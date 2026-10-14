@@ -15,6 +15,7 @@ export type ScheduleQuestion =
   | { type: 'freeFor'; hours: number; day?: number }
   | { type: 'next'; n: number }
   | { type: 'now' }
+  | { type: 'clock' }
   | { type: 'when'; query: string }
   | { type: 'countdown'; query: string }
   | { type: 'due'; days: number }
@@ -60,6 +61,8 @@ export function parseScheduleQuestion(text: string, now: number): ScheduleQuesti
     || /^\W*(what|when|which|how|do|does|did|am|is|are|will|can|could|ano|anong|kailan|ilang|may|meron|sino|saan|show|tell|list|give|check|view|see)\b/i.test(t)
     || /^\W*(?:my|our|any|the)?\s*(?:plans?|sched(?:ule)?|plano|agenda|calendar|events?)(?:\s+(?:for\s+)?(?:today|tomorrow|this week|now|tonight|bukas|ngayon))?\W*$/i.test(t)
     || /^\W*(?:today'?s?|tomorrow'?s?)\s+(?:plans?|sched(?:ule)?|plano|agenda|events?)\W*$/i.test(t)
+  // "What time is it?", "anong oras na?": the clock, exact (a model answered it with a study question)
+  if (/^\W*(?:(?:what|wat)(?:'?s| is)? (?:the )?time(?: is it)?(?: now)?|what time is it(?: now)?|(?:ano|anong) oras na(?: ba)?(?: ngayon)?)\W*$/i.test(t)) return { type: 'clock' }
   if (!asks) return null
 
   if (INSIGHT.test(t)) return { type: 'insights' }
@@ -127,6 +130,8 @@ export function answerScheduleQuestion(q: ScheduleQuestion, d: ScheduleData): st
   const tl = !!d.taglish
   const ev = real(d.events).sort((a, b) => a.start - b.start)
   const L = (en: string, tagalog: string) => (tl ? tagalog : en)
+
+  if (q.type === 'clock') return L(`It's ${fmtTime(now)}, ${fmtDay(now)}.`, `${fmtTime(now)} na, ${fmtDay(now)}.`)
 
   if (q.type === 'day') {
     const items = ev.filter((e) => startOfDay(e.start) === q.day && (q.day !== startOfDay(now) || e.end > now) && (!q.kinds || q.kinds.includes(e.kind) || (q.kinds.includes('deadline') && !!e.taskId && e.kind === 'deadline')))

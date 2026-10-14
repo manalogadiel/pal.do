@@ -10,5 +10,7 @@ export function parseTravelIntent(text:string,now:number):TravelDraft|null{
  if(!match)return null
  if(/^(?:study|work|review|prepare|finish|do|have|meet|eat|sleep|play|watch|read|write|aral|mag-?aral|magtrabaho)\b/i.test(match[1].trim()))return null
  const when=parseWhen(text,now)
+ // A bare "going to the beach someday" is talk, not a trip to plan: it needs a day, or a real travel word
+ if(!when&&!/\b(aalis|papunta(?:ng)?|pupunta(?:ng)?|popunta(?:ng)?|bibiyahe|biyahe|travel(?:ling)?|trip)\b/i.test(text))return null
  return{id:uid(),rawText:text,date:when?.t,destinationQuery:match[1].trim(),departure:when?.hadTime?when.t:undefined}
 }

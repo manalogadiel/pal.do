@@ -1,3 +1,4 @@
+import SelectField from './SelectField'
 import WeatherSettings from './WeatherSettings'
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { PalId } from "../lib/core"
@@ -164,22 +165,7 @@ function CloudSettings() {
         <label className="settings-field-label" htmlFor="settings-cloud-model">
           Cloud model
         </label>
-        <select
-          id="settings-cloud-model"
-          className="settings-input"
-          value={model}
-          onChange={(e) => {
-            setModel(e.target.value)
-            setCloudModel(e.target.value)
-          }}
-        >
-          <option value="auto">Auto · best available</option>
-          {CLOUD_MODELS.filter((m) => !key || m.id !== "gemini").map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+        <SelectField id="settings-cloud-model" aria-label="Cloud model" value={model} onValueChange={v => { setModel(v); setCloudModel(v) }} options={[{value:'auto',label:'Auto · best available'}, ...CLOUD_MODELS.filter(m => !key || m.id !== 'gemini').map(m => ({value:m.id,label:m.label}))]} />
         <label className="settings-field-label mt-5" htmlFor="settings-api-key">
           Your Groq API key{" "}
           <span className="font-normal text-ink-2">(optional)</span>

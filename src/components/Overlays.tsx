@@ -1,3 +1,4 @@
+import SelectField from './SelectField'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { defaultHours } from '../lib/agent'
@@ -120,9 +121,7 @@ export function LocalAiRow() {
             className={`min-w-0 flex-1 ${field}`}
           />
           {models?.length ? (
-            <select value={model} onChange={(e) => { setModel(e.target.value); setLocalAiModel(e.target.value); preloadOllama() }} aria-label="Model" className={field}>
-              {models.map((m) => <option key={m} value={m}>{localModelLabel(m)}</option>)}
-            </select>
+            <SelectField value={model} onValueChange={v => { setModel(v); setLocalAiModel(v); preloadOllama() }} aria-label="Model" options={models.map(m => ({value:m,label:localModelLabel(m)}))} />
           ) : null}
         </div>
       )}

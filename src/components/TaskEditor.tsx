@@ -1,3 +1,4 @@
+import SelectField from './SelectField'
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { uid, type Task } from "../lib/core"
@@ -155,25 +156,11 @@ export default function TaskEditor({
           <div className="task-field-pair">
             <label className="task-field">
               Status
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as typeof status)}
-              >
-                <option value="pile">Pile</option>
-                <option value="doing">Workbench</option>
-                <option value="done">Done</option>
-              </select>
+              <SelectField aria-label="Status" value={status} onValueChange={v=>{setStatus(v as typeof status);setError('');setAllowOverlap(false);setConflict(false)}} options={[{value:'pile',label:'Pile'},{value:'doing',label:'Workbench'},{value:'done',label:'Done'}]} />
             </label>
             <label className="task-field">
               Type
-              <select
-                value={kind}
-                onChange={(e) => setKind(e.target.value as typeof kind)}
-              >
-                <option value="task">Everyday task</option>
-                <option value="assignment">Assignment</option>
-                <option value="exam">Exam</option>
-              </select>
+              <SelectField aria-label="Type" value={kind} onValueChange={v=>{setKind(v as typeof kind);setError('');setAllowOverlap(false);setConflict(false)}} options={[{value:'task',label:'Everyday task'},{value:'assignment',label:'Assignment'},{value:'exam',label:'Exam'}]} />
             </label>
           </div>
           <label className="task-field">
@@ -252,23 +239,7 @@ export default function TaskEditor({
             </p>
             <label className="task-field">
               Subject folder
-              <select
-                value={folder}
-                onChange={(e) => setFolder(e.target.value)}
-              >
-                <option value="">No folder</option>
-                {task?.folderId &&
-                  !folders.some((f) => f.id === task.folderId) && (
-                    <option value={task.folderId}>
-                      Folder no longer available
-                    </option>
-                  )}
-                {folders.map((f) => (
-                  <option value={f.id} key={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
+              <SelectField aria-label="Subject folder" value={folder} onValueChange={v=>{setFolder(v);setError('');setAllowOverlap(false);setConflict(false)}} options={[{value:'',label:'No folder'}, ...(task?.folderId && !folders.some(f=>f.id===task.folderId)?[{value:task.folderId,label:'Folder no longer available',disabled:true}]:[]), ...folders.map(f=>({value:f.id,label:f.name}))]} />
             </label>
           </details>
           {error && (
