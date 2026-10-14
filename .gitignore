@@ -25,3 +25,4 @@ logs/
 # Local Python runtime
 services/tts/.venv/
 services/tts/__pycache__/
+.vercel

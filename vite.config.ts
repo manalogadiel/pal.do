@@ -1,5 +1,6 @@
 import {maps} from './api/_lib/maps'
 import {scheduleExtract} from './api/_lib/schedule-extract'
+import { audio, chat, cloudStatus, preflight, type CloudKeys } from './api/_lib/proxy'
 import { OPTIONS as ttsOptions, POST as ttsPost } from './api/tts'
 import {MAX_SCHEDULE_REQUEST} from './src/lib/schedule-source'
 import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type ViteDevServer } from 'vite'
@@ -90,6 +91,33 @@ function localScheduleExtraction(key: string): Plugin {
   return { name: 'local-schedule-extraction', configureServer: configure, configurePreviewServer: configure }
 }
 
+/** Use the deployed API handlers locally too; credentials stay in this server process. */
+function localCloudAi(keys: CloudKeys): Plugin {
+  const configure = (server: Pick<ViteDevServer, 'middlewares'>) => {
+    server.middlewares.use('/api/groq', async (req, res, next) => {
+      const route = (req.url ?? '/').split('?')[0]
+      if (!['/', '/audio', '/status'].includes(route)) return next()
+      if (req.method !== 'OPTIONS' && req.method !== (route === '/status' ? 'GET' : 'POST')) {
+        res.statusCode = 405; res.end('Method not allowed'); return
+      }
+      try {
+        const chunks: Buffer[] = []; let size = 0
+        for await (const chunk of req) {
+          const buffer = Buffer.from(chunk); size += buffer.length
+          if (size > (route === '/audio' ? 650_000 : 32_000)) { res.statusCode = 413; res.end('Too large'); return }
+          chunks.push(buffer)
+        }
+        const headers = new Headers()
+        for (const [name, value] of Object.entries(req.headers)) if (value) headers.set(name, Array.isArray(value) ? value.join(',') : value)
+        const request = new Request(`http://${req.headers.host ?? 'localhost:8443'}/api/groq${route === '/' ? '' : route}`, { method: req.method, headers, ...(req.method === 'POST' ? { body: Buffer.concat(chunks) } : {}) })
+        const response = req.method === 'OPTIONS' ? preflight(request) : route === '/status' ? cloudStatus(request, keys) : route === '/audio' ? await audio(request, keys.groq) : await chat(request, keys)
+        res.statusCode = response.status; response.headers.forEach((value, name) => res.setHeader(name, value)); res.end(Buffer.from(await response.arrayBuffer()))
+      } catch { res.statusCode = 502; res.end('Online AI is unavailable. Try again or use offline mode.') }
+    })
+  }
+  return { name: 'local-cloud-ai', configureServer: configure, configurePreviewServer: configure }
+}
+
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const serverEnv = loadEnv(mode, configDirectory, '')
@@ -101,6 +129,9 @@ export default defineConfig(({ mode }) => {
     publicDir: 'public',
     cacheDir: '.cache/vite',
     base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
+    define: {
+      'import.meta.env.VITE_GROQ_PROXY_ENABLED': JSON.stringify(Boolean(process.env.GROQ_API_KEY || serverEnv.GROQ_API_KEY || process.env.GEMINI_API_KEY || serverEnv.GEMINI_API_KEY)),
+    },
     build: {
       outDir: androidPreview ? 'dist-android' : 'dist',
       sourcemap: emitSourcemaps ? 'inline' : false,
@@ -110,6 +141,7 @@ export default defineConfig(({ mode }) => {
       crossOriginIsolation(),
       localMaps(),
       localTts(),
+      localCloudAi({ groq: process.env.GROQ_API_KEY ?? serverEnv.GROQ_API_KEY, gemini: process.env.GEMINI_API_KEY ?? serverEnv.GEMINI_API_KEY }),
       localScheduleExtraction(process.env.GEMINI_API_KEY ?? serverEnv.GEMINI_API_KEY ?? ''),
       react(),
       tailwindcss(),
@@ -199,6 +231,7 @@ type FigmaSiteConfiguration = {
   }
   accessibility?: {
     addBypassLinks?: boolean
+    ignoreReducedMotion?: boolean
   }
 }
 

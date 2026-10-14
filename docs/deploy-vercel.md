@@ -36,6 +36,14 @@ The web app and its AI proxy deploy together. Users never need their own API key
    **Class schedule imports:** `/api/schedule-extract` requires the server-side `GEMINI_API_KEY` and uses `gemini-3.1-flash-lite` for image/text extraction. Without it, manual entry remains available. Never use a `VITE_` variable for this key. Local Vite development reads the same key from the shell or a private `.env.local`; restart Vite after configuring it. Extraction shares the existing daily chat allowance and origin restrictions.
 5. **Deploy.** The web build finds the proxy at `/api/groq` on its own; no `VITE_GROQ_PROXY_URL` is needed for the web.
 
+## Demo setup
+
+The local demo reads `GROQ_API_KEY` from the private, Git-ignored `.env.local` and serves the existing proxy through Vite. Do not use `VITE_GROQ_API_KEY` or embed a key in a web build or APK. Settings can supply a device-specific key; clearing it restores the preset server configuration.
+
+Onboarding checks `/api/groq/status` before saying that the smart online version is already set up. This endpoint returns only whether server credentials are configured, never the credentials. It is not a guarantee of current quota or service availability. Auto, Online, and Offline keep their existing routing behavior.
+
+The website uses its server-side preset on desktop and mobile browsers. Configure `GROQ_API_KEY` in Vercel's production environment and redeploy after changing it. Judges do not need to enter a key. Microphone access still requires browser permission.
+
 ## The Android app
 
 The APK talks to the same proxy. Before building it, put the full URL in `.env.production` (ignored by Git):

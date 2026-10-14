@@ -9,6 +9,7 @@ import { requestNotificationPermission } from '../lib/notifications'
 import { Pal, PALS } from '../pals/Pal'
 import { Wordmark } from './Icons'
 import { PalStage } from './Overlays'
+import OnlineAiNotice from './OnlineAiNotice'
 
 type Step = 'intro' | 'name' | 'pal' | 'permissions' | 'ai' | 'ready'
 const STEPS: Step[] = ['intro', 'name', 'pal', 'permissions', 'ai', 'ready']
@@ -214,6 +215,7 @@ export default function Welcome({ onDone }: { onDone: (v: { pal: PalId; name: st
 
           {step === 'ai' && (
             <div>
+              <OnlineAiNotice />
               <div className="flex items-center gap-3">
                 <Pal id={pal} size={64} className="welcome-inline-pal" state={ai.phase === 'ready' ? 'cheer' : ai.phase === 'installing' ? 'listening' : 'talking'} />
                 <h1 className="font-serif text-[clamp(26px,7vw,36px)] leading-[1.05] tracking-[-0.02em]">{palName}’s offline brain</h1>

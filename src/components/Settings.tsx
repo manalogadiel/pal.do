@@ -1,5 +1,6 @@
 import SelectField from './SelectField'
 import WeatherSettings from './WeatherSettings'
+import OnlineAiNotice from './OnlineAiNotice'
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { PalId } from "../lib/core"
 import type { Energy } from "../lib/schedule"
@@ -150,6 +151,7 @@ function CloudSettings() {
         <ChevronR />
       </summary>
       <div className="settings-details-content">
+        <OnlineAiNotice key={key} />
         {!isPhoneAiPlatform() && (
           <Row title="Cloud AI" description="Allow Pal to use online models.">
             <Switch
@@ -184,7 +186,7 @@ function CloudSettings() {
           }}
         />
         <p className="settings-help mt-2">
-          Stored on this device and used for your cloud requests.{" "}
+          Your key overrides the preset online setup on this device. Clear it to use the preset again.{" "}
           <a
             href="https://console.groq.com/keys"
             target="_blank"

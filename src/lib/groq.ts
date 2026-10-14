@@ -51,7 +51,7 @@ const LOCAL_MODEL_STORAGE = 'paldo_local_ai_model'
  * The hosted proxy (api/groq.ts on Vercel) that holds the keys, so nobody needs their own. A web build served from
  * Vercel finds it at /api/groq by itself; the Android app needs the full URL at build time (VITE_GROQ_PROXY_URL).
  */
-const GROQ_PROXY_URL = import.meta.env.VITE_GROQ_PROXY_URL || (import.meta.env.PROD && !Capacitor.isNativePlatform() ? '/api/groq' : '')
+const GROQ_PROXY_URL = import.meta.env.VITE_GROQ_PROXY_URL || ((import.meta.env.PROD || import.meta.env.VITE_GROQ_PROXY_ENABLED) && !Capacitor.isNativePlatform() ? '/api/groq' : '')
 
 /** An anonymous id for this install, so the proxy can share the free quota fairly (a daily allowance per device) */
 export function deviceId(): string {
@@ -257,6 +257,16 @@ export function hasCloudAi(): boolean {
   return Boolean(GROQ_PROXY_URL || getGroqApiKey())
 }
 
+/** Check preset configuration without downloading or displaying the server key. */
+export async function cloudSetupAvailable(signal?: AbortSignal): Promise<boolean> {
+  if (getGroqApiKey()) return true
+  if (!GROQ_PROXY_URL) return false
+  try {
+    const response = await fetch(`${GROQ_PROXY_URL.replace(/\/$/, '')}/status`, { signal: signal ?? AbortSignal.timeout(5000), cache: 'no-store' })
+    return response.ok && (await response.json()).configured === true
+  } catch { return false }
+}
+
 /** Every cloud model is out of quota or resting right now */
 const cloudResting = () => chainFor(getGroqApiKey()).every(coolingDown)
 
@@ -279,16 +289,12 @@ export function chooseProvider(mode: AiMode = getAiMode()): AiProvider {
 /** The phone's own model would be the one answering, so the rules go first (it's slow and often wrong) */
 export const phoneModelAnswers = (provider: AiProvider) => provider === 'native' || (provider === 'auto' && isPhoneAiPlatform() && !cloudReady())
 
-/** Only the key the user typed in Settings (never the .env dev key, so it isn't shown on screen). */
+/** Only the key the user typed in Settings; preset credentials stay on the server. */
 export function getSavedGroqKey(): string {
   return typeof window === 'undefined' ? '' : localStorage.getItem(GROQ_KEY_STORAGE) || ''
 }
 
 export function getGroqApiKey(): string {
-  // .env key is for local dev only: in a build it would be readable by anyone who unzips the app
-  if (import.meta.env.DEV && import.meta.env.VITE_GROQ_API_KEY) {
-    return import.meta.env.VITE_GROQ_API_KEY
-  }
   if (typeof window === 'undefined') return ''
   return localStorage.getItem(GROQ_KEY_STORAGE) || ''
 }

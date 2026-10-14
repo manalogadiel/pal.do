@@ -21,6 +21,15 @@ const DEVICE_DAILY = Number(process.env.PAL_DEVICE_DAILY ?? 40) // AI replies pe
 const IP_DAILY = Number(process.env.PAL_IP_DAILY ?? 200) // per network: stops one script inventing device ids
 const AUDIO_DAILY = Number(process.env.PAL_AUDIO_DAILY ?? 60)
 
+export interface CloudKeys { groq?: string; gemini?: string }
+const serverKeys = (): CloudKeys => ({ groq: process.env.GROQ_API_KEY, gemini: process.env.GEMINI_API_KEY })
+
+/** Configuration only; never return a credential to the browser or APK. */
+export function cloudStatus(req: Request, keys: CloudKeys = serverKeys()): Response {
+  const c = cors(req)
+  return json(c.ok ? 200 : 403, c.ok ? { configured: Boolean(keys.groq || keys.gemini) } : { error: 'Origin not allowed' }, { ...c.headers, 'Cache-Control': 'no-store' })
+}
+
 function allowedOrigins() {
   // Same-origin web requests carry the deployment's own origin; Capacitor's Android WebView is https://localhost
   return (process.env.ALLOWED_ORIGINS ?? 'https://localhost,http://localhost:8443,http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean)
@@ -90,7 +99,7 @@ export async function overLimit(req: Request, kind: 'chat' | 'audio', signal?: A
 }
 
 /* ---------- Chat ---------- */
-export async function chat(req: Request): Promise<Response> {
+export async function chat(req: Request, keys: CloudKeys = serverKeys()): Promise<Response> {
   const c = cors(req)
   if (!c.ok) return new Response('Origin not allowed', { status: 403, headers: c.headers })
   const raw = await req.text()
@@ -104,7 +113,7 @@ export async function chat(req: Request): Promise<Response> {
   const model = String(body.model ?? '')
   const gemini = model === 'gemini'
   if (!gemini && !GROQ_MODELS.has(model)) return new Response('Model not allowed', { status: 400, headers: c.headers })
-  const key = gemini ? process.env.GEMINI_API_KEY : process.env.GROQ_API_KEY
+  const key = gemini ? keys.gemini : keys.groq
   // Not set up: an error, not a 429, so the app just moves on to its next model
   if (!key) return json(503, { error: { message: `${gemini ? 'Gemini' : 'Groq'} is not configured on this server` } }, c.headers)
 
@@ -134,10 +143,9 @@ export async function chat(req: Request): Promise<Response> {
 }
 
 /* ---------- Voice: one spoken command after "Hi {pal}", written out by Groq's Whisper ---------- */
-export async function audio(req: Request): Promise<Response> {
+export async function audio(req: Request, key = process.env.GROQ_API_KEY): Promise<Response> {
   const c = cors(req)
   if (!c.ok) return new Response('Origin not allowed', { status: 403, headers: c.headers })
-  const key = process.env.GROQ_API_KEY
   if (!key) return json(503, { error: { message: 'Groq is not configured on this server' } }, c.headers)
   const form = await req.formData().catch(() => null)
   const file = form?.get('file')
