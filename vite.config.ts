@@ -144,10 +144,11 @@ export default defineConfig(({ mode }) => {
 
 /**
  * Builds ship only the voice files the app loads from its own server: the voice detector (vad/), the wake-word
- * engine (wakeword/, ~6 MB) and the ONNX runtime (kokoro/ort/). Whisper downloads from Hugging Face the first time
- * hands-free is turned on (stt.worker.ts falls back to it), and the Kokoro speech model was never used for
- * speaking: leaving them out keeps ~165 MB off every deploy and APK. The bundler's second copy of the ONNX runtime is never loaded either (paths point at kokoro/ort/).
- * The dev server still serves all of public/, so the voice self-test keeps working.
+ * engine (wakeword/, ~6 MB), the ONNX runtime (kokoro/ort/) and, on the web, Whisper (whisper/, 76 MB): fetched from
+ * Hugging Face instead it took minutes ("Getting ready… 15%") where the dev server loads it in seconds. The Android
+ * app leaves Whisper out to stay small and downloads it the first time (stt.worker.ts falls back to Hugging Face).
+ * The Kokoro speech model was never used for speaking, and the bundler's second copy of the ONNX runtime is never
+ * loaded either (paths point at kokoro/ort/). The dev server still serves all of public/.
  */
 function pruneUnusedModels(outDir: string): Plugin {
   return {
@@ -155,7 +156,7 @@ function pruneUnusedModels(outDir: string): Plugin {
     apply: 'build',
     closeBundle() {
       const out = path.resolve(configDirectory, outDir)
-      for (const dir of ['whisper', 'kokoro/models', 'kokoro/voices']) fs.rmSync(path.join(out, dir), { recursive: true, force: true })
+      for (const dir of [...(outDir === 'dist-android' ? ['whisper'] : []), 'kokoro/models', 'kokoro/voices']) fs.rmSync(path.join(out, dir), { recursive: true, force: true })
       const assets = path.join(out, 'assets')
       if (fs.existsSync(assets)) for (const f of fs.readdirSync(assets)) if (/^ort-wasm.*\.wasm$/.test(f)) fs.rmSync(path.join(assets, f))
     },
