@@ -88,6 +88,8 @@ function load(): Saved {
 }
 
 /** "delete mo yan", "tanggalin mo", "cancel that" */
+const SIGN_OFF = String.raw`(?:thanks?(?: you)?|thank u|thx|ty|salamat|maraming salamat|bye(?:[- ]?bye)?|goodbye|good ?night|see (?:you|ya)(?: later| tomorrow)?|later|that'?s (?:all|it)|nothing else|no more|i'?m good|im good|all good|we'?re good|all set|done|okay na|ok na|tama na|wala na|yun lang|yon lang|ayos na)`
+const DISMISSAL = new RegExp(String.raw`^\W*(?:(?:ok(?:ay)?|alright|sige|cge|oh|cool|great|nice|perfect|got it|no|nope)[\s,.!]+)*${SIGN_OFF}(?:[\s,.!]+(?:${SIGN_OFF}|po|so much|a lot|again|for now|na|rei|diel|jhyvie|jaypee|jp|jv|pal))*\W*$`, 'i')
 const REMOVE_ASK = /\b(delete|remove|tanggal\w*|bura\w*|alis\w*|cancel)\b/i
 /** "add anyway", "ok lang", "yung original": keep the asked time even though it overlaps */
 /** Phone-model errors the user can fix (import a model, free space); anything else is just a missed reply */
@@ -1192,7 +1194,9 @@ export default function App() {
       return palSay(say(pal, 'timerStopped'))
     }
     // Conversational sign-off: "thanks", "salamat", "bye", "okay na", etc.
-    const isDismissal = /^\s*(?:thanks|thank you|salamat(?: po)?|maraming salamat|ty|bye|bye[- ]?bye|goodbye|cge bye|sige bye|okay na(?: po)?|tama na|all good|no more|yun lang|yon lang)\b/i.test(text.trim())
+    // The whole message is a sign-off ("okay thanks", "that's all, bye"): Pal says goodbye and the mic stays closed.
+    // "Thanks, now add gym at 5" is a request, not a goodbye
+    const isDismissal = DISMISSAL.test(text.trim())
     if (isDismissal) {
       followNext.current = false
       const farewell = pal === 'diel'
