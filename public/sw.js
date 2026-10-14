@@ -1,5 +1,5 @@
 // Pal.do PWA Service Worker
-const CACHE_NAME = 'paldo-pwa-v2'
+const CACHE_NAME = 'paldo-pwa-v3-pals-logo'
 
 // On a dev server (this computer or the local network) the cache served old copies of the source files, so changes
 // never showed. There this worker clears everything, removes itself, and reloads the open tabs onto the real files.

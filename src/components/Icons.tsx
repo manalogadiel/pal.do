@@ -36,12 +36,20 @@ export const Glyph: Record<Kind, (p: P) => React.ReactElement> = {
 
 export function Wordmark({ className = '' }: { className?: string }) {
   return (
-    <span className={`inline-flex items-baseline gap-[3px] leading-none select-none ${className}`} aria-label="Pal.Do">
+    <span className={`inline-flex shrink-0 items-center gap-2 leading-none select-none ${className}`} role="img" aria-label="Pal.do">
+      <BrandMark className="size-[2em]" />
+      <span className="inline-flex items-baseline gap-[3px] max-[359px]:hidden" aria-hidden="true">
       <span className="font-serif text-[1.55em] tracking-[-0.02em]">Pal</span>
       <span className="mb-[0.08em] inline-block size-[0.32em] rounded-[0.09em] bg-accent" />
       <span className="font-sans text-[1.05em] font-semibold tracking-[-0.03em]">Do</span>
+      </span>
     </span>
   )
+}
+
+/** Decorative artwork; the containing wordmark supplies its accessible name. */
+export function BrandMark({ className = 'size-10' }: P) {
+  return <img src="/icons/icon-192.png" width="192" height="192" alt="" draggable={false} className={`shrink-0 rounded-[28%] object-contain ${className}`} />
 }
 
 /** Line illustration: syllabus page whose highlighted lines drop into calendar ticks. */

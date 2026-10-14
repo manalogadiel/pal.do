@@ -1,6 +1,6 @@
-# figma-make-app
+# Pal.do
 
-React + Vite + Tailwind CSS project running inside Figma Make.
+React + Vite + Tailwind CSS application for Pal.do — AI student and productivity companion.
 
 ## Development Server
 

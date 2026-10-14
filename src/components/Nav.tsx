@@ -1,4 +1,4 @@
-import { Doc, Gear, Moon, Sun, HomeIcon, TasksIcon, TimerIcon, WeekIcon, Pip } from './Icons'
+import { BrandMark, Doc, Gear, Moon, Sun, HomeIcon, TasksIcon, TimerIcon, WeekIcon, Pip } from './Icons'
 
 export type View = 'home' | 'week' | 'tasks' | 'study'
 const ITEMS: { id: View; label: string; Icon: (p: { className?: string }) => React.ReactElement }[] = [
@@ -26,8 +26,8 @@ export function Rail({ view, setView, onSyllabus, onSettings, onPip, taskCount, 
   const i = ITEMS.findIndex((x) => x.id === view)
   return (
     <nav className="liquid relative z-30 flex w-[68px] overflow-y-auto overscroll-contain shrink-0 flex-col items-center gap-1 rounded-[30px] py-4" aria-label="Views">
-      <div className="mb-4 grid size-10 shrink-0 place-items-center" aria-hidden>
-        <span className="size-3 rounded-[4px] bg-accent shadow-[0_4px_12px_-3px_var(--accent)]" />
+      <div className="mb-4 grid size-10 shrink-0 place-items-center" role="img" aria-label="Pal.do">
+        <BrandMark />
       </div>
       <div className="relative flex shrink-0 flex-col gap-1">
         <span

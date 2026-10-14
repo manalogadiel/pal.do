@@ -10,7 +10,19 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 const configDirectory = path.dirname(fileURLToPath(import.meta.url))
 
-import siteConfiguration from './.figma/make/site.json'
+const defaultSiteConfig: FigmaSiteConfiguration = {
+  title: 'Pal.do',
+  description: 'Your AI student and productivity companion',
+  robots: { index: false },
+  accessibility: { addBypassLinks: false, ignoreReducedMotion: false },
+}
+let siteConfiguration: FigmaSiteConfiguration = defaultSiteConfig
+try {
+  const siteConfigPath = path.resolve(configDirectory, '.figma/make/site.json')
+  if (fs.existsSync(siteConfigPath)) {
+    siteConfiguration = JSON.parse(fs.readFileSync(siteConfigPath, 'utf-8'))
+  }
+} catch {}
 
 
 /**
