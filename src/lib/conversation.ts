@@ -34,16 +34,16 @@ export function isQuestion(text: string, previous?: ConversationFocus) {
     || /^\W*(?:no+[,.!]?\s+)?(do|does|did|am|is|are|was|were|will|would|can|could|what|when|where|which|who|how|why|ano|anong|kailan|saan|sino|bakit|ilang|meron ba|may .+ ba)\b/i.test(t)
 }
 export const emptyFocus = (): ConversationFocus => ({ intent: 'none', rejected: [] })
-export const isGreeting = (text: string) => /^\s*(hi|hello|hey|yo|uy|oy|hoy|kamusta|kumusta)(?:\s+(?:po|rei|diel|jhyvie|jhivie|jhy|jv|jaypee|jp|pal|bosing|boss))?[.!?\s]*$/i.test(text)
+export const isGreeting = (text: string) => /^\s*(hi|hello|hey|yo|uy|oy|hoy|kamusta|kumusta|how are you|how are u|how's it going|how is your day|whats up|what's up|good (?:morning|afternoon|evening|day))(?:\s+(?:po|rei|diel|jhyvie|jhivie|jhy|jv|jaypee|jp|pal|bosing|boss))?[.!?\s]*$/i.test(text)
 /** Everyday lines with a day in them that aren't an activity: "see you tomorrow", "okay bukas na lang" */
-const CHAT_LINE = /^\s*(see|i|i'?m|you|we|it|it'?s|that|this|thanks|thank|good|ok|okay|bye|maybe|sure|yes|yeah|no|nope|oo|sige|hindi|wala|tara|ayos|bahala|until|till|bukas na|next time)\b/i
+const CHAT_LINE = /^\s*(see|i|i'?m|you|we|it|it'?s|that|this|thanks|thank|good|ok|okay|bye|maybe|sure|yes|yeah|no|nope|oo|sige|hindi|wala|tara|ayos|bahala|until|till|bukas na|next time|how|what|who|where|why|when|ano|anong|kailan|saan|sino|bakit|my\s+(?:plan|sched|day)|plans?|sched(?:ule)?|plano|shut|fuck|stop|never ?mind|tell|talk|just)\b/i
 const NEW = /\b(new (?:one|event|schedule|plan)|another (?:event|schedule)|bagong (?:event|schedule|sched|plano))\b|^\W*(?:(?:hi|hey|hello|uy|oy)\W+)?(?:(?:can|could|will) (?:you|u) |pls |please |pa-?)?(?:sched(?:ule)?|add|plan|lagay|ilagay)(?: (?:something|smth|sth|an event|me|for me|po|mo|ka))*\W*$/i
 const REJECT_KIND = /\b(?:not|hindi|di)\s+(?:an?\s+)?(exam|quiz|class|meeting|seminar)\b/i
-const DECLINE = /^\s*(no+|nope|nah|hindi|wag(?: na)?|huwag(?: na)?|not now|cancel|never ?mind)[.!?\s]*$/i
+const DECLINE = /^\s*(no+|nope|nah|hindi|wag(?: na)?|huwag(?: na)?|not now|cancel(?: this)?|never ?mind|stop(?:\s+it)?|shut(?:\s+the\s+fuck)?\s+up|fuck\s+off|don'?t\s+add|wrong|mali|not\s+(?:an?\s+)?(?:event|plan|that))[.!?\s]*$/i
 const STUDY = /\b(study|review|aral\w*|magreview|study sessions?)\b/i
 const REMOVE = /\b(remove|delete|remoce|tanggal\w*|alisin|bura\w*)\b/i
-/** A title that's only the kind: Pal still wants the subject */
-const GENERIC = /^(exam|quiz|test|meeting|event)$/i
+/** A title that's only the kind or a generic word: Pal still wants the subject, or it's not a real title */
+const GENERIC = /^(exam|quiz|test|meeting|event|plan|plans|plano|sched(?:ule)?|agenda|calendar|activity|how are you|how is your day)$/i
 /** What speech-to-text writes for "starts" ("parts on 5pm"): never a subject */
 const MISHEARD_STARTS = /\b(parts?|stars?|darts?|hearts?|arts?|smarts?|stats?|starch|sparks?)\b/gi
 /** Short replies that aren't a subject when Pal asked for one */

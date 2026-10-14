@@ -56,7 +56,10 @@ export function parseScheduleQuestion(text: string, now: number): ScheduleQuesti
   // "No, I'm asking if I have an exam tomorrow": the question is what follows
   const t = text.trim().replace(/^\W*(?:no+|nope|hindi|di)\b[\s,.!]*/i, '').replace(/^(?:i'?m|i am|im)\s+(?:just\s+)?asking\s+(?:if|whether|kung)\s+(?:i\s+)?/i, 'do i ').replace(/^tinatanong ko (?:kung|if)\s+/i, '')
   if (REQUEST.test(t) || ADVICE.test(t)) return null
-  const asks = /\?\s*$/.test(t) || /^\W*(what|when|which|how|do|does|am|is|are|will|can|ano|anong|kailan|ilang|may|meron|sino|saan|show|tell|list|give)\b/i.test(t)
+  const asks = /\?\s*$/.test(t)
+    || /^\W*(what|when|which|how|do|does|did|am|is|are|will|can|could|ano|anong|kailan|ilang|may|meron|sino|saan|show|tell|list|give|check|view|see)\b/i.test(t)
+    || /^\W*(?:my|our|any|the)?\s*(?:plans?|sched(?:ule)?|plano|agenda|calendar|events?)(?:\s+(?:for\s+)?(?:today|tomorrow|this week|now|tonight|bukas|ngayon))?\W*$/i.test(t)
+    || /^\W*(?:today'?s?|tomorrow'?s?)\s+(?:plans?|sched(?:ule)?|plano|agenda|events?)\W*$/i.test(t)
   if (!asks) return null
 
   if (INSIGHT.test(t)) return { type: 'insights' }

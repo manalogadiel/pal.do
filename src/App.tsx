@@ -52,7 +52,7 @@ import { AI_MODE_EVENT, getAiMode, isPhoneAiPlatform } from './lib/ai-mode'
 import { AiRequestGate } from './lib/ai-request'
 import { chooseProvider, getNativeFailure, phoneModelAnswers } from './lib/groq'
 import { automaticModelSetup, nativeErrorMessage, phoneAi } from './lib/native-ai'
-import { describeFocus, emptyFocus, eventFromFocus, removePreviewedEvents, resolveStudyRequest, selectStudyGroup, updateConversationFocus, type ConversationFocus } from './lib/conversation'
+import { describeFocus, emptyFocus, eventFromFocus, isGreeting, isQuestion, removePreviewedEvents, resolveStudyRequest, selectStudyGroup, updateConversationFocus, type ConversationFocus } from './lib/conversation'
 
 const KEY = 'paldo-v1'
 const QUIET: [number, number] = [23, 7]
@@ -1151,18 +1151,32 @@ export default function App() {
     }
     const inventoryNow=answerKnowledgeQuestion(text,{query:text,tasks:tk.current,folders:taskFolders,files:knowledgeFiles,now:nowRef.current})
     if(inventoryNow)return palSay(inventoryNow)
-    if(titleConfirmation.current){
-      const candidate=titleConfirmation.current;
-      titleConfirmation.current=null;
-      if(isYes(text)){
-        confirmedTitles.current.add(candidate.title);
-        text=`the title is ${candidate.title}`;
-      } else if(/^(?:no|hindi|di|wrong)\W*$/i.test(text)){
-        return palSay('What title should I use?');
-      } else if(/^(?:hi|hello|hey|kamusta|how are you|whats up|what's up|thanks|bye|goodbye|salamat)\b/i.test(text.trim())){
-        // Casual chat / greeting: discard stuck title confirmation
+    if (titleConfirmation.current) {
+      const candidate = titleConfirmation.current
+      titleConfirmation.current = null
+      const trimmed = text.trim()
+      const isCancellation = /^(?:no|hindi|di|wrong|mali|cancel|wag|huwag|stop|never ?mind|shut up)\W*$/i.test(trimmed)
+        || /\b(not my plan|that'?s not|not an? event|didn'?t say|di ko sinabi|shut (?:the fuck )?up)\b/i.test(trimmed)
+      const isConversational = isQuestion(text) || parseScheduleQuestion(text, nowRef.current) != null
+        || /^(?:hi|hello|hey|kamusta|kumusta|how are you|whats up|what's up|thanks|bye|goodbye|salamat|joke|tired|bored|shut)\b/i.test(trimmed)
+        || /\b(?:i'?m|i am)\s+(?:just\s+)?asking\b/i.test(trimmed)
+
+      if (isYes(text)) {
+        confirmedTitles.current.add(candidate.title)
+        text = `the title is ${candidate.title}`
+      } else if (isCancellation || isConversational) {
+        saveConversation(emptyFocus())
+        setDraft(null)
+        setAwaiting(null)
+        if (isCancellation && /^(?:no|hindi|di|wrong|mali)\W*$/i.test(trimmed)) {
+          return palSay('What title should I use?')
+        }
+      } else if (/^\s*(?:the\s+)?(?:title|name|pangalan)\s+(?:is|ay)\s+/i.test(text) || /^\s*(?:make it|call it|it'?s)\s+/i.test(text)) {
+        text = text
+      } else if (trimmed.split(/\s+/).length <= 4 && !/[?!]/.test(trimmed)) {
+        text = `the title is ${text.replace(/^(?:no|hindi)[,.]?\s*/i, '').trim()}`
       } else {
-        text=`the title is ${text.replace(/^(?:no|hindi)[,.]?\s*/i,'')}`;
+        saveConversation(emptyFocus())
       }
     }
     const uncertain=text.match(/^\s*(?:ito|iyan)\s+(?:ang|yung)\s+(.+?)[.!?]*$/i)
@@ -1346,7 +1360,13 @@ export default function App() {
       const hasUserTime = !!(parseRange(text, nowRef.current) || parseWhen(text, nowRef.current)?.hadTime)
       const f = update.focus
       const what = f.title ?? ''
-      if(f.title&&!hasUserTime&&!confirmedTitles.current.has(f.title)&&titleNeedsConfirmation(text,f.title)){titleConfirmation.current={title:f.title,raw:text};return palSay(`Is “${f.title}” the right title? You can say yes or tell me the correct title.`)}
+      if (!cloudWords && f.title && !hasUserTime && !confirmedTitles.current.has(f.title)
+        && !/^(?:how are you|how is your day|plan|plans|sched|schedule|event|activity|meeting)$/i.test(f.title)
+        && !isQuestion(text) && parseScheduleQuestion(text, nowRef.current) == null && !isGreeting(text)
+        && titleNeedsConfirmation(text, f.title)) {
+        titleConfirmation.current = { title: f.title, raw: text }
+        return palSay(`Is “${f.title}” the right title? You can say yes or tell me the correct title.`)
+      }
       const when = f.start != null ? `${fmtDay(f.start)} at ${fmtTime(f.start)}` : ''
       const startWhat = `${what}${f.day != null ? ` on ${fmtDay(f.day)}` : ''}`
       // Never the same question twice in a row: the second time it's rephrased, with a way out
