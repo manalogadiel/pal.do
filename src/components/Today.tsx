@@ -83,7 +83,7 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palStat
         </div>
         <div className="today-date-block">
           <div className="today-weekday text-[13px] font-medium text-accent">{d.toLocaleDateString('en-US', { weekday: 'long' })}</div>
-          <h1 className="today-date mt-1 font-serif tracking-[-0.025em]">
+          <h1 className="today-date mt-1 font-bold tracking-tight">
             {d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
           </h1>
         </div>

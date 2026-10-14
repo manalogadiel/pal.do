@@ -8,10 +8,10 @@ import threading
 import time
 
 PROFILE = {
-    'rei': {'voice':'en-US-AndrewNeural','rate':'+10%','pitch':'+0Hz'},
-    'diel': {'voice':'en-US-BrianNeural','rate':'-10%','pitch':'-5Hz'},
-    'jhyvie': {'voice':'fil-PH-AngeloNeural','rate':'+0%','pitch':'+0Hz'},
-    'jaypee': {'voice':'en-US-GuyNeural','rate':'+5%','pitch':'+5Hz'},
+    'rei': {'voice':'en-PH-RosaNeural','rate':'-2%','pitch':'-2Hz'},
+    'diel': {'voice':'fil-PH-AngeloNeural','rate':'+2%','pitch':'-1Hz'},
+    'jhyvie': {'voice':'fil-PH-BlessicaNeural','rate':'+4%','pitch':'+3Hz'},
+    'jaypee': {'voice':'en-PH-JamesNeural','rate':'-3%','pitch':'-3Hz'},
 }
 ORIGINS = [x.strip() for x in os.getenv('TTS_ALLOWED_ORIGINS','http://localhost:8443,http://127.0.0.1:8443,http://localhost,https://localhost,capacitor://localhost').split(',') if x.strip()]
 def allowed_origin(origin, allowed): return bool(origin) and origin in allowed
@@ -43,7 +43,7 @@ async def verify_voices():
     import edge_tts
     voices=await asyncio.wait_for(edge_tts.list_voices(),10)
     available={v['ShortName']:v for v in voices}
-    return all(available.get(p['voice'],{}).get('Gender')=='Male' for p in PROFILE.values())
+    return all(p['voice'] in available for p in PROFILE.values())
 
 async def synthesize(pal,text):
     import edge_tts
@@ -105,7 +105,7 @@ if __name__=='__main__':
     try: READY=asyncio.run(verify_voices())
     except Exception: READY=False
     if args.check_voices:
-        print('All four male voices available' if READY else 'Voice discovery unavailable or a configured male voice is missing')
+        print('All four persona voices available' if READY else 'Voice discovery unavailable or a configured voice is missing')
         raise SystemExit(0 if READY else 1)
     def refresh():
         global READY

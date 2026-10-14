@@ -18,8 +18,25 @@ export function StudyDialog({ title, onClose, children }: { title: string; onClo
   return createPortal(<dialog ref={ref} className="study-dialog liquid-solid text-ink" onCancel={e => { e.preventDefault(); onClose() }} onClick={e => { if (e.target === e.currentTarget) onClose() }} aria-labelledby="study-dialog-title"><header className="flex items-center justify-between gap-4"><h2 id="study-dialog-title" className="text-xl font-semibold">{title}</h2><button className="press size-11 rounded-full hover:bg-paper-2" onClick={onClose} aria-label="Close study setup">×</button></header>{children}</dialog>, document.body)
 }
 export function ToolGallery({ onSelect, onContinue, onBrowse, context }: { onSelect: (tool: ToolId) => void; onContinue?: () => void; onBrowse?: () => void; context?: string }) {
+  const [clock, setClock] = useState(() => Date.now())
+  useEffect(() => { const id = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(id) }, [])
   return <div className="tool-gallery-shell">
-    <div className="tool-gallery-heading"><div><h2 className="text-[28px] font-semibold tracking-[-0.025em]">Choose your focus tool</h2><p className="mt-2 text-sm text-ink-2">{context ? `A little focus for ${context}.` : 'Find a rhythm for what you want to do.'} You choose when to start.</p></div>{onContinue && <button className="tool-button-primary shrink-0" onClick={onContinue}>Continue session</button>}</div>
+    <div className="mb-2 flex items-center gap-2 text-[13px] text-ink-2">
+      <span className="size-2 rounded-full bg-accent animate-pulse" aria-hidden />
+      <span className="tnum font-semibold text-ink">{new Date(clock).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+      <span className="text-ink-3">·</span>
+      <span>{new Date(clock).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+    </div>
+    <div className="tool-gallery-heading">
+      <div>
+        <h2 className="text-[28px] font-semibold tracking-[-0.025em]">Choose your focus tool</h2>
+        <p className="mt-2 text-sm text-ink-2">{context ? `A little focus for ${context}.` : 'Find a rhythm for what you want to do.'} You choose when to start.</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <button className="tool-button-primary" onClick={() => onSelect('pomodoro')}>Quick Pomodoro</button>
+        {onContinue && <button className="tool-button-secondary" onClick={onContinue}>Continue session</button>}
+      </div>
+    </div>
     <div className="tool-gallery">{(Object.keys(METHODS) as ToolId[]).map(tool => <button key={tool} className="tool-tile press" onClick={() => onSelect(tool)}><div className="tool-tile-art"><ToolInstrument tool={tool}/></div><span className="block text-lg font-semibold">{METHODS[tool].name}</span><span className="mt-1 block text-sm leading-relaxed text-ink-2">{METHODS[tool].description}</span></button>)}</div>
     {onBrowse && <button className="tool-button-secondary mt-5" onClick={onBrowse}>Browse files</button>}
   </div>
