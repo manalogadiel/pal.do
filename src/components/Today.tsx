@@ -1,6 +1,6 @@
 import { fmtDay, fmtHours, fmtTime, hoursOf, MIN, startOfDay, startOfWeek, type CalEvent, type Kind, type Task } from '../lib/core'
 import { LoadStrip } from './Calendar'
-import { Glyph } from './Icons'
+import { Glyph, Pip } from './Icons'
 import { Pal } from '../pals/Pal'
 import type { PalId, PalState } from '../lib/core'
 
@@ -52,9 +52,10 @@ interface Props {
   pal: PalId
   palState: PalState
   onPoke: () => void
+  onPip?: () => void
 }
 
-export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palState, onPoke, onTasks }: Props) {
+export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palState, onPoke, onTasks, onPip }: Props) {
   const day = startOfDay(now)
   const todays = events
     .filter((e) => startOfDay(e.start) === day && e.kind !== 'deadline' && e.status !== 'proposed')
@@ -86,6 +87,17 @@ export function Today({ now, events, tasks, onOpen, onPlan, onWeek, pal, palStat
           <h1 className="today-date mt-1 font-bold tracking-tight">
             {d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
           </h1>
+          {onPip && (
+            <button
+              type="button"
+              onClick={onPip}
+              className="press mt-2 inline-flex items-center gap-1.5 rounded-full bg-ink/[0.05] px-3 py-1 text-[12px] font-medium text-ink-2 hover-lift hover:text-accent"
+              title="Float Pal on your desktop"
+            >
+              <Pip className="size-3.5" />
+              <span>Desktop Pal</span>
+            </button>
+          )}
         </div>
         <p className="today-summary mt-3 text-sm text-ink-2">
           {left.length

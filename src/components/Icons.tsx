@@ -75,3 +75,15 @@ export const Cards = (p: P) => <S {...p}><rect x="2" y="4.5" width="9" height="9
 export const Quiz = (p: P) => <S {...p}><circle cx="8" cy="8" r="6" /><path d="M6.3 6.3a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.9.7-.9 1.3M8 11.2v.05" /></S>
 export const Calendar = (p: P) => <S {...p}><rect x="2.25" y="3.25" width="11.5" height="10.5" rx="2" /><path d="M2.25 6.5h11.5M5.5 1.75v3M10.5 1.75v3" /></S>
 export const ChevronD = (p: P) => <S {...p}><path d="M3.5 6 8 10.5 12.5 6" /></S>
+export const Pip = (p: P) => (
+  <S {...p}>
+    <rect x="2" y="3" width="12" height="10" rx="2" />
+    <rect x="8" y="7.5" width="4.5" height="4.5" rx="1" fill="currentColor" opacity="0.3" />
+    <path d="M8 7.5h4.5v4.5H8z" />
+  </S>
+)
+export const Expand = (p: P) => (
+  <S {...p}>
+    <path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5l-5 5M2.5 13.5l5-5" />
+  </S>
+)

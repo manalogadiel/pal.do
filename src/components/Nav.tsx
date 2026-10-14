@@ -1,4 +1,4 @@
-import { Doc, Gear, Moon, Sun, HomeIcon, TasksIcon, TimerIcon, WeekIcon } from './Icons'
+import { Doc, Gear, Moon, Sun, HomeIcon, TasksIcon, TimerIcon, WeekIcon, Pip } from './Icons'
 
 export type View = 'home' | 'week' | 'tasks' | 'study'
 const ITEMS: { id: View; label: string; Icon: (p: { className?: string }) => React.ReactElement }[] = [
@@ -18,10 +18,11 @@ interface Props {
   taskCount: number
   /** A Study session is running: show a dot on the Study item */
   studying?: boolean
+  onPip?: () => void
 }
 
 /** Desktop: a slim glass rail. The active pill slides between items instead of jumping. */
-export function Rail({ view, setView, onSyllabus, onSettings, taskCount, dark, onTheme, studying }: Props) {
+export function Rail({ view, setView, onSyllabus, onSettings, onPip, taskCount, dark, onTheme, studying }: Props) {
   const i = ITEMS.findIndex((x) => x.id === view)
   return (
     <nav className="liquid relative z-30 flex w-[68px] shrink-0 flex-col items-center gap-1 rounded-[30px] py-4" aria-label="Views">
@@ -49,6 +50,7 @@ export function Rail({ view, setView, onSyllabus, onSettings, taskCount, dark, o
         ))}
       </div>
       <div className="flex-1" />
+      {onPip && <button onClick={onPip} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift hover:text-accent" aria-label="Pop out floating companion" title="Floating Pal on Desktop"><Pip className="size-[18px]" /></button>}
       <button onClick={onSyllabus} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Paste a syllabus" title="Paste a syllabus"><Doc className="size-[18px]" /></button>
       <button onClick={onTheme} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} title={dark ? 'Light mode' : 'Dark mode'}>{dark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}</button>
       <button onClick={onSettings} className="press grid size-11 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Pal and preferences" title="Pal and preferences"><Gear className="size-[18px]" /></button>

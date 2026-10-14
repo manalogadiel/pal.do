@@ -30,6 +30,7 @@ import { parseCommand, type Command } from './lib/commands'
 import { TimerPill } from './components/TimerPill'
 import { expectFollowUp, handOffListening, isHandsFreeOn, resumeAudio, resumeListening, setPalSpeaking, startHandsFree, stopHandsFree, type HandsFreeState } from './lib/handsfree'
 import { Study, StudyTabs } from './components/Study'
+import { FloatingCompanionManager, useFloatingCompanion } from './components/FloatingCompanion'
 import { aiFailure, alignToMessage, askGroq, CLOUD_CHAIN, cloudIssue, cloudReady, getGroqApiKey, getLocalAiUrl, hasCloudAi, parseIsoToLocalMs, preloadOllama, PRIMARY_MODEL, recoverEvent, toLocalIso, transcribeGroq, type AiAction, type AiFailure, type ChatTurn, type Claim } from './lib/groq'
 import { StatusBadge } from './components/StatusBadge'
 import { AI_MODE_EVENT, getAiMode, isPhoneAiPlatform } from './lib/ai-mode'
@@ -117,6 +118,7 @@ export default function App() {
   const [lastLatency, setLastLatency] = useState<number | null>(null)
   const [weather, setWeather] = useState<Weather | null>(getCachedWeather)
   const [lastIntent, setLastIntent] = useState<string>('')
+  const { pipWindow, inAppFloating, openCompanion, closeCompanion } = useFloatingCompanion()
   // Your PC's AI takes ~40s to load the first time: start it now, not on the first message
   useEffect(() => preloadOllama(), [])
   useEffect(() => {
@@ -2075,7 +2077,7 @@ export default function App() {
 
   const content =
     view === 'home' ? (
-      <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} />
+      <Today now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} onPip={openCompanion} />
     ) : view === 'study' ? (
       <Study
         session={session}
@@ -2213,7 +2215,7 @@ export default function App() {
         </>
       ) : (
         <>
-          <Rail view={view} setView={setView} onSyllabus={() => setSyllabus({})} onSettings={() => setEditing(true)} taskCount={openTasks} dark={dark} onTheme={() => setDark((d) => !d)} studying={active(session)} />
+          <Rail view={view} setView={setView} onSyllabus={() => setSyllabus({})} onSettings={() => setEditing(true)} onPip={openCompanion} taskCount={openTasks} dark={dark} onTheme={() => setDark((d) => !d)} studying={active(session)} />
           <aside
             className={`liquid relative min-h-0 shrink-0 overflow-hidden rounded-[30px] ${instant ? '' : 'transition-[width,opacity,transform,margin] duration-[260ms] [transition-timing-function:var(--ease-out)]'} ${collapsed ? 'pointer-events-none -mr-4 w-0 -translate-x-4 opacity-0' : 'w-[clamp(400px,34vw,520px)]'}`}
             aria-hidden={collapsed}
@@ -2288,6 +2290,33 @@ export default function App() {
           onDemoWeek={() => { resetDemo(); setEditing(false) }}
         />
       )}
+      <FloatingCompanionManager
+        pipWindow={pipWindow}
+        inAppFloating={inAppFloating}
+        pal={pal}
+        palName={PALS[pal].name}
+        palState={palState}
+        session={session}
+        bubble={bubble}
+        handsFree={hf}
+        events={events}
+        now={now}
+        onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)}
+        onStartPomodoro={() => {
+          studyConfigure({ method: 'pomodoro', focusMinutes: 25, breakMinutes: 5, rounds: 4 })
+          studyStart()
+        }}
+        onPauseSession={studyPause}
+        onResumeSession={studyResume}
+        onStopSession={() => studyStop(false)}
+        onOpenApp={() => {
+          if (pipWindow) {
+            pipWindow.close()
+          }
+        }}
+        onClose={closeCompanion}
+        onOpenCompanion={openCompanion}
+      />
       <TimerPill
         timers={alarms.timers}
         ringing={ringing}
