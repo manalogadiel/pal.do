@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright-core')
 const origin = process.env.PREVIEW_URL || 'http://localhost:8443'
 const browser = await chromium.launch({ executablePath:process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--headless=new'] })
-const failures = [], captures = '.playwright-mcp/adaptive'
+const failures = [], captures = process.env.CAPTURES_DIR || '.playwright-mcp/adaptive'
 await mkdir(captures,{recursive:true})
 const sizes = [[320,568],[390,844],[768,1024],[1024,768],[1440,900],[1920,1080],[844,390],[1280,500],[320,340]]
 try {

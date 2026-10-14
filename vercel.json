@@ -3,6 +3,9 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/schedule-extract.ts": { "maxDuration": 35 }
+  },
   "rewrites": [
     {
       "source": "/tts",

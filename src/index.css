@@ -1,6 +1,29 @@
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700&family=Silkscreen&display=swap');
 @import 'tailwindcss';
 
+.class-schedule-dialog { margin: auto; width: min(1240px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 24px; border: 0; border-radius: 24px; overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.class-schedule-dialog::backdrop { background: rgb(10 25 48 / .35); }
+.class-schedule-layout { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 28px; margin-top: 24px; align-items: start; }
+.class-source { min-width: 0; }
+.class-source-image { width: 100%; height: auto; object-fit: contain; border-radius: 8px; }
+.class-source-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 1.65; background: var(--paper); padding: 16px; border-radius: 12px; max-height: 560px; overflow-y: auto; tab-size: 4; }
+.class-review-row { border: 0; border-bottom: 1px solid var(--hair); padding: 16px 0 24px; min-width: 0; margin-top: 16px; }
+.class-review-row legend { padding: 0; }
+.class-review-row label, .class-field-pair > label { font-size: 14px; }
+.class-review-row input:not([type=checkbox]), .class-field-pair input, .class-page-input { display: block; min-width: 0; width: 100%; min-height: 44px; border: 1px solid var(--hair); background: var(--paper); color: var(--ink); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+.class-page-input { max-width: 100px; margin-bottom: 8px; }
+.class-field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.class-weekdays { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.class-weekdays label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.class-schedule-dialog input[type=checkbox] { accent-color: var(--accent); width: 18px; height: 18px; flex-shrink: 0; }
+.class-schedule-dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.class-overlaps, .class-import-error { margin-top: 20px; color: var(--amber); background: var(--amber-soft); border-radius: 12px; padding: 16px; font-size: 14px; }
+.class-overlaps ul { list-style: disc; padding-left: 20px; margin-top: 8px; }
+.class-review-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; border-top: 1px solid var(--hair); padding-top: 20px; margin-top: 24px; }
+@media(min-width: 768px) { .class-source { position: sticky; top: 0; max-height: calc(100dvh - 100px); overflow-y: auto; } }
+@media(max-width: 767px) { .class-schedule-dialog { padding: 16px; border-radius: 18px; } .class-schedule-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; } .class-source-image { max-height: 340px; } .class-source-text { max-height: 300px; } .class-review-footer .tool-button-primary { white-space: normal; text-align: center; } }
+@media(max-width: 359px) { .class-field-pair { grid-template-columns: minmax(0, 1fr); } }
+
 :root {
   /* Soft Liquid — cool blue mist canvas, cobalt actions */
   --canvas: #E5F0FF;

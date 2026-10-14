@@ -21,7 +21,7 @@ export interface LibraryFile {
   id: string
   folderId: string | null
   name: string
-  kind: 'pdf' | 'image' | 'text'
+  kind: 'pdf' | 'image' | 'text' | 'docx'
   size: number
   blob: Blob
   /** Text per page ('' for a page with no text layer) */

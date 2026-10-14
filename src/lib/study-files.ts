@@ -3,6 +3,7 @@
 import { uid } from './core'
 import { MAX_FILE_BYTES, saveFile, type LibraryFile } from './library'
 import { chunkPages } from './study-material'
+import { docxText } from './docx-text'
 
 type PdfJs = typeof import('pdfjs-dist')
 let pdfjs: Promise<PdfJs> | null = null
@@ -18,24 +19,26 @@ function loadPdfJs(): Promise<PdfJs> {
 export async function openPdf(blob: Blob) {
   const lib = await loadPdfJs()
   const task = lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) })
-  return { doc: await task.promise, close: () => task.destroy() }
+  try { return { doc: await task.promise, close: () => task.destroy() } }
+  catch (error) { await task.destroy(); throw error }
 }
 
 /** Text per page, keeping line breaks so headings and "Term: definition" lines survive */
 async function pdfPages(blob: Blob): Promise<string[]> {
   const { doc, close } = await openPdf(blob)
   const pages: string[] = []
-  for (let n = 1; n <= doc.numPages; n++) {
-    const content = await (await doc.getPage(n)).getTextContent()
-    let text = ''
-    for (const item of content.items) {
-      if (!('str' in item)) continue
-      text += item.str + (item.hasEOL ? '\n' : '')
+  try {
+    for (let n = 1; n <= doc.numPages; n++) {
+      const content = await (await doc.getPage(n)).getTextContent()
+      let text = ''
+      for (const item of content.items) {
+        if (!('str' in item)) continue
+        text += item.str + (item.hasEOL ? '\n' : '')
+      }
+      pages.push(text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim())
     }
-    pages.push(text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim())
-  }
-  await close()
-  return pages
+    return pages
+  } finally { await close() }
 }
 
 /** Plain text in pages of about 3,000 characters, split on blank lines */
@@ -51,26 +54,28 @@ function textPages(text: string): string[] {
 }
 
 export type ImportError = 'too-big' | 'unsupported' | 'unreadable'
-export const IMPORT_ACCEPT = '.pdf,.txt,.md,image/*'
+export const IMPORT_ACCEPT = '.pdf,.docx,.txt,.md,image/png,image/jpeg,image/webp'
 
 export async function importFile(file: File, folderId: string | null): Promise<LibraryFile | ImportError> {
   if (file.size > MAX_FILE_BYTES) return 'too-big'
   const kind: LibraryFile['kind'] | null = file.type === 'application/pdf' || /\.pdf$/i.test(file.name) ? 'pdf'
-    : file.type.startsWith('image/') ? 'image'
+    : /\.docx$/i.test(file.name) ? 'docx'
+    : file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name) ? 'image'
     : file.type.startsWith('text/') || /\.(txt|md)$/i.test(file.name) ? 'text' : null
   if (!kind) return 'unsupported'
   let pages: string[] = []
   try {
-    pages = kind === 'pdf' ? await pdfPages(file) : kind === 'text' ? textPages(await file.text()) : []
+    pages = kind === 'pdf' ? await pdfPages(file) : kind === 'docx' ? textPages(await docxText(file)) : kind === 'text' ? textPages(await file.text()) : []
   } catch {
-    return 'unreadable'
+    // Keep the original timetable available for preview, a clear preparation error, or manual entry.
+    if (kind !== 'pdf' && kind !== 'docx') return 'unreadable'
   }
   const words = pages.join(' ').split(/\s+/).filter(Boolean).length
   const entry: LibraryFile = {
     id: uid(), folderId, name: file.name, kind, size: file.size, blob: file, pages,
     chunks: chunkPages(pages),
     // A PDF of photos has (almost) no words: it can be viewed but not read aloud or quizzed
-    scanned: kind === 'image' || (kind === 'pdf' && words < Math.max(20, pages.length * 5)),
+    scanned: kind === 'image' || (kind === 'docx' && !words) || (kind === 'pdf' && words < Math.max(20, pages.length * 5)),
     addedAt: Date.now(),
   }
   await saveFile(entry)

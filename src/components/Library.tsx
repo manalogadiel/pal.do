@@ -99,7 +99,7 @@ export function Library({ pal, tasks, now, target, onTargetDone, onPlan, onToast
     for (const file of [...list]) {
       const r = await importFile(file, folder.id)
       if (r === 'too-big') onToast(`${file.name} is over 25 MB.`)
-      else if (r === 'unsupported') onToast(`${file.name}: PDF, text or image files only.`)
+      else if (r === 'unsupported') onToast(`${file.name}: use PDF, DOCX, TXT, Markdown, PNG, JPEG, or WebP.`)
       else if (r === 'unreadable') onToast(`${file.name} couldn't be opened. Is it password-protected?`)
     }
     setBusy(false)

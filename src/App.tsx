@@ -20,6 +20,9 @@ import { Calendar, LoadStrip } from './components/Calendar'
 import TaskEditor from './components/TaskEditor'
 import { Chat, type Msg, type MascotBubble } from './components/Chat'
 import { BlockPopover, DeletePlansSheet, scanDeadlines, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
+import ClassScheduleImport, { conflictKey } from './components/ClassScheduleImport'
+import { reviewClassImport, type ClassDraft } from './lib/class-schedule'
+import { supportedScheduleFile } from './lib/schedule-source'
 import Welcome from './components/Welcome'
 import SettingsScreen from './components/Settings'
 import { answerScheduleQuestion, parseScheduleQuestion } from './lib/schedule-answers'
@@ -184,6 +187,7 @@ export default function App() {
 
   /** The syllabus sheet: closed, empty for pasting, or filled from an attached file's text */
   const [syllabus, setSyllabus] = useState<false | { text?: string; source?: string }>(false)
+  const [classScheduleFile, setClassScheduleFile] = useState<import('./lib/library').LibraryFile | null>(null)
   const [editing, setEditing] = useState(false)
   const [weekOff, setWeekOff] = useState(0)
   const [dayIdx, setDayIdx] = useState((new Date().getDay() + 6) % 7)
@@ -1125,6 +1129,7 @@ export default function App() {
   sendRef.current = send
   /** voice: said out loud (hands-free), so Pal answers in one short spoken sentence */
   function send(text: string, voice = false) {
+    if (classScheduleFile && isYes(text)) return palSay('Please check the class schedule review and use “Confirm and add selected classes” to add it.')
     if (/\b(?:in|speak|reply|answer|use)\s+english\b|mag[- ]?english/i.test(text)) englishSpeechRef.current = true
     if (/\b(?:in|speak|reply|answer|use)\s+tagalog\b|mag[- ]?tagalog/i.test(text)) englishSpeechRef.current = false
     lastByVoice.current = voice
@@ -1612,7 +1617,7 @@ export default function App() {
   function onCard(id: string, action: string, arg?: string, line?: string) {
     const m = msgs.find((x) => x.id === id)
     const c = m?.card
-    if (m?.resolved && action !== 'chip' && action !== 'commute') return
+    if (m?.resolved && action !== 'chip' && action !== 'commute' && action !== 'classSchedule') return
     if (action === 'chip') return setMsgs((ms) => ms.map((x) => (x.id === id ? { ...x, chips: undefined } : x)))
     if (c?.type === 'readback') {
       if (action === 'confirm') {
@@ -1665,6 +1670,10 @@ export default function App() {
     }
     if (c?.type === 'checkin' && arg) return answerCheckin(arg, action as 'done' | 'partly' | 'notyet')
     if (c?.type === 'file') {
+      if (action === 'classSchedule') return void getFile(c.fileId).then(file => {
+        if (!file || !supportedScheduleFile(file)) return palSay('This attachment is unavailable or unsupported. Use a PNG, JPEG, WebP, PDF, or DOCX school schedule.')
+        setClassScheduleFile(file)
+      }).catch(() => palSay('The attachment could not be opened. Please attach it again.'))
       // "Add its dates to my schedule": the file's own text, scanned, in the checklist to confirm
       if (action === 'schedule') return void getFile(c.fileId).then((f) => {
         const text = f?.chunks.map((x) => x.text).join('\n') ?? ''
@@ -2411,6 +2420,18 @@ export default function App() {
       {scheduleEdit&&<ScheduleEditor event={scheduleEdit.event} onSave={saveManualSchedule} onClose={()=>setScheduleEdit(null)}/>}
       {attachmentFiles.length>0&&<AttachmentPlacement files={attachmentFiles} folders={taskFolders} onChoose={placeAttachments} onCancel={()=>setAttachmentFiles([])}/>}
       {taskEdit && <TaskEditor task={taskEdit.task} folders={taskFolders} onSave={saveManualTask} onClose={()=>setTaskEdit(null)} />}
+      {classScheduleFile && <ClassScheduleImport key={classScheduleFile.id} file={classScheduleFile} events={events} onClose={() => setClassScheduleFile(null)} onViewCalendar={() => { setClassScheduleFile(null); setView('week'); setWeekOff(0) }} onCommit={(draft: ClassDraft, approval: string) => {
+        const batch = reviewClassImport(draft, ev.current, Date.now())
+        if (batch.conflicts.length && approval !== conflictKey(batch.conflicts)) throw new Error('The calendar or selected classes changed. Review the latest overlaps and explicitly approve them before adding.')
+        if (!batch.events.length && batch.duplicates) return { added: 0, skipped: batch.duplicates }
+        if (!batch.events.length) throw new Error('No new upcoming classes remain. Check the date range and selections.')
+        const next = [...ev.current, ...batch.events]
+        // Persist before updating React or reporting success. A storage failure leaves the review intact.
+        try { localStorage.setItem(KEY, JSON.stringify({ settings, events: next, tasks: tk.current, msgs: msgs.slice(-80), asked, alerted, log, offset, session, focusLog, alarms, conversation } satisfies Saved)) }
+        catch { throw new Error('Calendar could not be saved on this device. Free storage space and retry; no classes were added.') }
+        ev.current = next; setEvents(next)
+        return { added: batch.events.length, skipped: batch.duplicates }
+      }} />}
       {syllabus && <SyllabusSheet key={syllabus.source ?? 'paste'} now={now} initialText={syllabus.text} source={syllabus.source} onClose={() => setSyllabus(false)} onAdd={addSyllabus} />}
       {!settings.onboarded && <Welcome onDone={finishOnboarding} />}
       {settings.onboarded && editing && (
