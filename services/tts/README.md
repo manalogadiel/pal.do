@@ -11,7 +11,7 @@ python3 -m venv .venv
 
 From the project root, `pnpm tts:serve` runs this service and `pnpm tts:check` verifies voices after the local virtual environment is installed.
 
-The web dev server proxies `/tts` to localhost port 8788. For a deployed web app or Android build, set `VITE_TTS_URL=https://your-speech-host/tts` before building. Set `TTS_ALLOWED_ORIGINS` on the service to the exact web origin and Android origins (`http://localhost,https://localhost,capacitor://localhost`). Never include a wildcard. The endpoint is public; no secret belongs in a Vite variable.
+The web dev server and the Vercel deployment serve `/tts` from `api/tts.ts` (Node, same voices), so this service is optional; use it with `VITE_TTS_URL` when hosting speech elsewhere. For a deployed web app or Android build, set `VITE_TTS_URL=https://your-speech-host/tts` before building. Set `TTS_ALLOWED_ORIGINS` on the service to the exact web origin and Android origins (`http://localhost,https://localhost,capacitor://localhost`). Never include a wildcard. The endpoint is public; no secret belongs in a Vite variable.
 
 Deploy this directory as a Docker service behind HTTPS. Set `PORT` to the host's assigned port, and run a `/health` check. Voice discovery is verified at startup and refreshed every five minutes. Unknown or unavailable voices fail closed, allowing the app's local fallback. Test production origin/CORS from both web and Android before release.
 

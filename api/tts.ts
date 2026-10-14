@@ -81,7 +81,13 @@ export async function POST(req: Request) {
   if (typeof pal !== 'string' || !PROFILE[pal]) return fail(req, 400, 'Unknown pal')
   if (typeof text !== 'string' || !text.trim() || text.length > MAX_TEXT) return fail(req, 400, 'Text must contain 1–2000 characters')
   try {
-    const audio = await Promise.race([synthesize(pal, text.trim()), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS))])
+    // Microsoft briefly turns away bursts (429): one more try after a short pause
+    const attempt = () => synthesize(pal as string, (text as string).trim()).catch(async (err: Error) => {
+      if (!/\b429\b/.test(err?.message ?? '')) throw err
+      await new Promise((r) => setTimeout(r, 700))
+      return synthesize(pal as string, (text as string).trim())
+    })
+    const audio = await Promise.race([attempt(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS))])
     // Never log spoken content
     return new Response(new Uint8Array(audio), { status: 200, headers: headers(req, { 'Content-Type': 'audio/mpeg' }) })
   } catch (err) {

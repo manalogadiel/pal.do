@@ -1,5 +1,6 @@
 import {maps} from './api/_lib/maps'
 import {scheduleExtract} from './api/_lib/schedule-extract'
+import { OPTIONS as ttsOptions, POST as ttsPost } from './api/tts'
 import {MAX_SCHEDULE_REQUEST} from './src/lib/schedule-source'
 import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -27,6 +28,34 @@ function crossOriginIsolation(): Plugin {
 }
 
 function localMaps():Plugin{return{name:'local-maps',configureServer(server){server.middlewares.use('/api/maps',async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const request=new Request('http://localhost:8443/api/maps',{method:req.method,headers:{'Content-Type':'application/json'},...(req.method==='POST'?{body:Buffer.concat(chunks).toString()}: {})});const result=await maps(request);res.statusCode=result.status;result.headers.forEach((v,k)=>res.setHeader(k,v));res.end(await result.text())})}}}
+
+/**
+ * Pal's Edge voice on the dev server too: /tts runs the same function the deployed site uses (api/tts.ts), so the
+ * voice is on by default with nothing else to start
+ */
+function localTts(): Plugin {
+  return {
+    name: 'local-edge-tts',
+    configureServer(server) {
+      server.middlewares.use('/tts', async (req, res, next) => {
+        if (req.method !== 'POST' && req.method !== 'OPTIONS') return next()
+        try {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(Buffer.from(chunk))
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (req.headers.origin) headers.Origin = req.headers.origin
+          const request = new Request(`http://${req.headers.host}/tts`, { method: req.method, headers, ...(req.method === 'POST' ? { body: Buffer.concat(chunks).toString() } : {}) })
+          const result = await (req.method === 'POST' ? ttsPost(request) : ttsOptions(request))
+          res.statusCode = result.status
+          result.headers.forEach((v, k) => res.setHeader(k, v))
+          res.end(Buffer.from(await result.arrayBuffer()))
+        } catch (err) {
+          next(err)
+        }
+      })
+    },
+  }
+}
 
 function localScheduleExtraction(key: string): Plugin {
   const configure = (server: Pick<ViteDevServer, 'middlewares'>) => {
@@ -68,6 +97,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       crossOriginIsolation(),
       localMaps(),
+      localTts(),
       localScheduleExtraction(process.env.GEMINI_API_KEY ?? serverEnv.GEMINI_API_KEY ?? ''),
       react(),
       tailwindcss(),
@@ -90,7 +120,6 @@ export default defineConfig(({ mode }) => {
     worker: { format: 'es' },
     optimizeDeps: { exclude: ['kokoro-js', 'kokoro-web'] },
     server: {
-      proxy: { '/tts': { target: 'http://127.0.0.1:8788', changeOrigin: false } },
       headers: ISOLATION_HEADERS,
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
