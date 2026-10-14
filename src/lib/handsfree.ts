@@ -326,7 +326,18 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
     const early = earlyWake
     const acked = ackedWake
     earlyWake = ackedWake = false
-    if (again) return finishWakeClip(o, sourceId)
+    if (again) {
+      const text = (await best(local)).trim()
+      const command = stripWakePhrase(text, o.pal, o.userName)
+      if (command.trim()) {
+        followUntil = Date.now() + FOLLOW_UP_MS
+        set('listening')
+        if (import.meta.env.DEV) console.info(`[hf] follow-up with wake + command: "${command}"`)
+        o.onCommand(command)
+        return
+      }
+      return finishWakeClip(o, sourceId)
+    }
     // Silence or noise that Whisper "heard" as "Thank you." / "Bye-bye.": not a request, keep listening
     if (PHANTOM.test(local)) { followUntil = Date.now() + FOLLOW_UP_MS; return set('awake') }
     followUntil = 0
@@ -360,7 +371,23 @@ async function route(o: HandsFreeOptions, local: string, clip: Float32Array | nu
     }
     return // not for Pal: dropped right here
   }
-  // A wake utterance only opens capture; even its transcription remainder is never a request.
+
+  // A wake word was heard! Check if user spoke an inquiry in one breath: ("Hi Rei, what's my schedule?")
+  const text = (await best(local)).trim()
+  const command = stripWakePhrase(text, o.pal, o.userName)
+  if (command.trim()) {
+    lastWake = Date.now()
+    if (o.oneShot) await stopHandsFree()
+    else {
+      followUntil = Date.now() + FOLLOW_UP_MS
+      set('listening')
+    }
+    if (import.meta.env.DEV) console.info(`[hf] one-breath wake + command: "${command}"`)
+    o.onCommand(command)
+    return
+  }
+
+  // Only the wake word was said ("Hi Rei"): open mic for their inquiry
   finishWakeClip(o, sourceId)
 }
 
@@ -470,10 +497,10 @@ async function begin(o: HandsFreeOptions) {
         lastEndedUtteranceId = utteranceId
         liveFrames = null
         opts?.onSpeech?.(false)
-        // A clip that began while Pal talked is judged as heard over Pal, even if it ends after
-        if (wakeClipPending && opts) return finishWakeClip(opts)
+        const wasWakePending = wakeClipPending
+        wakeClipPending = false
         const overPal = startedSpeaking || speaking
-        const followUp = recordingFollowUp
+        const followUp = recordingFollowUp || wasWakePending
         const generation = recordingGeneration
         const sourceId = utteranceId
         queue = queue.then(() => handle(audio, overPal, followUp, generation, sourceId)).catch(() => {})

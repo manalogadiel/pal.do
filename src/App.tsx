@@ -443,7 +443,11 @@ export default function App() {
       setMood(m => m?.state === 'talking' ? null : m)
       setPalSpeaking(false)
       if (!ok) toast({ text: 'Voice unavailable. Your reply is still here.' })
-      if (!ack && ok !== 'cancelled' && followNext.current) { followNext.current = false; expectFollowUp() }
+      if (!ack && ok !== 'cancelled' && followNext.current) {
+        followNext.current = false
+        expectFollowUp(8_000)
+        void liveAfterWakeRef.current('')
+      }
     })
   }, [pal])
   useEffect(() => { speechSequence.current++; stopSpeech(); setPalSpeaking(false); return () => { speechSequence.current++; stopSpeech() } }, [pal])
@@ -472,14 +476,14 @@ export default function App() {
       return [...m, { id: uid(), from: 'pal', text, ...extra }]
     })
     feel(state, state === 'talking' ? Math.min(2600, 500 + text.length * 28) : 1800)
-    // Hands-free: a question or a card means the next sentence answers it, no wake word needed.
-    // It opens when Pal finishes talking (speak's end), or right away when Pal isn't talking out loud.
-    // Only in a spoken conversation: typing a question to Pal shouldn't open the mic or leave the keyboard
-    if (isHandsFreeOn() && lastByVoice.current && (/\?\s*$/.test(text) || (extra.card && ANSWERABLE.includes(extra.card.type)))) {
+    // Hands-free: keep conversation flowing after every spoken response
+    // (unless this was an explicit goodbye/dismissal)
+    if (isHandsFreeOn() && lastByVoice.current && !extra.dismissal) {
       followNext.current = true
       if (!voiceOnRef.current) {
         followNext.current = false
-        expectFollowUp()
+        expectFollowUp(8_000)
+        void liveAfterWakeRef.current('')
       }
     }
     speak(text)
@@ -1149,6 +1153,19 @@ export default function App() {
     if (ringingRef.current && /^\W*(stop|ok(ay)?|tama na|got it|tigil|sige|thanks|salamat|done)\b/i.test(text)) {
       stopRinging()
       return palSay(say(pal, 'timerStopped'))
+    }
+    // Conversational sign-off: "thanks", "salamat", "bye", "okay na", etc.
+    const isDismissal = /^\s*(?:thanks|thank you|salamat(?: po)?|maraming salamat|ty|bye|bye[- ]?bye|goodbye|cge bye|sige bye|okay na(?: po)?|tama na|all good|no more|yun lang|yon lang)\b/i.test(text.trim())
+    if (isDismissal) {
+      followNext.current = false
+      const farewell = pal === 'diel'
+        ? 'Walang anuman! Sabihan mo lang ako pag kailangan mo ulit.'
+        : pal === 'jhyvie'
+          ? 'Walang anuman! Andito lang me pag may kailangan ka.'
+          : pal === 'jaypee'
+            ? 'You got it! Reach out whenever you need me.'
+            : "Walang anuman! I'm here whenever you need me."
+      return palSay(farewell, { dismissal: true }, 'happy')
     }
     // Timers, reminders, the Study session, "what's next" and "what's my name": rules, instant and exact,
     // so they never wait behind an AI reply
@@ -1894,9 +1911,9 @@ export default function App() {
         })
         if (said && !isEcho(said, ack, palRef.current)) {
           lastVoice.current = Date.now()
-          // "Hi Rei" again: just listening again. "Hi Rei, add …": only what came after the name
-          if (matchWake(said, palRef.current, settings.userName)) return void resumeListening().then(() => liveAfterWakeRef.current(ack))
-          const command = stripWakePhrase(said, palRef.current, settings.userName)
+          // "Hi Rei" again: just listening again. "Hi Rei, add …": execute the inquiry
+          const command = stripWakePhrase(said, palRef.current, settings.userName).trim()
+          if (!command) return void resumeListening().then(() => liveAfterWakeRef.current(ack))
           setHeard(command)
           sendRef.current(command, true)
         }

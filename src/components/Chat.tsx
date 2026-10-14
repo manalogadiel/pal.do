@@ -21,6 +21,7 @@ export interface Msg {
   chips?: string[]
   rule?: string
   resolved?: string
+  dismissal?: boolean
 }
 
 const STATE_LABEL: Record<PalState, string> = {
