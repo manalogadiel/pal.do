@@ -1,15 +1,27 @@
+import {titleNeedsConfirmation} from './lib/title-confidence'
+import TravelPlanner from './components/TravelPlanner'
+import {parseTravelIntent,type TravelDraft} from './lib/travel'
+import ScheduleEditor from './components/ScheduleEditor'
+import {applyScheduleEdit,resolveEditorOriginal,synchronizeScheduleOwner,type ScheduleDraft} from './lib/schedule-edit'
+import {buildPalKnowledge,answerKnowledgeQuestion} from './lib/pal-knowledge'
+import AttachmentPlacement, {type AttachmentDestination} from './components/AttachmentPlacement'
+import { reconcileTaskCalendar, normalizeTask, datedTasks, isTaskDone, newTask, applyTaskEdit, syncTaskCalendar, transitionTask, type TaskDraft } from './lib/tasks'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ANSWERABLE, defaultHours, greetLine, say, turn, type Awaiting, type Card, type Draft, type PendingEvent } from './lib/agent'
 import { addDays, at, DAY, fmtDay, fmtHours, fmtTime, HOUR, hoursOf, MIN, seedWeek, startOfDay, startOfWeek, uid, type CalEvent, type PalId, type PalState, type Task } from './lib/core'
 import { clashes, freeGaps, nearestFree, resolveClash, occurrences, propose, type Energy, type Prefs } from './lib/schedule'
 import { buildContext, type OpenCard } from './lib/context'
 import { isYes, namedDay, parseHours, parseRange, parseWhen } from './lib/parse'
-import { isEcho, matchWake, wrongPal } from './lib/wake'
-import { getCachedWeather, refreshWeather, weatherLine, type Weather } from './lib/weather'
+import { isEcho, matchWake, stripWakePhrase, wrongPal } from './lib/wake'
+import { recognitionLanguage, readRecognitionResults } from './lib/speech-input'
+import { suggestedSlotReply } from './lib/event-choice'
+import { acceptWeatherRefresh,getWeatherLocation,outdoorWeatherAdvice, WEATHER_EVENT, getCachedWeather, refreshWeather, weatherLine, type Weather } from './lib/weather'
 import { Calendar, LoadStrip } from './components/Calendar'
+import TaskEditor from './components/TaskEditor'
 import { Chat, type Msg, type MascotBubble } from './components/Chat'
-import { BlockPopover, DeletePlansSheet, Onboarding, scanDeadlines, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
+import { BlockPopover, DeletePlansSheet, scanDeadlines, SyllabusSheet, Toasts, type SyllabusItem, type Toast } from './components/Overlays'
 import Welcome from './components/Welcome'
+import SettingsScreen from './components/Settings'
 import { answerScheduleQuestion, parseScheduleQuestion } from './lib/schedule-answers'
 import { dayInsights, newInsights, weekInsights } from './lib/insights'
 import { ChevronD, ChevronL, ChevronR, Clock, Gear, Moon, Sun, Trash, Wordmark } from './components/Icons'
@@ -19,7 +31,7 @@ import { Today } from './components/Today'
 import { Tasks } from './components/Tasks'
 import { stopKokoro } from './lib/voice'
 import { hasNativeTts, speakNative, stopNative, speakPal, stopSpeech } from './lib/native-tts'
-import { deleteFolder, getFile, listFiles, listFolders, newFolder, saveFolder, type Folder, type LibraryFile } from './lib/library'
+import { LIBRARY_EVENT, deleteFolder, getFile, listFiles, listFolders, newFolder, saveFolder, type Folder, type LibraryFile } from './lib/library'
 import { importFile } from './lib/study-files'
 import { studyHours, suggestFolder, terms, titleFromFileName, topicsOf } from './lib/study-material'
 import type { LibraryMode, LibraryTarget } from './components/Library'
@@ -48,12 +60,18 @@ const MAX_TALK_MS = 30_000
 const VOICE_PITCH: Record<PalId, number> = { rei: 1.1, diel: 0.9, jhyvie: 1.3, jaypee: 1.05 }
 
 interface Settings { pal: PalId; name: string; energy: Energy; onboarded: boolean; voiceOn: boolean; notify: boolean; notifyAsked: boolean; advancedMode?: boolean; prefs?: Prefs; lastBrief?: string; userName?: string; handsFree?: boolean; sttDeviceOnly?: boolean }
-interface Saved { settings: Settings; events: CalEvent[]; tasks: Task[]; msgs: Msg[]; asked: string[]; alerted: string[]; log: Record<string, number>; offset: number; session?: Session; focusLog?: Record<string, number>; alarms?: Alarms; conversation?: ConversationFocus }
+interface Saved { settings: Settings; events: CalEvent[]; tasks: Task[]; msgs: Msg[]; asked: string[]; alerted: string[]; log: Record<string, number>; offset: number; session?: Session; focusLog?: Record<string, number>; alarms?: Alarms; conversation?: ConversationFocus; loadWarning?: string }
 
 function load(): Saved {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || '')
-    if (s?.settings) return { ...s, msgs: (s.msgs as Msg[]) || [] }
+    if (s?.settings) {
+      const raw: unknown[] = Array.isArray(s.tasks) ? s.tasks : []
+      const tasks = raw.map(t=>normalizeTask(t,Date.now())).filter((t): t is Task=>!!t)
+      const invalid = raw.length-tasks.length
+      if(invalid) localStorage.setItem('paldo-v1-recovery',JSON.stringify(s))
+      return { ...s, tasks, msgs: (s.msgs as Msg[]) || [], loadWarning: invalid ? `${invalid} unreadable task record(s) were kept in a recovery copy on this device.` : undefined }
+    }
   } catch {}
   const { events, tasks } = seedWeek(Date.now())
   return {
@@ -111,7 +129,20 @@ export default function App() {
   const [highlight, setHighlight] = useState<Set<string>>(new Set())
   const [hover, setHover] = useState<string[]>([])
   const [pop, setPop] = useState<{ ev: CalEvent; rect: DOMRect } | null>(null)
-  const [toasts, setToasts] = useState<Toast[]>([])
+  const [toasts, setToasts] = useState<Toast[]>(init.loadWarning ? [{id:uid(),text:init.loadWarning}] : [])
+  const previousTaskEvents = useRef(events)
+  useEffect(()=>{const previousEvents=previousTaskEvents.current;previousTaskEvents.current=events;setTasks(previous=>{const next=previous.map(t=>reconcileTaskCalendar(t,events,previousEvents));return next.some((t,i)=>t!==previous[i])?next:previous})},[events])
+  const titleConfirmation=useRef<{title:string;raw:string}|null>(null)
+  const confirmedTitles=useRef(new Set<string>())
+  const [travelDraft,setTravelDraft]=useState<TravelDraft|null>(null)
+  const [scheduleEdit,setScheduleEdit]=useState<{event:CalEvent|null;isNew?:boolean}|null>(null)
+  const createdAttachmentFolder=useRef<Folder|null>(null)
+  const [attachmentFiles,setAttachmentFiles]=useState<File[]>([])
+  const [taskEdit,setTaskEdit] = useState<{ task: Task | null } | null>(null)
+  const [knowledgeFiles,setKnowledgeFiles]=useState<LibraryFile[]>([])
+  const knowledgeRead=useRef(0)
+  const [taskFolders,setTaskFolders] = useState<Folder[]>([])
+  useEffect(()=>{let alive=true;const read=()=>{const generation=++knowledgeRead.current;void Promise.all([listFolders(),listFiles()]).then(([fs,files])=>{if(alive&&generation===knowledgeRead.current){setTaskFolders(fs);setKnowledgeFiles(files)}}).catch(()=>{})};read();window.addEventListener(LIBRARY_EVENT,read);return()=>{alive=false;window.removeEventListener(LIBRARY_EVENT,read)}},[])
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
   const [activeModel, setActiveModel] = useState<string>(() => (hasCloudAi() ? PRIMARY_MODEL : 'Local Rules'))
   const [lastLatency, setLastLatency] = useState<number | null>(null)
@@ -128,12 +159,14 @@ export default function App() {
   }, [])
   // Keep today's weather warm so offline questions still get an answer
   useEffect(() => {
-    const go = () => { if (isPhoneAiPlatform() && getAiMode() === 'offline') return; void refreshWeather().then((w) => w && setWeather(w)) }
+    const go = () => { if (isPhoneAiPlatform() && getAiMode() === 'offline') return; void refreshWeather().then(w=>setWeather(acceptWeatherRefresh(w,getWeatherLocation()?.id))) }
     go()
+    const changedLocation=()=>{setWeather(null);go()}
     const i = setInterval(go, 30 * MIN)
     window.addEventListener('online', go)
+    window.addEventListener(WEATHER_EVENT,changedLocation)
     window.addEventListener(AI_MODE_EVENT, go)
-    return () => { clearInterval(i); window.removeEventListener('online', go); window.removeEventListener(AI_MODE_EVENT, go) }
+    return () => { clearInterval(i); window.removeEventListener('online', go);window.removeEventListener(WEATHER_EVENT,changedLocation); window.removeEventListener(AI_MODE_EVENT, go) }
   }, [])
 
   useEffect(() => {
@@ -152,7 +185,9 @@ export default function App() {
   const [editing, setEditing] = useState(false)
   const [weekOff, setWeekOff] = useState(0)
   const [dayIdx, setDayIdx] = useState((new Date().getDay() + 6) % 7)
-  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 899px)').matches)
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 1023px)').matches)
+  const shellRef = useRef<HTMLDivElement>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
   const [chatOpen, setChatOpen] = useState(false) // mobile drawer
   // Mobile: the pal + text box dock tucked into a small pal button, so the page underneath gets the whole screen.
   // Remembered; a dot on the button means Pal said something meanwhile.
@@ -164,6 +199,15 @@ export default function App() {
   useEffect(() => { if (chatOpen) setUnseen(false) }, [chatOpen])
   const [clearing, setClearing] = useState(false)
   const [collapsed, setCollapsed] = useState(false) // desktop bubble
+  useEffect(() => {
+    if (!mobile || chatOpen || dockMin || !dockRef.current) return
+    const dock = dockRef.current
+    const update = () => shellRef.current?.style.setProperty('--dock-height', `${dock.getBoundingClientRect().height}px`)
+    const observer = new ResizeObserver(update)
+    observer.observe(dock)
+    update()
+    return () => observer.disconnect()
+  }, [mobile, chatOpen, dockMin])
   const [instant, setInstant] = useState(false) // keyboard toggles skip the morph
   const [view, setViewRaw] = useState<View>(() => (localStorage.getItem('paldo.view') as View) || 'home')
   const setView = (v: View) => {
@@ -248,10 +292,11 @@ export default function App() {
   const turnOnAlarms = () =>
     enableAlarms().then((granted) => {
       setSettings((s) => ({ ...s, notify: granted }))
-      if (!granted) return
+      if (!granted) return false
       syncEventAlarms(ev.current, name)
       const s = sessionRef.current
       if (running(s)) armSession(s)
+      return true
     })
 
   /** The one place a session changes: logs focus and lets the pal react to a new phase (or a finished set). */
@@ -365,7 +410,7 @@ export default function App() {
   }, [settings, events, tasks, msgs, asked, alerted, log, offset, session, focusLog, alarms, conversation])
   useEffect(() => {
     const i = setInterval(() => setClock(Date.now()), 20_000)
-    const mq = window.matchMedia('(max-width: 899px)')
+    const mq = window.matchMedia('(max-width: 1023px)')
     const onMq = () => setMobile(mq.matches)
     mq.addEventListener('change', onMq)
     let last = Date.now()
@@ -442,6 +487,10 @@ export default function App() {
 
   /* ---------- hands-free "Hi {pal}" ---------- */
   const hfPrev = useRef<HandsFreeState>('off')
+  function announceWakeReady() {
+    playMicSound(true)
+    setBubble({ id: uid(), mascotId: palRef.current, text: 'Listening…', kind: 'response' })
+  }
   /** When they last talked to Pal hands-free (or turned it on), so quiet hours never cut off someone who's awake */
   const lastVoice = useRef(0)
   const hfOptions = (oneShot = false) => ({
@@ -466,21 +515,24 @@ export default function App() {
       }
       if (state === 'error') palSay(say(palRef.current, info?.error === 'mic-blocked' ? 'hfMicBlocked' : 'hfError'))
     },
-    // "Hi Jhyvie" … (pause): a chime and "Yes?" on screen, then the next sentence is the command
+    // Finish the wake clip before opening command capture; its audio never becomes a message.
     onWake: (phase: 'early' | 'late' | 'full') => {
       lastVoice.current = Date.now()
-      // The moment "Hi Rei" is caught: the mic sound and "Listening…" on screen. Always heard, even with Sounds off.
-      // Pal doesn't say "Yes?" out loud: it talked over the start of the request
-      if (phase !== 'late') {
-        playMicSound(true)
-        setBubble({ id: uid(), mascotId: palRef.current, text: 'Listening…', kind: 'response' })
+      clearTimeout(heardTimer.current)
+      setHeard('')
+      setInterim('')
+      if (phase === 'early') {
+        setBubble({ id: uid(), mascotId: palRef.current, text: 'Opening mic…', kind: 'response' })
+        return
       }
-      // They stopped after the name: the live words take the request
-      if (phase !== 'early') liveAfterWakeRef.current('')
+      if (phase === 'late') { announceWakeReady(); return }
+      void liveAfterWakeRef.current('').then(started => {
+        if (!started && isHandsFreeOn()) announceWakeReady()
+      })
     },
     onPreview: (text: string) => {
       clearTimeout(heardTimer.current)
-      setHeard(text)
+      setHeard(stripWakePhrase(text, palRef.current, settings.userName))
     },
     onCommand: (text: string) => {
       lastVoice.current = Date.now()
@@ -601,7 +653,7 @@ export default function App() {
   /** "What's next?": the next thing on the calendar, said plainly */
   function nextLine() {
     const n = nowRef.current
-    const up = ev.current.filter((e) => e.status === 'planned' && e.kind !== 'deadline' && e.kind !== 'commute' && e.end > n).sort((a, b) => a.start - b.start)
+    const up = ev.current.filter((e) => e.status === 'planned' && e.kind !== 'deadline' && (e.kind !== 'commute' || e.transportSource === 'user-trip') && e.end > n).sort((a, b) => a.start - b.start)
     const first = up[0]
     if (!first || startOfDay(first.start) > startOfDay(n) + DAY) return say(pal, 'nothingNext')
     const today = up.filter((e) => startOfDay(e.start) === startOfDay(n))
@@ -706,12 +758,14 @@ export default function App() {
   /* ---------- planning ---------- */
   /** replaces: planned blocks the new plan takes over (removed only on Accept). perDay: fill each day up to that many hours. */
   function offer(task: Task, hours: number, base: CalEvent[], lead: string, opts: { replaces?: string[]; perDay?: number; notBefore?: number; preserveTotal?: boolean } = {}) {
+    if (task.due == null) return palSay('Choose a deadline before planning study time.')
+    const due = task.due
     const replaced = new Set(opts.replaces ?? [])
     const p = propose(task, hours, base.filter((e) => !replaced.has(e.id)), Math.max(nowRef.current, opts.notBefore ?? nowRef.current), settings.energy, settings.prefs, opts.perDay)
     const next = [...base, ...p.blocks]
     setEvents(next)
-    const commute = task.kind === 'exam' && base.some((e) => e.kind === 'commute' && e.start > nowRef.current && e.start < task.due && !e.note)
-    const card: Card = { type: 'proposal', taskId: task.id, blockIds: p.blocks.map((b) => b.id), why: p.why, shortfall: p.shortfall, freeHours: p.freeHours, commute, replaces: opts.replaces?.length ? opts.replaces : undefined, taskUpdate: { due: task.due, hours: opts.preserveTotal ? task.hours : task.doneHours + hours } }
+    const commute = task.kind === 'exam' && base.some((e) => e.kind === 'commute' && e.start > nowRef.current && e.start < due && !e.note)
+    const card: Card = { type: 'proposal', taskId: task.id, blockIds: p.blocks.map((b) => b.id), why: p.why, shortfall: p.shortfall, freeHours: p.freeHours, commute, replaces: opts.replaces?.length ? opts.replaces : undefined, taskUpdate: { due, hours: opts.preserveTotal ? task.hours : task.doneHours + hours } }
     // An older plan for the same task is stale now: say so, instead of an empty card
     setMsgs((ms) => ms.map((m) => (m.card?.type === 'proposal' && m.card.taskId === task.id && !m.resolved ? { ...m, resolved: 'Replaced by a newer plan' } : m)))
     const times = p.blocks.map((b) => `${fmtDay(b.start)} ${fmtTime(b.start)}–${fmtTime(b.end)}`).join(', ')
@@ -753,11 +807,47 @@ export default function App() {
   }
 
   /** "Prelims review" plans toward the Prelims task already set up, instead of a duplicate task */
+  function saveManualTask(draft: TaskDraft, allowOverlap = false) {
+    const original = taskEdit?.task ?? null
+    const latest = original ? tk.current.find(t=>t.id===original.id) : undefined
+    if(original && (!latest || JSON.stringify(latest)!==JSON.stringify(original))) throw new Error('This task changed while you were editing. Reopen it to keep those changes.')
+    const task = latest ? applyTaskEdit(latest,draft,Date.now()) : newTask(draft,Date.now())
+    if(task.status==='doing' && tk.current.filter(t=>t.id!==task.id&&t.status==='doing').length>=3) throw new Error('Your Workbench already has three tasks.')
+    if(task.scheduled && !allowOverlap) {
+      const slot=task.scheduled
+      const hits=ev.current.filter(e=>e.id!==slot.eventId && e.kind!=='deadline' && ['planned','proposed'].includes(e.status) && e.start<slot.end && e.end>slot.start)
+      if(hits.length){const error=new Error(`This time overlaps ${hits.map(e=>e.title).join(', ')}.`);error.name='ScheduleConflict';throw error}
+    }
+    const nextEvents=syncTaskCalendar(original,task,ev.current)
+    const nextTasks=latest?tk.current.map(t=>t.id===task.id?task:t):[...tk.current,task]
+    tk.current=nextTasks;ev.current=nextEvents;setTasks(nextTasks);setEvents(nextEvents);setTaskEdit(null)
+    toast({text:original?'Task saved':'Task added'})
+  }
+  function saveManualSchedule(draft:ScheduleDraft,allowOverlap:boolean){
+    if(!scheduleEdit)return
+    const candidate=scheduleEdit.event
+    const original=resolveEditorOriginal(scheduleEdit,ev.current)
+    const result=applyScheduleEdit(original,{...draft,travel:draft.travel??candidate?.travel},ev.current,allowOverlap)
+    const coordinated=synchronizeScheduleOwner(original,result.event,tk.current,ev.current,Date.now())
+    tk.current=coordinated.tasks;ev.current=coordinated.events;setTasks(coordinated.tasks);setEvents(coordinated.events);setScheduleEdit(null);toast({text:original?'Schedule saved':'Schedule added'})
+  }
+  function moveManualTask(id: string, status: NonNullable<Task['status']>) {
+    const task=tk.current.find(t=>t.id===id)
+    if(!task)return
+    const result=transitionTask(task,status,tk.current,Date.now())
+    if(result.error)return toast({text:result.error})
+    try{
+      const nextEvents=syncTaskCalendar(task,result.task!,ev.current)
+      const nextTasks=tk.current.map(t=>t.id===id?result.task!:t)
+      tk.current=nextTasks;ev.current=nextEvents;setTasks(nextTasks);setEvents(nextEvents)
+    }catch(e){toast({text:(e as Error).message})}
+  }
+
   function matchTask(title: string) {
     const norm = (s: string) => s.toLowerCase().replace(/\b(review|study|studying|aral|for|sa|ng|para|session)\b/g, ' ').replace(/\s+/g, ' ').trim()
     const n = norm(title)
     if (n.length < 3) return undefined
-    return tk.current.find((t) => {
+    return datedTasks(tk.current).find((t) => {
       const m = norm(t.title)
       return t.due > nowRef.current && m.length >= 3 && (n.includes(m) || m.includes(n))
     })
@@ -808,7 +898,7 @@ export default function App() {
     const hours = studyHours(file.pages)
     const title = titleFromFileName(file.name)
     const subject = new Set(terms(folder.name))
-    const task = tk.current.filter((t) => t.due > nowRef.current && terms(t.title).some((w) => subject.has(w))).sort((a, b) => a.due - b.due)[0]
+    const task = datedTasks(tk.current).filter((t) => t.due > nowRef.current && terms(t.title).some((w) => subject.has(w))).sort((a, b) => a.due - b.due)[0]
     const topics = topicsOf(file.chunks, 4)
     if (task) {
       palSay(say(pal, 'planFromFile', { file: title, h: fmtHours(hours), topics: topics.length ? ` It covers ${topics.join(', ')}.` : '' }))
@@ -822,31 +912,25 @@ export default function App() {
     palSay(say(pal, 'planNeedsDate', { file: title, h: fmtHours(hours), what: `${folder.name} exam` }))
   }
 
-  /** The paperclip: file it under its subject (a new folder if there's none), then offer what Pal can do with it */
-  async function attachFile(file: File) {
-    setMsgs((m) => [...m, { id: uid(), from: 'me', text: `📎 ${file.name}` }])
-    setTyping(true)
-    try {
-      const folders = await listFolders()
-      const exams = tk.current.filter((t) => t.due > nowRef.current).map((t) => t.title)
-      const pick = suggestFolder(file.name, folders, exams)
-      let folder = folders.find((f) => f.id === pick.id)
-      const created = !folder
-      if (!folder) { folder = newFolder(pick.name, folders); await saveFolder(folder) }
-      const r = await importFile(file, folder.id)
-      if (typeof r === 'string') {
-        if (created) await deleteFolder(folder.id)
-        return palSay(say(pal, r === 'too-big' ? 'fileTooBig' : r === 'unsupported' ? 'fileUnsupported' : 'fileUnreadable', { file: file.name }))
-      }
-      // A syllabus or timeline: say how many dates it has, so adding them is the obvious next step
-      const dates = r.scanned ? 0 : scanDeadlines(r.chunks.map((c) => c.text).join('\n'), nowRef.current).length
-      const line = r.scanned ? 'fileScanned' : dates >= 2 ? 'fileHasDates' : 'fileSaved'
-      palSay(say(pal, line, { file: titleFromFileName(file.name), folder: folder.name, n: String(dates) }), { card: { type: 'file', fileId: r.id, name: titleFromFileName(r.name), folderName: folder.name, scanned: r.scanned, dates } }, 'happy')
-    } catch {
-      palSay(say(pal, 'fileUnreadable', { file: file.name }))
-    } finally {
-      setTyping(false)
+  function attachFile(files: File[]) { createdAttachmentFolder.current=null;setAttachmentFiles(files) }
+  async function placeAttachments(destination:AttachmentDestination) {
+    const folders=await listFolders()
+    let folder:Folder|undefined
+    if(destination.kind==='folder'){folder=folders.find(f=>f.id===destination.folderId);if(!folder)throw new Error('This folder is no longer available.')}
+    if(destination.kind==='new-folder'){folder=createdAttachmentFolder.current??newFolder(destination.name,folders);if(!createdAttachmentFolder.current){await saveFolder(folder);createdAttachmentFolder.current=folder}}
+    const selected=[...attachmentFiles]
+    const failures:File[]=[]
+    for(const file of selected){
+      try{
+        const r=await importFile(file,folder?.id??null)
+        if(typeof r==='string'){failures.push(file);toast({text:`${file.name}: ${r==='too-big'?'over 25 MB':r==='unsupported'?'unsupported file type':'could not read this file'}.`});continue}
+        setMsgs(m=>[...m,{id:uid(),from:'me',text:`📎 ${file.name}`}])
+        const dates=r.scanned?0:scanDeadlines(r.chunks.map(c=>c.text).join('\n'),nowRef.current).length
+        palSay(folder?say(pal,r.scanned?'fileScanned':dates>=2?'fileHasDates':'fileSaved',{file:titleFromFileName(file.name),folder:folder.name,n:String(dates)}):`Kept ${file.name} in chat. You can move it to a folder later.`,{card:{type:'file',fileId:r.id,name:titleFromFileName(r.name),folderName:folder?.name??'Chat attachment',scanned:r.scanned,dates}},'happy')
+      }catch{failures.push(file);toast({text:`Could not save ${file.name}. Try again.`})}
     }
+    setAttachmentFiles(failures)
+    if(failures.length)throw new Error('Some files could not be saved. Successful files are saved; retry only the remaining files.')
   }
 
   /** "Quiz me on osmosis", "flashcards for bio", "read my reviewer aloud": the file that best matches, opened in that mode */
@@ -877,6 +961,8 @@ export default function App() {
 
   /** Show one event as a confirm card (Add it / Never mind). Older unanswered event cards are marked replaced. */
   function previewEvent(text: string, e: { title: string; kind: string; start: number; end: number; days?: number[]; until?: number }) {
+    const weatherAdvice=outdoorWeatherAdvice(e.title,weather,ev.current,e.start,e.end,nowRef.current)
+    if(weatherAdvice)text+=` ${weatherAdvice}`
     saveConversation({ intent: 'event', title: e.title, kind: e.kind as ConversationFocus['kind'], day: startOfDay(e.start), start: e.start, end: e.end, rejected: [] })
     const slots = e.days?.length ? occurrences(e.start, e.end, e.days, nowRef.current, e.until) : [{ start: e.start, end: e.end }]
     // A task's study blocks under it get new times on add; anything else it overlaps is a clash Pal asks about
@@ -933,7 +1019,7 @@ export default function App() {
     if (!c) return { type: m.rule?.includes('redirected') ? 'redirect' : 'none' }
     // Just enough to remember what it offered: every field here is paid for on every message
     if (c.type === 'event') return { type: 'addEvent', title: c.title, kind: c.kind as AiAction['kind'], start: toLocalIso(c.start), end: toLocalIso(c.end) }
-    if (c.type === 'proposal') { const task = tk.current.find((t) => t.id === c.taskId); return { type: 'findTime', title: task?.title, hours: c.blockIds.reduce((h, id) => h + (ev.current.find((e) => e.id === id) ? hoursOf(ev.current.find((e) => e.id === id)!) : 0), 0), due: task ? toLocalIso(task.due) : undefined } }
+    if (c.type === 'proposal') { const task = tk.current.find((t) => t.id === c.taskId); return { type: 'findTime', title: task?.title, hours: c.blockIds.reduce((h, id) => h + (ev.current.find((e) => e.id === id) ? hoursOf(ev.current.find((e) => e.id === id)!) : 0), 0), due: task?.due != null ? toLocalIso(task.due) : undefined } }
     if (c.type === 'readback') return { type: 'createTask', title: c.draft.title, due: c.draft.due ? toLocalIso(c.draft.due) : undefined, hours: c.draft.hours }
     if (c.type === 'change') return { type: c.mode === 'remove' ? 'removeEvent' : 'moveEvent', title: c.title }
     return { type: 'none' }
@@ -981,8 +1067,10 @@ export default function App() {
       const when = alt ?? c
       // The confirmation first, so a re-plan card that follows is the newest message.
       // After an overlap, the app says which time it used (the model may name the other one).
-      palSay((yes && c.clash ? '' : line) || say(pal, yes ? 'eventAdded' : 'eventSkipped', { what: `${c.title}, ${fmtDay(when.start)} ${fmtTime(when.start)}` }), {}, 'happy')
-      return onCard(m.id, !yes ? 'skipEvent' : alt ? 'useAlt' : 'addEvent')
+      const reply = (yes && c.clash ? '' : line) || say(pal, yes ? 'eventAdded' : 'eventSkipped', { what: `${c.title}, ${fmtDay(when.start)} ${fmtTime(when.start)}` })
+      if (alt) return onCard(m.id, 'useAlt', undefined, reply)
+      palSay(reply, {}, 'happy')
+      return onCard(m.id, !yes ? 'skipEvent' : 'addEvent')
     }
     if (c?.type === 'proposal') return onCard(m.id, yes ? 'accept' : 'decline', undefined, line)
     if (c?.type === 'change') return onCard(m.id, yes ? 'apply' : 'keep', undefined, line)
@@ -1048,6 +1136,13 @@ export default function App() {
       if (!wrong.rest || /^[\s.!?,]*$/.test(wrong.rest)) return
       text = wrong.rest
     }
+    const inventoryNow=answerKnowledgeQuestion(text,{query:text,tasks:tk.current,folders:taskFolders,files:knowledgeFiles,now:nowRef.current})
+    if(inventoryNow)return palSay(inventoryNow)
+    if(titleConfirmation.current){const candidate=titleConfirmation.current;titleConfirmation.current=null;if(isYes(text)){confirmedTitles.current.add(candidate.title);text=`the title is ${candidate.title}`}else if(/^(?:no|hindi|di|wrong)\W*$/i.test(text))return palSay('What title should I use?');else text=`the title is ${text.replace(/^(?:no|hindi)[,.]?\s*/i,'')}`}
+    const uncertain=text.match(/^\s*(?:ito|iyan)\s+(?:ang|yung)\s+(.+?)[.!?]*$/i)
+    if(uncertain){const name=uncertain[1].trim();titleConfirmation.current={title:name,raw:text};saveConversation({...emptyFocus(),intent:'event',title:name,kind:'protected'});return palSay(`Do you mean “${name}” as the title? Say yes or tell me the correct activity.`)}
+    const trip=parseTravelIntent(text,nowRef.current)
+    if(trip){setTravelDraft(trip);setDraft(null);setAwaiting(null);setPending(null);palSay('Anong oras kayo aalis? Confirm the starting place and destination in Transportation.');return}
     // A ringing timer: "stop", "okay", "tama na" turns it off
     if (ringingRef.current && /^\W*(stop|ok(ay)?|tama na|got it|tigil|sige|thanks|salamat|done)\b/i.test(text)) {
       stopRinging()
@@ -1110,6 +1205,14 @@ export default function App() {
 
     // "Add anyway" / "ok lang" to an overlap card: the asked time, no AI needed
     const wc = waitMsg?.card
+    const slotReply = wc?.type === 'event' ? suggestedSlotReply(text, wc, nowRef.current) : null
+    if (wc?.type === 'event' && wc.alt && slotReply) {
+      const range = `${fmtTime(wc.alt.start)}–${fmtTime(wc.alt.end)}`
+      if (slotReply === 'clarify') return palSay(pal === 'jhyvie'
+        ? `Pareho ang start at end na sinabi mo. Ang ibig mo bang sabihin ay ${range}?`
+        : `You gave the same start and end time. Did you mean ${range}?`, { chips: [`Use ${range}`] })
+      return onCard(waitMsg!.id, 'useAlt', undefined, say(pal, 'eventAdded', { what: `${wc.title}, ${fmtDay(wc.alt.start)} ${range}` }))
+    }
     if (wc?.type === 'event' && wc.clash && ADD_ANYWAY.test(text) && text.split(/\s+/).length <= 8) return answerCard(waitMsg!, true, '', 'orig')
     // "What plan does it block?" about the waiting card: the app knows exactly, so it answers (the model guessed "the free slot")
     if (wc?.type === 'event' && OVERLAP_ASK.test(text)) {
@@ -1126,6 +1229,10 @@ export default function App() {
       draft: draft && awaiting && awaiting !== 'confirm' ? draft : null,
       user: settings.userName,
     })
+    const knowledgeInput={query:text,tasks:tk.current,folders:taskFolders,files:knowledgeFiles,now:nowRef.current}
+    const inventory=answerKnowledgeQuestion(text,knowledgeInput)
+    if(inventory)return palSay(inventory)
+    snap.full+='\n'+buildPalKnowledge(knowledgeInput,900).text
     const asking = update.directive === 'question'
     const ruled = turn(text, { pal, now: nowRef.current, draft, awaiting, pending, lastEvent, waiting: waitMsg?.card?.type ?? null, waitingIsLatest: waitIsLatest, facts: { next: snap.next, user: settings.userName } })
     // A question that the rules read as "add this" ("do I have gym at 5?"): no card, the model (or "didn't get that") answers
@@ -1200,6 +1307,7 @@ export default function App() {
       const hasUserTime = !!(parseRange(text, nowRef.current) || parseWhen(text, nowRef.current)?.hadTime)
       const f = update.focus
       const what = f.title ?? ''
+      if(f.title&&!hasUserTime&&!confirmedTitles.current.has(f.title)&&titleNeedsConfirmation(text,f.title)){titleConfirmation.current={title:f.title,raw:text};return palSay(`Is “${f.title}” the right title? You can say yes or tell me the correct title.`)}
       const when = f.start != null ? `${fmtDay(f.start)} at ${fmtTime(f.start)}` : ''
       const startWhat = `${what}${f.day != null ? ` on ${fmtDay(f.day)}` : ''}`
       // Never the same question twice in a row: the second time it's rephrased, with a way out
@@ -1259,6 +1367,7 @@ export default function App() {
           groqText = ai.claimed && !trueClaim ? claimLine(ai.claimed, ai.action?.type, waitMsg?.card?.type, a?.type) : ai.text
           // The app's reading of the day and time wins ("10am hanggang 1pm mamaya" is today, whatever the model says)
           groqAction = ai.action && alignToMessage(ai.action, text, nowRef.current)
+          if(groqAction?.type==='addEvent'&&update.focus.title&&parseWhen(text,nowRef.current)?.hadTime&&!/\b(title|called|named|pangalan)\b/i.test(text))groqAction={...groqAction,title:update.focus.title}
           // "Lock it in" with a card waiting, answered by re-sending that exact card: it's a yes to it.
           // A new time ("make it 10 to 11 instead") is a change, so the times must both match
           if (wc?.type === 'event' && groqAction?.type === 'addEvent' && parseIsoToLocalMs(groqAction.start) === wc.start && parseIsoToLocalMs(groqAction.end) === wc.end)
@@ -1482,12 +1591,12 @@ export default function App() {
 
   function summary() {
     const n = nowRef.current
-    const today = ev.current.filter((e) => e.start >= n && startOfDay(e.start) === startOfDay(n) && e.kind !== 'commute' && e.kind !== 'deadline' && e.status !== 'proposed').sort((a, b) => a.start - b.start)
+    const today = ev.current.filter((e) => e.start >= n && startOfDay(e.start) === startOfDay(n) && (e.kind !== 'commute' || e.transportSource === 'user-trip') && e.kind !== 'deadline' && e.status !== 'proposed').sort((a, b) => a.start - b.start)
     const ws = startOfWeek(n)
     const week = ev.current.filter((e) => e.kind === 'work' && e.start >= ws && e.start < addDays(ws, 7))
     const planned = week.filter((e) => e.status === 'planned').reduce((a, e) => a + hoursOf(e), 0)
     const done = week.filter((e) => e.status === 'done').reduce((a, e) => a + hoursOf(e), 0)
-    const nextDue = tk.current.filter((t) => t.due > n).sort((a, b) => a.due - b.due)[0]
+    const nextDue = datedTasks(tk.current).filter((t) => t.due > n).sort((a, b) => a.due - b.due)[0]
     const parts = [
       today.length ? `Still today: ${today.slice(0, 3).map((e) => `${e.title} at ${fmtTime(e.start)}`).join(', ')}.` : 'Nothing else on today.',
       `This week: ${fmtHours(planned)} of planned work left, ${fmtHours(done)} done.`,
@@ -1546,7 +1655,7 @@ export default function App() {
         const task = tk.current.find((t) => t.id === c.taskId)
         if (!task) return
         let n = 0
-        setEvents(ev.current.map((e) => (e.kind === 'commute' && !e.note && e.start > nowRef.current && e.start < task.due ? (n++, { ...e, note: `Flashcards · ${task.title}` }) : e)))
+        setEvents(ev.current.map((e) => (e.kind === 'commute' && !e.note && e.start > nowRef.current && e.start < (task.due ?? Infinity) ? (n++, { ...e, note: `Flashcards · ${task.title}` }) : e)))
         setMsgs((ms) => ms.map((x) => (x.id === id ? { ...x, card: { ...c, commute: false } } : x)))
         setTimeout(() => toast({ text: `Light review added to ${n} bus ride${n === 1 ? '' : 's'}` }), 0)
       }
@@ -1574,12 +1683,14 @@ export default function App() {
       })()
     }
     if (c?.type === 'event') {
-      saveConversation(action === 'skipEvent' ? emptyFocus() : { ...conversationRef.current, intent: 'none' })
-      if (action === 'skipEvent') return resolve(id, 'Not added')
+      if (action === 'skipEvent') { saveConversation(emptyFocus()); return resolve(id, 'Not added') }
       // "Use 5:15am": the free time Pal suggested instead of the clash; "Add anyway" keeps the asked time
       const use = action === 'useAlt' && c.alt ? c.alt : { start: c.start, end: c.end }
       const repeats = c.days?.length ? occurrences(use.start, use.end, c.days, nowRef.current, c.until) : []
       const slots = repeats.length ? repeats : [use]
+      if (action === 'useAlt' && clashes(slots, ev.current).length) return previewEvent('', { ...c, start: use.start, end: use.end })
+      saveConversation({ ...conversationRef.current, intent: 'none' })
+      if (line) palSay(line, {}, 'happy')
       const added: CalEvent[] = slots.map((s) => ({ id: uid(), title: c.title, kind: c.kind as CalEvent['kind'], start: s.start, end: s.end, status: 'planned' }))
       const hit = ev.current.filter((e) => e.kind === 'work' && e.taskId && (e.status === 'planned' || e.status === 'proposed') && added.some((a) => e.start < a.end && e.end > a.start))
       // "Move Bus home to 6pm": the ride shifts out of the way, the asked time stays
@@ -1681,7 +1792,7 @@ export default function App() {
   /* ---------- reminder engine (runs on every clock / sim tick) ---------- */
   useEffect(() => {
     if (!settings.onboarded || isQuiet(now)) return
-    const soon = events.filter((e) => e.status === 'planned' && e.kind !== 'deadline' && e.kind !== 'commute' && e.start > now && e.start <= now + 10 * MIN && !alerted.includes(e.id))
+    const soon = events.filter((e) => e.status === 'planned' && e.kind !== 'deadline' && (e.kind !== 'commute' || e.transportSource === 'user-trip') && e.start > now && e.start <= now + 10 * MIN && !alerted.includes(e.id))
     if (soon.length) {
       setAlerted((a) => [...a, ...soon.map((e) => e.id)])
       const e = soon[0]
@@ -1727,65 +1838,85 @@ export default function App() {
    * their words show under the mic as they talk (and arrive sooner than a whole clip through Whisper).
    * Device-only, or no recognizer here (the Android app): the on-device path takes it as before.
    */
-  function liveAfterWake(ack: string) {
+  const wakeCaptureStarting = useRef(false)
+  async function liveAfterWake(ack: string): Promise<boolean> {
     // (ack: a line Pal said that the mic may catch; '' now that Pal stays quiet after the wake)
-    if (!SR || settings.sttDeviceOnly || micOn || recRef.current || liveBroken.current) return
-    void handOffListening()
-    const r = new SR()
-    r.lang = navigator.language?.startsWith('en') ? navigator.language : 'en-US'
-    r.interimResults = true
-    // The app decides when they're done (SEND_AFTER_SILENCE_MS of no new words), not Chrome: it sent mid-sentence
-    r.continuous = true
-    const quiet = endAfterSilence(r)
-    let final = ''
-    let retried = false
-    r.onresult = (e: any) => {
-      quiet.heard()
-      let live = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i]
-        if (res.isFinal) final += res[0].transcript
-        else live += res[0].transcript
-      }
-      setInterim((final + live).trim())
-    }
-    // "no-speech", "aborted": onend follows and hands back to hands-free. Refused outright (Safari without
-    // Dictation, blocked mic, no network): the on-device path takes this request and the next ones
-    let refused = false
-    r.onerror = (e: any) => {
-      if (/not-allowed|service-not-allowed|audio-capture|network|language-not-supported/.test(e?.error ?? '')) refused = liveBroken.current = true
-    }
-    r.onend = () => {
-      quiet.done()
-      const said = final.trim()
-      // It only caught Pal's own "Yes?": listen once more for the real request
-      if (said && isEcho(said, ack, palRef.current) && !retried) {
-        retried = true
-        final = ''
-        setInterim('')
-        try { r.start(); return quiet.heard() } catch {}
-      }
-      recRef.current = null
-      setMicOn(false)
-      setInterim('')
-      void resumeListening().then(() => { if (refused && !said) expectFollowUp() })
-      if (said && !isEcho(said, ack, palRef.current)) {
-        lastVoice.current = Date.now()
-        // "Hi Rei" again: just listening again. "Hi Rei, add …": only what came after the name
-        const wake = matchWake(said, palRef.current, settings.userName)
-        if (wake && !wake.command) return void resumeListening().then(() => liveAfterWakeRef.current(ack))
-        sendRef.current(wake?.command || said, true)
-      }
-    }
-    recRef.current = r
+    if (!SR || settings.sttDeviceOnly || micOn || recRef.current || liveBroken.current || wakeCaptureStarting.current) return false
+    wakeCaptureStarting.current = true
     try {
-      r.start()
-      quiet.started()
-      setMicOn(true)
+      // Release the detector's microphone before the browser recognizer requests it.
+      await handOffListening()
+      if (!isHandsFreeOn()) return false
+      const r = new SR()
+      r.lang = recognitionLanguage(palRef.current, navigator.language)
+      r.interimResults = true
+      // The app decides when they're done (SEND_AFTER_SILENCE_MS of no new words), not Chrome: it sent mid-sentence
+      r.continuous = true
+      const quiet = endAfterSilence(r)
+      let final = ''
+      let transcript = ''
+      let retried = false
+      r.onstart = () => {
+        if (recRef.current !== r) return
+        setMicOn(true)
+        announceWakeReady()
+      }
+      r.onresult = (e: any) => {
+        quiet.heard()
+        const result = readRecognitionResults(e.results)
+        final = result.final
+        transcript = result.text
+        setInterim(stripWakePhrase(transcript, palRef.current, settings.userName))
+      }
+      // "no-speech", "aborted": onend follows and hands back to hands-free. Refused outright (Safari without
+      // Dictation, blocked mic, no network): the on-device path takes this request and the next ones
+      let refused = false
+      r.onerror = (e: any) => {
+        if (/not-allowed|service-not-allowed|audio-capture|network|language-not-supported/.test(e?.error ?? '')) refused = liveBroken.current = true
+      }
+      r.onend = () => {
+        quiet.done()
+        const said = (transcript || final).trim()
+        // It only caught Pal's own "Yes?": listen once more for the real request
+        if (said && isEcho(said, ack, palRef.current) && !retried) {
+          retried = true
+          final = transcript = ''
+          setInterim('')
+          try { r.start(); return quiet.heard() } catch {}
+        }
+        recRef.current = null
+        setMicOn(false)
+        setInterim('')
+        void resumeListening().then(() => {
+          if (refused && !said) { expectFollowUp(); if (isHandsFreeOn()) announceWakeReady() }
+        })
+        if (said && !isEcho(said, ack, palRef.current)) {
+          lastVoice.current = Date.now()
+          // "Hi Rei" again: just listening again. "Hi Rei, add …": only what came after the name
+          if (matchWake(said, palRef.current, settings.userName)) return void resumeListening().then(() => liveAfterWakeRef.current(ack))
+          const command = stripWakePhrase(said, palRef.current, settings.userName)
+          setHeard(command)
+          sendRef.current(command, true)
+        }
+      }
+      recRef.current = r
+      try {
+        r.start()
+        quiet.started()
+        return true
+      } catch {
+        recRef.current = null
+        // No live recognizer after all: the on-device path takes the next sentence
+        await resumeListening()
+        expectFollowUp()
+        return false
+      }
     } catch {
-      recRef.current = null
-      // No live recognizer after all: the on-device path takes the next sentence
-      void resumeListening().then(() => expectFollowUp())
+      await resumeListening()
+      expectFollowUp()
+      return false
+    } finally {
+      wakeCaptureStarting.current = false
     }
   }
   /**
@@ -1809,7 +1940,7 @@ export default function App() {
 
   async function toggleMic() {
     // No speech service here (the Android app, Firefox): hear one sentence with the on-device Whisper instead
-    if (!SR) {
+    if (!SR || settings.sttDeviceOnly) {
       if (!navigator.mediaDevices?.getUserMedia) return micFail('unsupported')
       // Hands-free is always listening: a tap means "this next sentence is for you", no "Hi Rei" needed
       if (isHandsFreeOn()) {
@@ -1840,27 +1971,29 @@ export default function App() {
     if (!settings.voiceOn) setSettings((s) => ({ ...s, voiceOn: true })) // talking to it → it talks back
     window.speechSynthesis?.cancel()
     stopKokoro(); stopNative()
+    await handOffListening()
     const r = new SR()
-    r.lang = navigator.language?.startsWith('en') ? navigator.language : 'en-US'
+    r.lang = recognitionLanguage(palRef.current, navigator.language)
     r.interimResults = true
     r.continuous = true
     const quiet = endAfterSilence(r)
     let final = ''
+    let transcript = ''
     r.onresult = (e: any) => {
       quiet.heard()
-      let live = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i]
-        if (res.isFinal) final += res[0].transcript
-        else live += res[0].transcript
-      }
-      setInterim((final + live).trim())
+      const result = readRecognitionResults(e.results)
+      final = result.final
+      transcript = result.text
+      setInterim(stripWakePhrase(transcript, palRef.current, settings.userName))
     }
     r.onend = () => {
       quiet.done()
       setMicOn(false)
       setInterim('')
-      if (final.trim()) sendRef.current(final.trim())
+      recRef.current = null
+      void resumeListening()
+      const command = stripWakePhrase(transcript || final, palRef.current, settings.userName)
+      if (command) { setHeard(command); sendRef.current(command, true) }
     }
     r.onerror = (e: any) => micFail(e.error)
     recRef.current = r
@@ -1870,6 +2003,8 @@ export default function App() {
       setMicOn(true)
       if (micStopEarly.current) r.stop()
     } catch {
+      recRef.current = null
+      void resumeListening()
       micFail('aborted')
     }
     micStarting.current = false
@@ -1951,7 +2086,7 @@ export default function App() {
       msgs={msgs} bubble={bubble} pal={pal} palName={name} palState={palState} events={events}
       onSend={send} onCard={onCard} onHover={setHover} onTyping={setTyping} thinking={thinking > 0}
       onCancelReply={cancelReply}
-      onAttach={(f) => void attachFile(f)}
+      onAttach={attachFile}
       voiceOn={settings.voiceOn}
       setVoiceOn={(v) => {
         setSettings((s) => ({ ...s, voiceOn: v }))
@@ -2057,7 +2192,7 @@ export default function App() {
   )
 
   const openPop = (e: CalEvent, rect: DOMRect) => setPop({ ev: e, rect })
-  const openTasks = tasks.filter((t) => t.due > now && t.doneHours < t.hours).length
+  const openTasks = tasks.filter(t=>!isTaskDone(t)).length
   const goWeek = (i: number) => {
     setWeekOff(0)
     setDayIdx(i)
@@ -2065,7 +2200,8 @@ export default function App() {
   }
 
   const weekNav = (
-    <div className="flex items-center">
+    <div className="flex max-w-full flex-wrap items-center justify-center gap-y-1 sm:flex-nowrap">
+      <button className="tool-button-primary" onClick={()=>setScheduleEdit({event:null})}>Add schedule</button>
       <button onClick={() => setWeekOff((w) => w - 1)} className="press grid size-10 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Previous week"><ChevronL /></button>
       <span className="tnum min-w-[96px] text-center text-[14px] font-semibold">{weekLabel}</span>
       <button onClick={() => setWeekOff((w) => w + 1)} className="press grid size-10 place-items-center rounded-full text-ink-2 hover-lift" aria-label="Next week"><ChevronR /></button>
@@ -2076,7 +2212,7 @@ export default function App() {
 
   const content =
     view === 'home' ? (
-      <Today prefs={settings.prefs} focusActive={active(session)} onPrepare={(task, minutes) => { setFocusSetup({ method: 'custom', focusMinutes: minutes, breakMinutes: 0, rounds: 1, taskId: task.id, goal: task.title }); setStudySection('focus'); setView('study') }} now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} />
+      <Today onAddSchedule={()=>setScheduleEdit({event:null})} onStudy={section=>{setStudySection(section);setView('study')}} prefs={settings.prefs} focusActive={active(session)} onPrepare={(task, minutes) => { setFocusSetup({ method: 'custom', focusMinutes: minutes, breakMinutes: 0, rounds: 1, taskId: task.id, goal: task.title }); setStudySection('focus'); setView('study') }} now={now} events={events} tasks={tasks} onOpen={openPop} onPlan={planTask} onWeek={goWeek} onTasks={() => setView('tasks')} pal={pal} palState={palState} onPoke={() => feel(Math.random() < 0.5 ? 'happy' : 'wave', 1300)} />
     ) : view === 'study' ? (
       <Study
         session={session}
@@ -2109,7 +2245,7 @@ export default function App() {
         tabsInHeader={!mobile}
       />
     ) : view === 'tasks' ? (
-      <Tasks now={now} tasks={tasks} events={events} onPlan={planTask} onAdd={(t) => { send(t); if (mobile) setChatOpen(true) }} />
+      <Tasks now={now} tasks={tasks} events={events} folders={taskFolders} onCreate={()=>setTaskEdit({task:null})} onEdit={id=>{const task=tk.current.find(t=>t.id===id);if(task)setTaskEdit({task})}} onQuickAdd={title=>saveManualTask({title,kind:'task',notes:'',status:'pile',hours:0})} onMove={moveManualTask} onPlan={t=>t.due ? planTask(t) : setTaskEdit({task:t})} onAdd={(t) => { send(t); if (mobile) setChatOpen(true) }} />
     ) : mobile ? (
       <div className="flex h-full flex-col">
         <div className="flex shrink-0 justify-between px-2 pt-2">
@@ -2120,7 +2256,7 @@ export default function App() {
             </button>
           ))}
         </div>
-        <div className="flex shrink-0 items-center justify-center gap-2 py-1">{weekNav}{showSim && simCluster}</div>
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 py-1">{weekNav}{showSim && simCluster}</div>
         <div className="min-h-0 flex-1">
           <Calendar days={shownDays} now={now} events={events} pal={pal} highlight={hl} onOpen={openPop} quiet={QUIET} />
         </div>
@@ -2144,7 +2280,7 @@ export default function App() {
   ) : null
 
   return (
-    <div className={`${!mobile && view === 'home' ? 'desktop-today' : ''} app-shell ${mobile ? 'is-mobile' : ''} grain relative isolate flex h-dvh overflow-hidden p-3 pr-[max(12px,env(safe-area-inset-right))] pl-[max(12px,env(safe-area-inset-left))] sm:p-4 ${mobile ? 'flex-col gap-2' : 'gap-3 sm:gap-4'}`}>
+    <div ref={shellRef} className={`${!mobile && view === 'home' ? 'desktop-today' : ''} app-shell ${mobile ? 'is-mobile' : ''} grain relative isolate flex h-dvh overflow-hidden p-3 pr-[max(12px,env(safe-area-inset-right))] pl-[max(12px,env(safe-area-inset-left))] sm:p-4 ${mobile ? 'flex-col gap-2' : 'gap-3 sm:gap-4'}`}>
       <div className="mist" aria-hidden />
 
       {mobile ? (
@@ -2173,14 +2309,14 @@ export default function App() {
               <Gear className="size-[18px]" />
             </button>
           </header>
-          <main key={view} className={`${dockMin && !chatOpen ? 'under-dock-min' : 'under-dock'} view-in liquid min-h-0 flex-1 overflow-hidden rounded-[28px]`}>{content}</main>
+          <main key={view} className={`${(dockMin || view === 'tasks') && !chatOpen ? 'under-dock-min' : 'under-dock'} view-in liquid min-h-0 flex-1 overflow-hidden rounded-[28px]`}>{content}</main>
           {/* Floating composer + pal above the tab bar; tap expands into the full conversation */}
           {chatOpen && <button aria-label="Close chat" onClick={() => setChatOpen(false)} className="fixed inset-0 z-30 bg-ink/10 backdrop-blur-[2px]" />}
-          {dockMin && !chatOpen ? (
+          {(dockMin || view === 'tasks') && !chatOpen ? (
             // Minimized: just the pal, bottom right. Tap brings the text box and mic back.
             <button
               type="button"
-              onClick={() => setDockMin(false)}
+              onClick={() => { setDockMin(false); if(view === 'tasks')setChatOpen(true) }}
               aria-label={`Show the chat with ${name}${unseen ? ', new message' : ''}`}
               className="pop press liquid-solid fixed right-4 z-40 grid size-14 place-items-center rounded-full"
               style={{ bottom: 'calc(max(12px, env(safe-area-inset-bottom)) + 70px)' }}
@@ -2193,7 +2329,7 @@ export default function App() {
             </button>
           ) : (
             <div
-              className="liquid-solid fixed inset-x-3 z-40 flex flex-col rounded-[30px] transition-[top] duration-[420ms] [transition-timing-function:var(--ease-drawer)]"
+              ref={dockRef} data-open={chatOpen} className="chat-dock liquid-solid fixed inset-x-3 z-40 flex flex-col rounded-[30px] transition-[top] duration-[420ms] [transition-timing-function:var(--ease-drawer)]"
               style={{ top: chatOpen ? 'calc(env(safe-area-inset-top, 0px) + 60px)' : 'auto', bottom: chatOpen ? 'max(12px, env(safe-area-inset-bottom))' : 'calc(max(12px, env(safe-area-inset-bottom)) + 60px)' }}
             >
               {!chatOpen && (
@@ -2207,7 +2343,7 @@ export default function App() {
                   <ChevronD className="size-4" />
                 </button>
               )}
-              {chat}
+              <div className="chat-dock-content">{chat}</div>
             </div>
           )}
           <div className="fixed inset-x-3 z-30" style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }}>
@@ -2218,10 +2354,10 @@ export default function App() {
         <>
           <Rail view={view} setView={setView} onSyllabus={() => setSyllabus({})} onSettings={() => setEditing(true)} taskCount={openTasks} dark={dark} onTheme={() => setDark((d) => !d)} studying={active(session)} />
           <aside
-            className={`liquid relative min-h-0 shrink-0 overflow-hidden rounded-[30px] ${instant ? '' : 'transition-[width,opacity,transform,margin] duration-[260ms] [transition-timing-function:var(--ease-out)]'} ${collapsed ? 'pointer-events-none -mr-4 w-0 -translate-x-4 opacity-0' : 'w-[clamp(400px,34vw,520px)]'}`}
+            className={`liquid relative min-h-0 shrink-0 overflow-hidden rounded-[30px] ${instant ? '' : 'transition-[width,opacity,transform,margin] duration-[260ms] [transition-timing-function:var(--ease-out)]'} ${collapsed ? 'pointer-events-none -mr-4 w-0 -translate-x-4 opacity-0' : 'w-[clamp(320px,31vw,480px)]'}`}
             aria-hidden={collapsed}
           >
-            <div className="h-full w-[clamp(400px,34vw,520px)]">{chat}</div>
+            <div className="h-full w-[clamp(320px,31vw,480px)]">{chat}</div>
           </aside>
           <section className={`liquid relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[30px] ${view === 'home' ? 'today-panel' : ''}`}>
             {/* Its own row, not floating over the page: nothing in any view can slide under the badge or the pals */}
@@ -2261,7 +2397,7 @@ export default function App() {
       )}
 
       {pop && (
-        <BlockPopover
+        <BlockPopover onEdit={()=>{setScheduleEdit({event:pop.ev});setPop(null)}}
           ev={pop.ev} rect={pop.rect} onClose={() => setPop(null)}
           onDone={() => { answerCheckin(pop.ev.id, 'done'); setPop(null) }}
           onAccept={() => { setEvents(ev.current.map((x) => (x.id === pop.ev.id ? { ...x, status: 'planned' } : x))); setPop(null) }}
@@ -2269,14 +2405,27 @@ export default function App() {
         />
       )}
       {clearing && <DeletePlansSheet onClose={() => setClearing(false)} onConfirm={clearAllPlans} count={events.length} />}
+      {travelDraft&&<TravelPlanner draft={travelDraft} onClose={()=>setTravelDraft(null)} onSave={trip=>{setTravelDraft(null);setScheduleEdit({isNew:true,event:{id:uid(),title:`Travel to ${trip.destination?.label.split(',')[0]}`,kind:'commute',status:'proposed',start:trip.departure!,end:trip.departure!+Math.ceil(trip.estimate!.durationSeconds/60)*60000,travel:trip,transportSource:'user-trip',note:trip.notes}})}}/>}
+      {scheduleEdit&&<ScheduleEditor event={scheduleEdit.event} onSave={saveManualSchedule} onClose={()=>setScheduleEdit(null)}/>}
+      {attachmentFiles.length>0&&<AttachmentPlacement files={attachmentFiles} folders={taskFolders} onChoose={placeAttachments} onCancel={()=>setAttachmentFiles([])}/>}
+      {taskEdit && <TaskEditor task={taskEdit.task} folders={taskFolders} onSave={saveManualTask} onClose={()=>setTaskEdit(null)} />}
       {syllabus && <SyllabusSheet key={syllabus.source ?? 'paste'} now={now} initialText={syllabus.text} source={syllabus.source} onClose={() => setSyllabus(false)} onAdd={addSyllabus} />}
       {!settings.onboarded && <Welcome onDone={finishOnboarding} />}
       {settings.onboarded && editing && (
-        <Onboarding
-          initial={settings}
-          onDone={finishOnboarding}
-          onClose={() => setEditing(false)}
-          onUserName={(userName) => setSettings((s) => ({ ...s, userName }))}
+        <SettingsScreen
+          settings={settings}
+          onChange={(patch) => {
+            setSettings((s) => ({ ...s, ...patch }))
+            if (patch.voiceOn === false) { window.speechSynthesis?.cancel(); stopKokoro(); stopNative(); stopSpeech() }
+          }}
+          onClose={() => {
+            setEditing(false)
+            requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="Pal and preferences"]')?.focus())
+          }}
+          dark={dark}
+          onTheme={setDark}
+          onEnableReminders={turnOnAlarms}
+          onSyllabus={() => { setEditing(false); setSyllabus({}) }}
           prefsLabel={[
             settings.prefs?.latestHour != null ? `Nothing after ${fmtTime(new Date().setHours(settings.prefs.latestHour, 0, 0, 0))}` : '',
             settings.prefs?.blockedDays?.length ? `${settings.prefs.blockedDays.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')} kept free` : '',
@@ -2287,7 +2436,6 @@ export default function App() {
             deviceOnly: !!settings.sttDeviceOnly,
             setDeviceOnly: (v) => setSettings((s) => ({ ...s, sttDeviceOnly: v })),
           }}
-          extras={mobile && settings.onboarded ? { dark, toggleDark: () => setDark((d) => !d), onSyllabus: () => { setEditing(false); setSyllabus({}) } } : undefined}
           onDemoWeek={() => { resetDemo(); setEditing(false) }}
         />
       )}

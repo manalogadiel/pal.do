@@ -4,10 +4,10 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 
 const PROFILE: Record<string, { voice: string; rate: string; pitch: string }> = {
-  rei: { voice: 'en-US-AndrewNeural', rate: '+10%', pitch: '+0Hz' },
-  diel: { voice: 'en-US-BrianNeural', rate: '-10%', pitch: '-5Hz' },
+  rei: { voice: 'en-US-GuyNeural', rate: '+0%', pitch: '+0Hz' },
+  diel: { voice: 'en-US-ChristopherNeural', rate: '+0%', pitch: '+0Hz' },
   jhyvie: { voice: 'fil-PH-AngeloNeural', rate: '+0%', pitch: '+0Hz' },
-  jaypee: { voice: 'en-US-GuyNeural', rate: '+5%', pitch: '+5Hz' },
+  jaypee: { voice: 'en-US-RogerNeural', rate: '+0%', pitch: '+0Hz' },
 }
 const MAX_TEXT = 2000
 const MAX_AUDIO = 8 * 1024 * 1024

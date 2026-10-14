@@ -22,6 +22,12 @@ try {
  const noop=()=>{}, props={now,events:[event],tasks:[task],pal:'rei',palState:'idle',onPoke:noop,onOpen:noop,onPlan:noop,onWeek:noop,onTasks:noop,onPrepare:noop}
  const html=renderToStaticMarkup(React.createElement(Today,props))
  assert.ok(html.includes('Best next step') && html.includes('Prepare focus session'))
+ for (const [minutes,label] of [[59,'59 minutes'],[60,'1 hour'],[61,'1 hour 1 minute'],[120,'2 hours']]) {
+  const durationHtml=renderToStaticMarkup(React.createElement(Today,{...props,events:[{...event,start:now+minutes*min}]}))
+  assert.ok(durationHtml.includes(`You have ${label} before`),`Readable duration for ${minutes} minutes`)
+ }
+ const longGapHtml=renderToStaticMarkup(React.createElement(Today,{...props,now:new Date(2026,9,14,8).getTime(),events:[{...event,start:new Date(2026,9,14,8).getTime()+539*min}]}))
+ assert.ok(longGapHtml.includes('You have 8 hours 59 minutes before'),'Long gaps use hours and minutes')
  assert.ok(!renderToStaticMarkup(React.createElement(Today,{...props,focusActive:true})).includes('Best next step'),'Active session suppresses suggestion')
  const {Study}=await server.ssrLoadModule('/src/components/Study.tsx')
  const setupConfig={method:'custom',focusMinutes:25,breakMinutes:0,rounds:1,goal:task.title,taskId:task.id}

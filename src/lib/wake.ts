@@ -122,6 +122,11 @@ export function wakesOtherPal(heard: string, pal: PalId, userName?: string): { w
 export function matchWake(heard: string, pal: PalId, userName?: string): { command: string } | null {
   const text = norm(heard)
   const user = userName ? norm(userName) : ''
+  // Measured clipped transcription of "Hi Jhyvie"; only at the start of spoken input.
+  if (pal === 'jhyvie' && !['igb', 'i gb'].includes(user)) {
+    const clipped = /^i\s*gb(?:\s+|$)(.*)$/.exec(text)
+    if (clipped) return { command: clipped[1].trim() }
+  }
   const names = NAMES[pal].filter((n) => n !== user).sort((a, b) => b.length - a.length)
   const head = new RegExp(String.raw`^${FILLER}${GREETING}\s+(.+)$`).exec(text)
   if (!head) {
@@ -149,5 +154,21 @@ export function matchWake(heard: string, pal: PalId, userName?: string): { comma
     if (key && key !== userKey && soundsLike(key, keys)) return { command: words.slice(k).join(' ').trim() }
   }
   return null
+}
+
+/** Remove spoken wake prefixes without changing the command's case, punctuation, or clock times. */
+export function stripWakePhrase(heard: string, pal: PalId, userName?: string): string {
+  let text = heard.trim()
+  for (;;) {
+    const wake = matchWake(text, pal, userName)
+    if (!wake) return text
+    if (!wake.command) return ''
+    // matchWake normalizes punctuation; locate its suffix in the original transcript instead.
+    const words = [...text.matchAll(/[^\s.,!?;:"()]+/g)].filter(word => norm(word[0]))
+    const count = wake.command.split(/\s+/).length
+    const start = words[words.length - count]?.index
+    if (start == null || start === 0) return text
+    text = text.slice(start).trim()
+  }
 }
 

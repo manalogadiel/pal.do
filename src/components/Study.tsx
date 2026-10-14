@@ -1,8 +1,9 @@
+import DistractionBin from './DistractionBin'
 import { ToolInstrument, type ToolId } from './ToolInstrument'
 import { useEffect, useState, useRef } from 'react'
 import type { PalId, PalState } from '../lib/core'
 import { active, running, countUp, isPaused, phaseLabel, remaining, DEFAULT_CONFIG, type StudyConfig, type Session } from '../lib/session'
-import { METHODS, ToolGallery, ToolSetup, RhythmBand, StudyDialog } from './StudyTools'
+import { defaultsFor, METHODS, ToolGallery, ToolSetup, RhythmBand, StudyDialog } from './StudyTools'
 import { Pal } from '../pals/Pal'
 import Library, { type LibraryTarget } from './Library'
 import type { Task } from '../lib/core'
@@ -48,7 +49,7 @@ export function StudyTabs({ section, onSection }: { section: 'focus' | 'library'
     <div className="inline-flex rounded-full bg-ink/[0.05] p-1" role="tablist" aria-label="Study">
       {(['library', 'focus'] as const).map((s) => (
         <button key={s} role="tab" aria-selected={section === s} type="button" onClick={() => onSection(s)} className={`press h-8 rounded-full px-4 text-[13px] ${section === s ? 'bg-paper font-medium shadow-sm' : 'text-ink-2'}`}>
-          {s === 'focus' ? 'Focus' : 'Library'}
+          {s === 'focus' ? 'Pomodoro' : 'Folders'}
         </button>
       ))}
     </div>
@@ -63,7 +64,7 @@ const mmss = (ms: number) => {
 /** Study: the focus timer, and the library of reviewers. The session lives in App so switching tabs never stops it. */
 export function Study(props: Props) {
   const { section, onSection } = props
-  const [screen, setScreen] = useState<'gallery' | 'workspace'>(() => active(props.session) ? 'workspace' : 'gallery')
+  const [screen, setScreen] = useState<'gallery' | 'workspace'>(() => 'workspace')
   const wasActive = useRef(active(props.session))
   useEffect(() => { const current = active(props.session); if (current && !wasActive.current) setScreen('workspace'); wasActive.current = current }, [props.session.phase])
   const [pending, setPending] = useState<StudyConfig | null>(null)
@@ -98,13 +99,13 @@ export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen
   const toGallery = () => { props.onSetupDone?.(); setEditing(false); setChoice(null); props.onScreen('gallery') }
   const primary = 'press h-11 rounded-full bg-accent px-6 text-sm font-semibold text-white dark:text-paper'
   const secondary = 'press h-11 rounded-full bg-paper-2 px-5 text-sm text-ink'
-  if (props.screen === 'gallery') return <div className="focus-scroll tool-container">{choice ? <ToolSetup key={choice} choice={choice} initialConfig={editing ? config : props.setupConfig ?? undefined} tasks={props.tasks} onBack={() => { setChoice(null); props.onSetupDone?.() }} onOpen={c => { setChoice(null); props.onSetupDone?.(); onConfigure(c) }}/> : <ToolGallery onSelect={tool => { setEditing(false); setChoice(tool) }} onContinue={active(session) ? () => props.onScreen('workspace') : undefined}/>}</div>
+  if (props.screen === 'gallery' && choice) return <div className="focus-scroll tool-container">{choice ? <ToolSetup key={choice} choice={choice} initialConfig={editing ? config : props.setupConfig ?? undefined} tasks={props.tasks} onBack={() => { setChoice(null); props.onSetupDone?.() }} onOpen={c => { setChoice(null); props.onSetupDone?.(); onConfigure(c) }}/> : <ToolGallery onSelect={tool => { setEditing(false); if (tool === 'pomodoro') { setChoice(null); onConfigure({...defaultsFor(tool), goal: undefined}) } else setChoice(tool) }} onBrowse={() => props.onSection('library')} onContinue={active(session) ? () => props.onScreen('workspace') : undefined}/>}</div>
   const clock = mmss(finished ? session.completedFocusMs : session.phase === 'breakReady' ? session.breakMs ?? 300_000 : ready || session.phase === 'waiting' ? (config.method === 'flowtime' || config.method === 'task' ? 0 : config.method === '52-17' ? 52 : config.method === 'pomodoro' ? 25 : config.focusMinutes) * 60_000 : remaining(session, now))
   const duration = (session.phase === 'break' ? session.breakMs ? session.breakMs / 60_000 : config.method === 'pomodoro' ? session.round === 4 ? 15 : 5 : config.method === '52-17' ? 17 : config.breakMinutes : config.method === 'pomodoro' ? 25 : config.method === '52-17' ? 52 : config.focusMinutes) * 60_000
   const progress = !['focus', 'break'].includes(session.phase) || countUp(session) || !duration ? 0 : Math.max(0, Math.min(1, 1 - remaining(session, now) / duration))
   return <div className="focus-scroll tool-container">
-    <section className="tool-workspace" data-workspace={tool}>
-      <div className="tool-workspace-heading"><div><h2 className="text-[28px] font-semibold tracking-[-0.025em]">{METHODS[tool].name}</h2><p className="mt-1 text-sm text-ink-2">{config.folderName ?? 'Independent focus'}</p></div><button className="tool-back" onClick={toGallery}>← All tools</button></div>
+    <div className="pomodoro-layout"><section className="tool-workspace" data-workspace={tool}>
+      <div className="tool-workspace-heading"><div><h2 className="text-[28px] font-semibold tracking-[-0.025em]">{METHODS[tool].name}</h2><p className="mt-1 text-sm text-ink-2">{config.folderName ?? 'Independent focus'}</p></div></div>
       <p className="mt-4 text-sm text-ink-2" aria-live="polite">{ready ? 'Ready when you are' : isPaused(session) ? `${phaseLabel(session)} · paused` : phaseLabel(session)}</p>
       {config.goal && <p className={`tool-goal ${tool === 'task' || tool === 'frog' ? 'is-prominent' : ''}`}>{config.goal}</p>}
       <div className={`tool-scene scene-${tool}`}>
@@ -118,7 +119,7 @@ export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen
       {finished && <p className="mt-4 text-sm text-ink-2">Your task progress stays yours to decide.</p>}
       {session.awayAt !== undefined ? <div className="mt-5 rounded-[20px] bg-paper-2 p-4"><p className="font-medium">Were you still focusing while away?</p><div className="mt-3 flex flex-wrap justify-center gap-2"><button className={primary} onClick={() => onRecover(true)}>Include time away</button><button className={secondary} onClick={() => onRecover(false)}>Exclude time away</button></div></div> : <div className="mt-6 flex flex-wrap justify-center gap-2">
         {ready && <button className={primary} onClick={config.method === 'task' && !config.goal ? () => { setChoice('task'); props.onScreen('gallery') } : onStart}>Start</button>}
-        {finished && <button className={primary} onClick={toGallery}>Choose another tool</button>}
+        {finished && <button className={primary} onClick={()=>{onConfigure({...DEFAULT_CONFIG,goal:undefined});props.onScreen('workspace')}}>New Pomodoro</button>}
         {running(session) && <button className={primary} onClick={onPause}>Pause</button>}
         {isPaused(session) && <button className={primary} onClick={onResume}>Resume</button>}
         {session.phase === 'waiting' && <button className={primary} onClick={() => onNext()}>Start next round</button>}
@@ -133,7 +134,7 @@ export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen
       {props.palLine && <p className="mt-5 max-w-sm text-sm text-ink-2">{props.palLine}</p>}
       <div className="tool-companion"><Pal id={props.pal} state={props.palState} size={104} className="mt-5" /><p className="text-sm text-ink-2">One session at a time.</p></div>
       <p className="mt-3 text-sm text-ink-2">Today: {props.todayMinutes} min focused</p>
-    </section>
+    </section><DistractionBin/></div>
   </div>
 }
 export default Study

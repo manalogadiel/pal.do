@@ -4,7 +4,7 @@ export const DAY = 86_400_000
 
 export type Kind = 'class' | 'shift' | 'exam' | 'work' | 'commute' | 'protected' | 'deadline'
 export type Status = 'planned' | 'proposed' | 'done' | 'missed'
-export type TaskKind = 'exam' | 'assignment'
+export type TaskKind = 'exam' | 'assignment' | 'task'
 export type PalId = 'rei' | 'diel' | 'jhyvie' | 'jaypee'
 export type PalState = 'idle' | 'listening' | 'talking' | 'sleeping' | 'alert' | 'alarmed' | 'shocked' | 'happy' | 'wave' | 'cheer'
 
@@ -18,6 +18,8 @@ export interface CalEvent {
   taskId?: string
   seg?: string
   why?: string
+  transportSource?: 'user-trip' | 'routine'
+  travel?: import('./travel').TravelDraft
   note?: string
 }
 
@@ -25,9 +27,18 @@ export interface Task {
   id: string
   title: string
   kind: TaskKind
-  due: number
+  due?: number
   hours: number
   doneHours: number
+  notes?: string
+  status?: 'pile' | 'doing' | 'done'
+  estimatedMinutes?: number
+  scheduled?: { eventId: string; start: number; end: number }
+  folderId?: string
+  createdAt?: number
+  updatedAt?: number
+  lastTouchedAt?: number
+  completedAt?: number
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 9)
@@ -56,6 +67,10 @@ export function fmtTime(t: number) {
   const h = d.getHours()
   const m = d.getMinutes()
   return `${h % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`
+}
+/** Explicit clock periods for chat replies and model facts; compact labels keep using fmtTime. */
+export function fmtReplyTime(t: number) {
+  return fmtTime(t).replace(/(am|pm)$/, period => ` ${period.toUpperCase()}`)
 }
 export function fmtDay(t: number) {
   return new Date(t).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })

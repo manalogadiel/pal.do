@@ -53,7 +53,7 @@ function textPages(text: string): string[] {
 export type ImportError = 'too-big' | 'unsupported' | 'unreadable'
 export const IMPORT_ACCEPT = '.pdf,.txt,.md,image/*'
 
-export async function importFile(file: File, folderId: string): Promise<LibraryFile | ImportError> {
+export async function importFile(file: File, folderId: string | null): Promise<LibraryFile | ImportError> {
   if (file.size > MAX_FILE_BYTES) return 'too-big'
   const kind: LibraryFile['kind'] | null = file.type === 'application/pdf' || /\.pdf$/i.test(file.name) ? 'pdf'
     : file.type.startsWith('image/') ? 'image'

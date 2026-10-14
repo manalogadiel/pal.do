@@ -83,7 +83,7 @@ export async function syncEventAlarms(events: CalEvent[], palName = 'Pal') {
     const now = Date.now()
     // Find future events that are planned
     const upcoming = events.filter(
-      (e) => e.status === 'planned' && e.kind !== 'commute' && e.start > now
+      (e) => e.status === 'planned' && (e.kind !== 'commute' || e.transportSource === 'user-trip') && e.start > now
     )
 
     // Schedule reminders 10 minutes before start (or at start if less than 10 mins away)

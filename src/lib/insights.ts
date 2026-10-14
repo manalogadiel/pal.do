@@ -1,3 +1,4 @@
+import { datedTasks, isTaskDone } from './tasks'
 // What a good secretary notices in a calendar: no study plan before an exam, short sleep, an overloaded day, hours
 // with no break, no time to eat, late nights, cramming. Observations about the schedule only, never about how they
 // feel (no "you seem stressed"), each with one concrete thing to try. The user decides.
@@ -86,7 +87,7 @@ function dayInsightsFor(day: number, ev: CalEvent[], now: number, prefs: Prefs):
 /** Exams and deadlines: nothing planned yet, or nearly all of it crammed into the last two days */
 function taskInsights(events: CalEvent[], tasks: Task[], now: number): Insight[] {
   const out: Insight[] = []
-  for (const t of tasks.filter((t) => t.due > now && t.due - now < 7 * DAY && t.doneHours < t.hours)) {
+  for (const t of datedTasks(tasks).filter((t) => t.due > now && t.due - now < 7 * DAY && t.doneHours < t.hours)) {
     const study = events.filter((e) => e.taskId === t.id && e.kind === 'work' && (e.status === 'planned' || e.status === 'proposed') && e.end > now)
     const need = t.hours - t.doneHours
     if (!study.length) {

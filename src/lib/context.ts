@@ -1,5 +1,6 @@
+import { datedTasks, isTaskDone } from './tasks'
 // Facts the app computes so the model only has to phrase them. Small models hallucinate times and numbers.
-import { addDays, DAY, fmtDay, fmtDur, fmtHours, fmtTime, hoursOf, startOfDay, type CalEvent, type Task } from './core'
+import { addDays, DAY, fmtDay, fmtDur, fmtHours, fmtReplyTime as fmtTime, hoursOf, startOfDay, type CalEvent, type Task } from './core'
 import { freeGaps, type Prefs } from './schedule'
 import { weatherLine, type Weather } from './weather'
 
@@ -74,7 +75,7 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
   const clock = `${new Date(now).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}, ${fmtTime(now)}`
 
   const left = busy
-    .filter((e) => e.end > now && e.start < today + DAY && e.kind !== 'commute' && e.kind !== 'deadline' && e.status !== 'proposed')
+    .filter((e) => e.end > now && e.start < today + DAY && (e.kind !== 'commute' || e.transportSource === 'user-trip') && e.kind !== 'deadline' && e.status !== 'proposed')
     .sort((a, b) => a.start - b.start)
   const leftLine = left.length ? left.slice(0, 4).map((e) => `${e.title} ${fmtTime(e.start)}–${fmtTime(e.end)}${e.start <= now ? " (happening now)" : ""}`).join(', ') : 'nothing else'
 
@@ -97,7 +98,7 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
   const relevant = (e: CalEvent) => words.length > 0 && words.every((word) => e.title.toLowerCase().includes(word))
   const upcoming = busy
     // Commutes only for today and tomorrow (a daily bus ride would crowd out the week), so "move my bus" can find it
-    .filter((e) => (e.status === 'planned' || e.status === 'proposed') && (e.kind !== 'commute' || e.start < today + 2 * DAY) && e.kind !== 'deadline' && e.end > now && e.start < today + 7 * DAY)
+    .filter((e) => (e.status === 'planned' || e.status === 'proposed') && ((e.kind !== 'commute' || e.transportSource === 'user-trip') || e.start < today + 2 * DAY) && e.kind !== 'deadline' && e.end > now && e.start < today + 7 * DAY)
     .sort((a, b) => Number(relevant(b)) - Number(relevant(a)) || a.start - b.start)
     .slice(0, 10)
     .map((e, i) => {
@@ -105,9 +106,9 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
       return `e${i + 1} ${span(e.start, e.end)} ${e.title} (${e.status}, ${e.taskId && e.kind === 'work' ? 'review session' : e.kind}${e.taskId ? `; task ${e.taskId}` : ''})`
     })
 
-  const upcomingTasks = tasks.filter((t) => t.due > now).sort((a, b) => a.due - b.due)
+  const upcomingTasks = datedTasks(tasks).filter((t) => t.due > now).sort((a, b) => a.due - b.due)
   const plannedFor = (t: Task) => busy.filter((e) => e.taskId === t.id && e.kind === 'work' && e.status === 'planned' && e.start >= now).reduce((a, e) => a + hoursOf(e), 0)
-  const taskLine = (t: Task) => `${t.title} (${t.kind}), ${fmtDay(t.due)} ${fmtTime(t.due)} (needs ${fmtDur(Math.max(0, t.hours - t.doneHours))} of review/work, ${fmtDur(plannedFor(t))} planned)`
+  const taskLine = (t: Task & { due: number }) => `${t.title} (${t.kind}), ${fmtDay(t.due)} ${fmtTime(t.due)} (needs ${fmtDur(Math.max(0, t.hours - t.doneHours))} of review/work, ${fmtDur(plannedFor(t))} planned)`
   const nextTask = upcomingTasks[0]
   const atRisk = upcomingTasks.filter((t) => t.due - now < 3 * DAY && t.doneHours + plannedFor(t) < t.hours)
 
@@ -139,7 +140,7 @@ export function buildContext(now: number, events: CalEvent[], tasks: Task[], wea
 - Free today: ${fmtDur(freeH)}${gapLine ? ` (${gapLine})` : ''}
 - Free next 7 days: ${week.map((w) => `${short(w.d)} ${fmtDur(w.free)}`).join(', ')}${busiest && busiest.booked > 0 ? ` (busiest: ${short(busiest.d)}, ${fmtDur(busiest.booked)} booked)` : ''}
 - Calendar next 7 days (id,time,title,status/role; proposed=unaccepted): ${upcoming.length ? `\n  ${upcoming.join('\n  ')}` : 'nothing'}${upcoming.length === 10 ? ' (limited list; ask for day/title before declaring an event absent)' : ''}
-- Deadlines: ${upcomingTasks.length ? upcomingTasks.slice(0, 4).map(taskLine).join('; ') : 'none'}
+${tasks.some(t=>t.due==null&&!isTaskDone(t)) ? '- Tasks: '+tasks.filter(t=>t.due==null&&!isTaskDone(t)).slice(0,3).map(t=>`${t.title.slice(0,80)} (${t.status??'pile'}${t.notes?`; ${t.notes.slice(0,80)}`:''})`).join('; ').slice(0,300)+'\n' : ''}- Deadlines: ${upcomingTasks.length ? upcomingTasks.slice(0, 4).map(taskLine).join('; ') : 'none'}
 - Needs attention: ${atRisk.length ? atRisk.map((t) => `${t.title} due ${fmtDay(t.due)}`).join('; ') : 'nothing'}
 - Weather: ${wx}${prefLine ? `
 - User preferences (always respect): ${prefLine}` : ''}${wait ? `

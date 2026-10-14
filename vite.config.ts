@@ -1,3 +1,4 @@
+import {maps} from './api/_lib/maps'
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -23,6 +24,8 @@ function crossOriginIsolation(): Plugin {
   return { name: 'cross-origin-isolation', configureServer: (s) => { s.middlewares.use(add) }, configurePreviewServer: (s) => { s.middlewares.use(add) } }
 }
 
+function localMaps():Plugin{return{name:'local-maps',configureServer(server){server.middlewares.use('/api/maps',async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const request=new Request('http://localhost:8443/api/maps',{method:req.method,headers:{'Content-Type':'application/json'},...(req.method==='POST'?{body:Buffer.concat(chunks).toString()}: {})});const result=await maps(request);res.statusCode=result.status;result.headers.forEach((v,k)=>res.setHeader(k,v));res.end(await result.text())})}}}
+
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const androidPreview = mode === 'android-preview'
@@ -40,6 +43,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       crossOriginIsolation(),
+      localMaps(),
       react(),
       tailwindcss(),
       figmaSiteConfiguration(siteConfiguration),

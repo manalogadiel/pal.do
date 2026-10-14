@@ -1,4 +1,4 @@
-import { maleVoice, cleanSpeech } from './speech-profile'
+import { maleVoice, cleanSpeech, SPEECH_STYLE } from './speech-profile'
 import { start, tick, pause, resume, skip, focusElapsed, fromSaved, phaseEnds, remaining, configure, finish, recoverAway, checkpoint, DEFAULT_CONFIG, validateConfig, running, nextRound } from './session'
 export function runStudyToolTests() {
   const fails: string[] = [], min = 60_000
@@ -39,6 +39,10 @@ export function runStudyToolTests() {
   eq('female voice excluded', maleVoice({ ...englishVoice, name: 'Samantha' }, 'rei', 'Hi'), false)
   eq('remote voice excluded offline', maleVoice({ ...englishVoice, localService: false }, 'rei', 'Hi'), false)
   eq('speech preserves link text', cleanSpeech('**Hi** [Rei](https://example.com) 😊'), 'Hi Rei')
+  eq('English clock pronunciation in Taglish', cleanSpeech('Klase mo at 7am, tapos review at 7:30pm.'), 'Klase mo at seven ey em, tapos review at seven thirty pee em.')
+  eq('clock minutes and dotted meridiem', cleanSpeech('12:05 a.m. to 1:00 PM'), 'twelve oh five ey em to one pee em')
+  eq('ordinary numbers unchanged', cleanSpeech('7 tasks, 25 minutes, version 17am'), '7 tasks, 25 minutes, version 17am')
+  for (const [pal, style] of Object.entries(SPEECH_STYLE)) eq(`${pal} natural speed and pitch`, style, { rate: 1, pitch: 1 })
   const longer = tick(start(0, { ...DEFAULT_CONFIG, method: '52-17' }), 70 * min)
   eq('52/17 finishes one actual round', [longer.phase, longer.completedFocusMs], ['finished', 52 * min])
   const task = start(0, { ...DEFAULT_CONFIG, method: 'task', goal: 'Ten problems' })

@@ -8,10 +8,10 @@ import threading
 import time
 
 PROFILE = {
-    'rei': {'voice':'en-US-AndrewNeural','rate':'+10%','pitch':'+0Hz'},
-    'diel': {'voice':'en-US-BrianNeural','rate':'-10%','pitch':'-5Hz'},
+    'rei': {'voice':'en-US-GuyNeural','rate':'+0%','pitch':'+0Hz'},
+    'diel': {'voice':'en-US-ChristopherNeural','rate':'+0%','pitch':'+0Hz'},
     'jhyvie': {'voice':'fil-PH-AngeloNeural','rate':'+0%','pitch':'+0Hz'},
-    'jaypee': {'voice':'en-US-GuyNeural','rate':'+5%','pitch':'+5Hz'},
+    'jaypee': {'voice':'en-US-RogerNeural','rate':'+0%','pitch':'+0Hz'},
 }
 ORIGINS = [x.strip() for x in os.getenv('TTS_ALLOWED_ORIGINS','http://localhost:8443,http://127.0.0.1:8443,http://localhost,https://localhost,capacitor://localhost').split(',') if x.strip()]
 def allowed_origin(origin, allowed): return bool(origin) and origin in allowed

@@ -1,74 +1,32 @@
-// Today's weather from Open-Meteo (free, no key). Cached so offline answers still have something to say.
-import { fmtTime, HOUR, MIN } from './core'
+import {fmtTime,HOUR,MIN} from './core'
+export const WEATHER_EVENT='paldo-weather-change'
+const KEY='paldo.weather',LOCATION='paldo.weather-location',FRESH=30*MIN
+export interface WeatherLocation {id:string;label:string;lat:number;lon:number;timezone:string;source:'device'|'manual'}
+export interface Weather {at:number;temp:number;desc:string;rainHours:number[];locationId?:string;area?:string;timezone?:string;source?:string;hours?:{at:number;rainProbability:number|null}[]}
+export function getWeatherLocation():WeatherLocation|null{try{const p=JSON.parse(localStorage.getItem(LOCATION)||'null');return p&&typeof p.label==='string'&&Number.isFinite(p.lat)&&Number.isFinite(p.lon)?p:null}catch{return null}}
+export function setWeatherLocation(location:WeatherLocation){localStorage.setItem(LOCATION,JSON.stringify(location));localStorage.removeItem(KEY);window.dispatchEvent(new Event(WEATHER_EVENT))}
+export function getCachedWeather():Weather|null{try{const w=JSON.parse(localStorage.getItem(KEY)||'null'),p=getWeatherLocation();return w&&p&&w.locationId===p.id&&Number.isFinite(w.at)&&Date.now()-w.at<48*HOUR?w:null}catch{return null}}
+export async function searchWeatherPlaces(query:string):Promise<WeatherLocation[]>{const r=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=8&language=en&format=json`,{signal:AbortSignal.timeout(8000)});if(!r.ok)throw new Error('Place search is unavailable.');const d=await r.json();return(d.results??[]).filter((p:{latitude:number;longitude:number})=>Number.isFinite(p.latitude)&&Number.isFinite(p.longitude)).map((p:{id:number;name:string;admin1?:string;country?:string;latitude:number;longitude:number;timezone?:string})=>({id:String(p.id),label:[p.name,p.admin1,p.country].filter(Boolean).join(', '),lat:p.latitude,lon:p.longitude,timezone:p.timezone??'auto',source:'manual'}))}
+export async function useDeviceWeatherLocation():Promise<WeatherLocation>{const coords=await new Promise<GeolocationCoordinates>((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('Location is unavailable. Search for your city instead.'));navigator.geolocation.getCurrentPosition(p=>resolve(p.coords),()=>reject(new Error('Location permission was denied or unavailable. Search for your city instead.')),{timeout:10000,maximumAge:300000})});const p:WeatherLocation={id:`device:${coords.latitude.toFixed(3)},${coords.longitude.toFixed(3)}`,label:'Current device area',lat:coords.latitude,lon:coords.longitude,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,source:'device'};setWeatherLocation(p);return p}
+let requestGeneration=0
+export async function refreshWeather(force=false):Promise<Weather|null>{const cached=getCachedWeather(),p=getWeatherLocation();if(!p)return null;if(!force&&cached&&Date.now()-cached.at<FRESH)return cached;if(!navigator.onLine)return cached;const generation=++requestGeneration
+ try{const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}&current=temperature_2m,weather_code&hourly=precipitation_probability&forecast_days=3&timezone=auto&timeformat=unixtime`,{signal:AbortSignal.timeout(8000)});if(!r.ok)return cached;const d=await r.json(),now=Date.now();if(!Number.isFinite(d.current?.temperature_2m)||!Array.isArray(d.hourly?.time))return cached
+ const hours=d.hourly.time.map((t:number,i:number)=>({at:t*1000,rainProbability:typeof d.hourly.precipitation_probability?.[i]==='number'?d.hourly.precipitation_probability[i]:null})).filter((h:{at:number})=>h.at+HOUR>now&&h.at<now+48*HOUR)
+ const code=d.current.weather_code,desc=code===0?'clear':code<=3?'partly cloudy':code<=48?'foggy':code<=67?'rainy':code<=86?'showers':'thunderstorms'
+ const w:Weather={at:now,temp:Math.round(d.current.temperature_2m),desc,rainHours:hours.filter((h:{rainProbability:number|null})=>h.rainProbability!=null&&h.rainProbability>=50).map((h:{at:number})=>h.at),hours,locationId:p.id,area:p.label,source:p.source,timezone:d.timezone}
+ if(generation!==requestGeneration||getWeatherLocation()?.id!==p.id)return getCachedWeather();localStorage.setItem(KEY,JSON.stringify(w));return w
+ }catch{return getCachedWeather()}}
+export function weatherForInterval(w:Weather,start:number,end:number,now=Date.now()):{available:boolean;rainProbability?:number;reason?:string}{if(now-w.at>FRESH)return{available:false,reason:'Forecast is stale.'};const hours=w.hours??[];const relevant=hours.filter(h=>h.at<end&&h.at+HOUR>start).sort((a,b)=>a.at-b.at);if(!relevant.length||relevant[0].at>start||relevant.at(-1)!.at+HOUR<end||relevant.some(h=>h.rainProbability==null)||relevant.some((h,i)=>i>0&&h.at-relevant[i-1].at!==HOUR))return{available:false,reason:'Forecast does not cover the full proposed time.'};return{available:true,rainProbability:Math.max(...relevant.map(h=>h.rainProbability!))}}
+export function weatherLine(w:Weather):string{const groups:{start:number;end:number}[]=[];for(const t of w.rainHours){const last=groups.at(-1);if(last&&last.end===t)last.end=t+HOUR;else groups.push({start:t,end:t+HOUR})}const stale=Date.now()-w.at>FRESH?'Cached forecast; may be outdated. ':'';return `${stale}${w.area??'Unconfirmed area'}: ${w.temp}°C and ${w.desc}; ${groups.length?'rain chance ≥50% '+groups.slice(0,4).map(g=>`${fmtDay(g.start)} ${fmtTime(g.start)}–${fmtTime(g.end)}`).join('; '):'no high rain probability in available forecast'} (updated ${new Date(w.at).toLocaleString()}, ${w.source??'unknown source'}). Forecasts are estimates.`}
 
-const KEY = 'paldo.weather'
-const FRESH = 30 * MIN
-// Manila: sensible default when location permission is denied
-const FALLBACK = { lat: 14.5995, lon: 120.9842 }
-
-export interface Weather {
-  at: number
-  temp: number
-  desc: string
-  /** Epoch ms of each upcoming hour today with ≥50% rain chance */
-  rainHours: number[]
+import {fmtDay,type CalEvent} from './core'
+export function outdoorWeatherAdvice(title:string,w:Weather|null,events:CalEvent[],start:number,end:number,now=Date.now()):string{
+ if(!/\b(outdoor|hike|hiking|walk|walking|jog|run|running|picnic|beach|park|lakad sa labas|paglalakad|takbo)\b/i.test(title))return ''
+ if(!w)return 'Weather unavailable: choose your location in Settings before relying on forecast advice.'
+ const forecast=weatherForInterval(w,start,end,now)
+ if(!forecast.available)return `Weather unavailable for this time: ${forecast.reason}`
+ if((forecast.rainProbability??0)<50)return `${w.area}: forecast rain probability up to ${forecast.rainProbability}% for this interval. This is an estimate.`
+ const duration=end-start,alternative=(w.hours??[]).map(h=>h.at).filter(t=>t>=now&&t!==start&&new Date(t).toDateString()===new Date(start).toDateString()).find(t=>{const f=weatherForInterval(w,t,t+duration,now);return f.available&&f.rainProbability!<50&&!events.some(e=>e.kind!=='deadline'&&['planned','proposed'].includes(e.status)&&e.start<t+duration&&e.end>t)})
+ return `${w.area}: rain probability up to ${forecast.rainProbability}% during this outdoor plan.${alternative!=null?` A calendar-free lower-rain window is ${fmtDay(alternative)} ${fmtTime(alternative)}–${fmtTime(alternative+duration)}. Tell me if you prefer that time.`:''} Forecasts can change; the proposed time is unchanged.`
 }
-
-const WMO: [number, string][] = [
-  [0, 'clear'], [3, 'partly cloudy'], [48, 'foggy'], [57, 'drizzly'], [67, 'rainy'],
-  [77, 'snowy'], [82, 'rain showers'], [86, 'snow showers'], [99, 'thunderstorms'],
-]
-const describe = (code: number) => (WMO.find(([max]) => code <= max) ?? WMO[WMO.length - 1])[1]
-
-export function getCachedWeather(): Weather | null {
-  try {
-    const w = JSON.parse(localStorage.getItem(KEY) || 'null') as Weather | null
-    // Yesterday's forecast is worse than none
-    return w && new Date(w.at).toDateString() === new Date().toDateString() ? w : null
-  } catch {
-    return null
-  }
-}
-
-function position(): Promise<{ lat: number; lon: number }> {
-  return new Promise((res) => {
-    if (!navigator.geolocation) return res(FALLBACK)
-    navigator.geolocation.getCurrentPosition(
-      (p) => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      () => res(FALLBACK),
-      { timeout: 5000, maximumAge: 6 * HOUR },
-    )
-  })
-}
-
-/** Fetch if online and the cache is stale. Always resolves; null = nothing known. */
-export async function refreshWeather(force = false): Promise<Weather | null> {
-  const cached = getCachedWeather()
-  if (!force && cached && Date.now() - cached.at < FRESH) return cached
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return cached
-  try {
-    const { lat, lon } = await position()
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&hourly=precipitation_probability&forecast_days=1&timezone=auto&timeformat=unixtime`
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) })
-    if (!res.ok) return cached
-    const d = await res.json()
-    const now = Date.now()
-    const rainHours = (d.hourly?.time as number[] ?? [])
-      .map((t, i) => ({ t: t * 1000, p: d.hourly.precipitation_probability[i] as number }))
-      .filter((h) => h.t + HOUR > now && h.p >= 50)
-      .map((h) => h.t)
-    const w: Weather = { at: now, temp: Math.round(d.current.temperature_2m), desc: describe(d.current.weather_code), rainHours }
-    localStorage.setItem(KEY, JSON.stringify(w))
-    return w
-  } catch {
-    return cached
-  }
-}
-
-/** "29°C and partly cloudy, rain likely 3pm–6pm (as of 2:10pm)" */
-export function weatherLine(w: Weather): string {
-  const rain = w.rainHours.length
-    ? `, rain likely ${fmtTime(w.rainHours[0])}–${fmtTime(w.rainHours[w.rainHours.length - 1] + HOUR)}`
-    : ', no rain expected for the rest of today'
-  return `${w.temp}°C and ${w.desc}${rain} (as of ${fmtTime(w.at)})`
-}
+export function acceptWeatherRefresh(weather:Weather|null,locationId:string|undefined):Weather|null{return weather&&weather.locationId===locationId?weather:null}

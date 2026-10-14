@@ -1,0 +1,4 @@
+import {createServer} from 'vite'
+import assert from 'node:assert/strict'
+const v=await createServer({configLoader:'runner',server:{middlewareMode:true},appType:'custom',logLevel:'silent'})
+try{const {parseTravelIntent}=await v.ssrLoadModule('/src/lib/travel.ts');const now=new Date(2026,9,14).getTime(),t=parseTravelIntent('aalis kami papuntang Quezon sa October 16',now);assert.ok(t);assert.equal(new Date(t.date).getDate(),16);assert.equal(t.destinationQuery,'Quezon');assert.equal(t.departure,undefined);assert.equal(t.estimate,undefined);assert.equal(parseTravelIntent('I have a meeting later',now),null);assert.equal(parseTravelIntent("I'm going to study tomorrow",now),null);assert.equal(parseTravelIntent("I'm going to work on my thesis at 3pm",now),null);console.log('travel: Tagalog destination/date, departure clarification and no invented duration pass')}finally{await v.close()}
