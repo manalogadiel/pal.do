@@ -21,7 +21,10 @@ async function localSpeak(text: string, pal: PalId, signal: AbortSignal, english
     let queryAbort: () => void = () => {}
     const cancellation = new Promise<never>((_, reject) => { queryTimer = setTimeout(() => reject(new Error('Voice discovery timed out')), 10_000); queryAbort = () => reject(new Error('Speech cancelled')); signal.addEventListener('abort', queryAbort, { once: true }) })
     const { voices } = await Promise.race([TextToSpeech.getSupportedVoices(), cancellation]).finally(() => { clearTimeout(queryTimer); signal.removeEventListener('abort', queryAbort) })
-    const index = voices.findIndex(v => maleVoice(v, pal, text, englishRequested))
+    let index = voices.findIndex(v => maleVoice(v, pal, text, englishRequested))
+    if (index < 0) index = voices.findIndex(v => maleVoice(v, pal, text, true))
+    if (index < 0) index = voices.findIndex(v => /^en(-|$)/i.test(v.lang))
+    if (index < 0 && voices.length) index = 0
     if (index < 0 || signal.aborted) return false
     return new Promise<boolean>(resolve => {
       let settled = false
@@ -34,7 +37,8 @@ async function localSpeak(text: string, pal: PalId, signal: AbortSignal, english
     })
   }
   if (!('speechSynthesis' in window)) return false
-  const voice = window.speechSynthesis.getVoices().find(v => maleVoice(v, pal, text, englishRequested))
+  const list = window.speechSynthesis.getVoices()
+  const voice = list.find(v => maleVoice(v, pal, text, englishRequested)) ?? list.find(v => maleVoice(v, pal, text, true)) ?? list.find(v => /^en(-|$)/i.test(v.lang)) ?? list[0]
   if (!voice) return false
   return new Promise<boolean>(resolve => {
     const u = new SpeechSynthesisUtterance(text)

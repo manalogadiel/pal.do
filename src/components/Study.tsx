@@ -105,7 +105,53 @@ export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen
   const progress = !['focus', 'break'].includes(session.phase) || countUp(session) || !duration ? 0 : Math.max(0, Math.min(1, 1 - remaining(session, now) / duration))
   return <div className="focus-scroll tool-container">
     <div className="pomodoro-layout"><section className="tool-workspace" data-workspace={tool}>
-      <div className="tool-workspace-heading"><div><h2 className="text-[28px] font-semibold tracking-[-0.025em]">{METHODS[tool].name}</h2><p className="mt-1 text-sm text-ink-2">{config.folderName ?? 'Independent focus'}</p></div></div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2 rounded-full bg-ink/[0.04] px-3.5 py-1 text-[13px] text-ink-2 shadow-xs">
+          <span className="size-2 rounded-full bg-accent animate-pulse" aria-hidden />
+          <span className="tnum font-semibold text-ink">{new Date(now).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+          <span className="text-ink-3">·</span>
+          <span>{new Date(now).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+        </div>
+      </div>
+
+      <div className="tool-workspace-heading mt-2">
+        <div>
+          <h2 className="text-[28px] font-semibold tracking-[-0.025em]">{METHODS[tool].name}</h2>
+          <p className="mt-1 text-sm text-ink-2">{config.folderName ?? 'Independent focus'}</p>
+        </div>
+      </div>
+
+      {/* Quick technique switcher strip */}
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5" role="tablist" aria-label="Timer techniques">
+        {[
+          { id: 'pomodoro', label: 'Pomodoro 25m', cfg: { method: 'pomodoro', focusMinutes: 25, breakMinutes: 5, rounds: 4 } },
+          { id: '52-17', label: '52 / 17', cfg: { method: '52-17', focusMinutes: 52, breakMinutes: 17, rounds: 1 } },
+          { id: 'flowtime', label: 'Flowtime', cfg: { method: 'flowtime', focusMinutes: 0, breakMinutes: 5, rounds: 1 } },
+          { id: 'custom', label: '90m Deep', cfg: { method: 'custom', focusMinutes: 90, breakMinutes: 20, rounds: 1 } },
+          { id: 'task', label: 'Task-based', cfg: { method: 'task', focusMinutes: 0, breakMinutes: 0, rounds: 1, goal: config.goal || 'Focus goal' } },
+        ].map((item) => {
+          const isSel = (item.id === 'custom' && config.method === 'custom' && config.focusMinutes === 90) || (item.id !== 'custom' && config.method === item.id)
+          return (
+            <button
+              key={item.label}
+              type="button"
+              disabled={running(session)}
+              onClick={() => {
+                if (running(session)) return
+                onConfigure(item.cfg as StudyConfig)
+              }}
+              className={`press h-8 rounded-full px-3 text-[12px] font-medium transition-all ${
+                isSel
+                  ? 'bg-ink text-paper shadow-xs'
+                  : 'bg-ink/[0.05] text-ink-2 hover:bg-ink/[0.09] hover:text-ink disabled:opacity-50'
+              }`}
+            >
+              {item.label}
+            </button>
+          )
+        })}
+      </div>
+
       <p className="mt-4 text-sm text-ink-2" aria-live="polite">{ready ? 'Ready when you are' : isPaused(session) ? `${phaseLabel(session)} · paused` : phaseLabel(session)}</p>
       {config.goal && <p className={`tool-goal ${tool === 'task' || tool === 'frog' ? 'is-prominent' : ''}`}>{config.goal}</p>}
       <div className={`tool-scene scene-${tool}`}>
@@ -130,10 +176,17 @@ export function Focus(props: Props & { screen: 'gallery' | 'workspace'; onScreen
         {active(session) && <button className={secondary} onClick={() => onStop(false)}>{config.method === 'task' ? 'Finish for now' : 'Finish'}</button>}
       </div>}
       {config.folderId && <button className="press mt-3 h-11 rounded-full px-4 text-sm text-accent" disabled={!folderExists} title={!folderExists ? 'This folder is no longer available' : undefined} onClick={() => props.onBrowse(config.folderId!)}>{folderExists ? 'View materials' : 'Folder unavailable'}</button>}
-      {!props.alarmsOn && <button className="press mt-3 h-11 rounded-full px-4 text-sm text-accent" onClick={props.onEnableAlarms}>Enable session alarms</button>}
+      <button className={`press mt-3 flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${props.alarmsOn ? 'bg-accent/10 text-accent' : 'bg-ink/[0.05] text-ink-2 hover:text-ink'}`} onClick={props.onEnableAlarms}>
+        <span>{props.alarmsOn ? '🔔 Sound alarms on' : '🔕 Enable sound alarms'}</span>
+      </button>
       {props.palLine && <p className="mt-5 max-w-sm text-sm text-ink-2">{props.palLine}</p>}
-      <div className="tool-companion"><Pal id={props.pal} state={props.palState} size={104} className="mt-5" /><p className="text-sm text-ink-2">One session at a time.</p></div>
-      <p className="mt-3 text-sm text-ink-2">Today: {props.todayMinutes} min focused</p>
+      <div className="tool-companion mt-4 flex flex-col items-center">
+        <div className="today-stage stage relative flex justify-center" data-time={new Date(now).getHours() < 12 ? 'morning' : new Date(now).getHours() < 18 ? 'afternoon' : 'night'}>
+          <Pal id={props.pal} state={props.palState} size={104} className="relative z-10" />
+        </div>
+        <p className="mt-2 text-xs text-ink-2">One session at a time.</p>
+        <p className="mt-1 text-xs font-medium text-ink-3">Today: {props.todayMinutes} min focused</p>
+      </div>
     </section><DistractionBin/></div>
   </div>
 }

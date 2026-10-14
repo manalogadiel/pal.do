@@ -338,11 +338,12 @@
   background: radial-gradient(55% 60% at 50% 62%, var(--spot, var(--accent-soft)), transparent 72%);
   opacity: 0.9;
 }
-.stage[data-time='morning'] { --spot: #d8ecff; }
-.stage[data-time='afternoon'] { --spot: #cbdfff; }
-.stage[data-time='night'] { --spot: #d5dff7; }
-.dark .stage[data-time] { --spot: rgb(90 155 255 / 0.14); }
-.dark .stage[data-time='night'] { --spot: rgb(120 150 225 / 0.16); }
+.stage[data-time='morning'] { --spot: #d8e3fb; }
+.stage[data-time='afternoon'] { --spot: #ebdce7; }
+.stage[data-time='night'] { --spot: #d8d2ea; }
+.dark .stage[data-time='morning'] { --spot: rgb(180 196 236 / 0.18); }
+.dark .stage[data-time='afternoon'] { --spot: rgb(155 122 159 / 0.18); }
+.dark .stage[data-time='night'] { --spot: rgb(84 89 125 / 0.22); }
 
 /* Same glow as .stage, anchored to the composer. Stays inside its box so it never bleeds over the feed or the pal */
 .input-glow {
@@ -358,11 +359,12 @@
   background: radial-gradient(55% 60% at 50% 50%, var(--spot, var(--accent-soft)), transparent 72%);
   opacity: 0.9;
 }
-.input-glow[data-time='morning'] { --spot: #d8ecff; }
-.input-glow[data-time='afternoon'] { --spot: #cbdfff; }
-.input-glow[data-time='night'] { --spot: #d5dff7; }
-.dark .input-glow[data-time] { --spot: rgb(90 155 255 / 0.14); }
-.dark .input-glow[data-time='night'] { --spot: rgb(120 150 225 / 0.16); }
+.input-glow[data-time='morning'] { --spot: #d8e3fb; }
+.input-glow[data-time='afternoon'] { --spot: #ebdce7; }
+.input-glow[data-time='night'] { --spot: #d8d2ea; }
+.dark .input-glow[data-time='morning'] { --spot: rgb(180 196 236 / 0.18); }
+.dark .input-glow[data-time='afternoon'] { --spot: rgb(155 122 159 / 0.18); }
+.dark .input-glow[data-time='night'] { --spot: rgb(84 89 125 / 0.22); }
 
 @media (prefers-reduced-motion: reduce) {
   .slide-in, .view-in { animation: fade 200ms ease both; }
