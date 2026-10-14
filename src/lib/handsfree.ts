@@ -70,8 +70,8 @@ const waiting = new Map<number, (text: string) => void>()
 
 /** Silence that ends a clip: short while waiting for "Hi {pal}" (wakes fast), patient once it's listening to you */
 const WAKE_SILENCE_MS = 500
-/** Same as the app's SEND_AFTER_SILENCE_MS: 2s of quiet after their last words sends the request */
-const TALK_SILENCE_MS = 2000
+/** Same as the app's SEND_AFTER_SILENCE_MS: 1s of quiet after their last words sends the request */
+const TALK_SILENCE_MS = 1000
 let awakeTimer: ReturnType<typeof setTimeout> | undefined
 const set = (s: HandsFreeState, info?: { progress?: number; error?: string; mic?: boolean; tap?: boolean }) => {
   if (vad && (s === 'awake') !== (state === 'awake')) vad.setOptions({ redemptionMs: s === 'awake' ? TALK_SILENCE_MS : WAKE_SILENCE_MS })

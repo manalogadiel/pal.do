@@ -55,7 +55,7 @@ const KEY = 'paldo-v1'
 const QUIET: [number, number] = [23, 7]
 const MAX_CHECKINS = 3
 /** Talking to Pal: the request is sent after this much quiet following their last words (every mic path) */
-const SEND_AFTER_SILENCE_MS = 2000
+const SEND_AFTER_SILENCE_MS = 1000
 const NOTHING_SAID_MS = 8000
 const MAX_TALK_MS = 30_000
 const VOICE_PITCH: Record<PalId, number> = { rei: 1.1, diel: 0.9, jhyvie: 1.3, jaypee: 1.05 }
@@ -1146,7 +1146,20 @@ export default function App() {
     }
     const inventoryNow=answerKnowledgeQuestion(text,{query:text,tasks:tk.current,folders:taskFolders,files:knowledgeFiles,now:nowRef.current})
     if(inventoryNow)return palSay(inventoryNow)
-    if(titleConfirmation.current){const candidate=titleConfirmation.current;titleConfirmation.current=null;if(isYes(text)){confirmedTitles.current.add(candidate.title);text=`the title is ${candidate.title}`}else if(/^(?:no|hindi|di|wrong)\W*$/i.test(text))return palSay('What title should I use?');else text=`the title is ${text.replace(/^(?:no|hindi)[,.]?\s*/i,'')}`}
+    if(titleConfirmation.current){
+      const candidate=titleConfirmation.current;
+      titleConfirmation.current=null;
+      if(isYes(text)){
+        confirmedTitles.current.add(candidate.title);
+        text=`the title is ${candidate.title}`;
+      } else if(/^(?:no|hindi|di|wrong)\W*$/i.test(text)){
+        return palSay('What title should I use?');
+      } else if(/^(?:hi|hello|hey|kamusta|how are you|whats up|what's up|thanks|bye|goodbye|salamat)\b/i.test(text.trim())){
+        // Casual chat / greeting: discard stuck title confirmation
+      } else {
+        text=`the title is ${text.replace(/^(?:no|hindi)[,.]?\s*/i,'')}`;
+      }
+    }
     const uncertain=text.match(/^\s*(?:ito|iyan)\s+(?:ang|yung)\s+(.+?)[.!?]*$/i)
     if(uncertain){const name=uncertain[1].trim();titleConfirmation.current={title:name,raw:text};saveConversation({...emptyFocus(),intent:'event',title:name,kind:'protected'});return palSay(`Do you mean “${name}” as the title? Say yes or tell me the correct activity.`)}
     const trip=parseTravelIntent(text,nowRef.current)

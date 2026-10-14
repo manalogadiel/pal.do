@@ -98,11 +98,11 @@ export class WakeEngine {
   }
 
   /** Ready to catch "Hi {pal}" (when false, Whisper is the wake detector) */
-  get ready() { return !!this.clf && !this.failed }
+  get ready() { return !!this.clf }
 
   /** Mic audio, 16 kHz, -1..1, any frame size */
   push(frame: Float32Array, utteranceId = 0) {
-    if (this.failed) return
+    if (!this.clf) return
     this.frames.push(frame.slice())
     this.frameIds.push(utteranceId)
     this.queued += frame.length
@@ -113,7 +113,7 @@ export class WakeEngine {
 
   /** Tests: resolves once everything pushed so far has been scored */
   async idle() {
-    while (this.busy || (this.queued >= CHUNK && !this.failed)) await new Promise((r) => setTimeout(r, 1))
+    while (this.busy || (this.queued >= CHUNK && !!this.clf)) await new Promise((r) => setTimeout(r, 1))
   }
 
   /** Audio stopped and starts again (the mic was handed off): what's still in view is old, don't fire on it */
@@ -121,6 +121,9 @@ export class WakeEngine {
     this.frames = []
     this.frameIds = []
     this.queued = 0
+    this.steps = 0
+    this.msPerStep = 0
+    this.failed = false
     this.skip = Math.max(this.skip, EMBEDDINGS)
   }
 
@@ -151,12 +154,16 @@ export class WakeEngine {
         const ms = performance.now() - t0
         this.steps++
         this.msPerStep = this.steps === 1 ? ms : this.msPerStep * 0.95 + ms * 0.05
-        // Can't keep up with the mic (it would only ever hear old audio): Whisper listens for the name instead
-        if (this.steps > 60 && this.msPerStep > 70) throw new Error(`too slow here (${this.msPerStep.toFixed(0)} ms per 80 ms)`)
+        // If processing briefly falls behind (e.g. background tab or CPU spike), drop old backlog and reset timing rather than permanently dying
+        if (this.steps > 60 && this.msPerStep > 140) {
+          console.warn(`[wakeword] step lag (${this.msPerStep.toFixed(0)} ms), clearing backlog queue`)
+          this.reset()
+          break
+        }
       }
     } catch (err) {
-      this.failed = true
-      console.warn('[wakeword] stopped, Whisper takes over:', err)
+      console.warn('[wakeword] step issue, resetting queue:', err)
+      this.reset()
     } finally {
       this.busy = false
     }
