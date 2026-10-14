@@ -43,7 +43,8 @@ export interface HandsFreeOptions {
 
 const RATE = 16_000
 const MAX_SECONDS = 30
-const FOLLOW_UP_MS = 15_000
+/** Every time the mic opens for them (after "Hi {pal}", a question from Pal, a tap): nothing heard this long, it closes */
+const FOLLOW_UP_MS = 3_000
 
 let vad: MicVAD | null = null
 let worker: Worker | null = null
@@ -70,14 +71,26 @@ const waiting = new Map<number, (text: string) => void>()
 
 /** Silence that ends a clip: short while waiting for "Hi {pal}" (wakes fast), patient once it's listening to you */
 const WAKE_SILENCE_MS = 500
-/** Same as the app's SEND_AFTER_SILENCE_MS: 1s of quiet after their last words sends the request */
-const TALK_SILENCE_MS = 1000
+/** Same as the app's SEND_AFTER_SILENCE_MS: 2s of quiet after their last words sends the request (1s split
+ * "add gym tomorrow … at 5pm" in two and lost the second half) */
+const TALK_SILENCE_MS = 2000
 let awakeTimer: ReturnType<typeof setTimeout> | undefined
+/** The voice detector hears someone talking right now (between its speech start and end) */
+let userTalking = false
 const set = (s: HandsFreeState, info?: { progress?: number; error?: string; mic?: boolean; tap?: boolean }) => {
   if (vad && (s === 'awake') !== (state === 'awake')) vad.setOptions({ redemptionMs: s === 'awake' ? TALK_SILENCE_MS : WAKE_SILENCE_MS })
-  // "Hi Rei" and then nothing: the window closes after FOLLOW_UP_MS (and the app plays the mic-closed sound)
+  // "Hi Rei" and then nothing: the window closes after FOLLOW_UP_MS (and the app plays the mic-closed sound).
+  // Never while they're talking: speech that started inside the window keeps it open until it ends
   clearTimeout(awakeTimer)
-  if (s === 'awake') awakeTimer = setTimeout(() => { if (state === 'awake' && !handedOff && Date.now() >= followUntil) set('listening') }, FOLLOW_UP_MS + 200)
+  if (s === 'awake') {
+    const check = () => {
+      if (state !== 'awake' || handedOff) return
+      if (userTalking || Date.now() < followUntil) return void (awakeTimer = setTimeout(check, userTalking ? 300 : followUntil - Date.now() + 200))
+      if (opts?.oneShot) void stopHandsFree()
+      else set('listening')
+    }
+    awakeTimer = setTimeout(check, FOLLOW_UP_MS + 200)
+  }
   state = s
   opts?.onState(s, info)
 }
@@ -89,6 +102,7 @@ let handedOff = false
 export async function handOffListening() {
   if (!vad || handedOff) return
   handedOff = true
+  userTalking = false // the paused detector drops the clip without an end
   followUntil = 0
   await vad.pause().catch(() => {})
 }
@@ -410,7 +424,11 @@ export async function resumeAudio() {
   const ctx = audioContext()
   if (!ctx || ctx.state !== 'suspended') return
   await ctx.resume().catch(() => {})
-  if ((ctx.state as AudioContextState) === 'running' && state === 'loading') set(opts?.oneShot ? 'awake' : 'listening')
+  if ((ctx.state as AudioContextState) === 'running' && state === 'loading') {
+    // The tap-to-talk mic's 3 seconds start now that it can hear, not while it was loading
+    if (opts?.oneShot) followUntil = Date.now() + FOLLOW_UP_MS
+    set(opts?.oneShot ? 'awake' : 'listening')
+  }
 }
 
 /** A start still loading: a second start (the tap that turned it on + the "resume on first tap" one) joins it */
@@ -483,6 +501,7 @@ async function begin(o: HandsFreeOptions) {
         previewFrame(frame)
       },
       onSpeechStart: () => {
+        userTalking = true
         utteranceId++
         liveFrames = []
         // A wake the engine caught just before the voice detector noticed speech belongs to this utterance
@@ -495,8 +514,9 @@ async function begin(o: HandsFreeOptions) {
         startedSpeaking = speaking
         if (!speaking && opts) set(recordingFollowUp && !wakeClipPending ? 'awake' : 'listening')
       },
-      onVADMisfire: () => { lastEndedUtteranceId = utteranceId; liveFrames = null; opts?.onPreview?.(''); opts?.onSpeech?.(false); if (wakeClipPending && opts) finishWakeClip(opts) },
+      onVADMisfire: () => { userTalking = false; lastEndedUtteranceId = utteranceId; liveFrames = null; opts?.onPreview?.(''); opts?.onSpeech?.(false); if (wakeClipPending && opts) finishWakeClip(opts) },
       onSpeechEnd: (audio: Float32Array) => {
+        userTalking = false
         if (import.meta.env.DEV) console.info(`[hf] utterance ended (${(audio.length / RATE).toFixed(1)}s)`)
         lastEndedUtteranceId = utteranceId
         liveFrames = null
@@ -529,6 +549,7 @@ async function begin(o: HandsFreeOptions) {
     // Started without a tap (on load): the browser may hold the audio until the first one
     if (audioContext()?.state === 'suspended') return set('loading', { tap: true })
     // The newest start's settings win (it may have joined while this one loaded)
+    if (opts.oneShot) followUntil = Date.now() + FOLLOW_UP_MS
     set(opts.oneShot ? 'awake' : 'listening')
   } catch (err) {
     const e = err as Error & { name?: string }
@@ -542,6 +563,7 @@ export async function stopHandsFree(report = true) {
   vad = null
   handedOff = false
   followUntil = 0
+  userTalking = false
   clearTimeout(awakeTimer)
   engine?.dispose()
   engine = null

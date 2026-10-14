@@ -25,7 +25,7 @@
     "@ricky0123/vad-web": "0.0.31",
     "kokoro-js": "^1.2.1",
     "mammoth": "^1.13.0",
-    "msedge-tts": "2.0.8",
+    "msedge-tts": "2.1.0",
     "pdfjs-dist": "6.3.289",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

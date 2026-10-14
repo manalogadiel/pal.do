@@ -58,8 +58,11 @@ const KEY = 'paldo-v1'
 const QUIET: [number, number] = [23, 7]
 const MAX_CHECKINS = 3
 /** Talking to Pal: the request is sent after this much quiet following their last words (every mic path) */
-const SEND_AFTER_SILENCE_MS = 1000
-const NOTHING_SAID_MS = 8000
+const SEND_AFTER_SILENCE_MS = 2000
+/** The mic just opened and nothing's been heard yet: it closes after this */
+const NOTHING_SAID_MS = 3000
+/** A voice was heard but no words have arrived yet (the recognizer lags about a second behind) */
+const WORDS_PENDING_MS = 4000
 const MAX_TALK_MS = 30_000
 const VOICE_PITCH: Record<PalId, number> = { rei: 1.1, diel: 0.9, jhyvie: 1.3, jaypee: 1.05 }
 
@@ -1916,6 +1919,7 @@ export default function App() {
       // The app decides when they're done (SEND_AFTER_SILENCE_MS of no new words), not Chrome: it sent mid-sentence
       r.continuous = true
       const quiet = endAfterSilence(r)
+      r.onspeechstart = () => quiet.speaking()
       let final = ''
       let transcript = ''
       let retried = false
@@ -1984,15 +1988,18 @@ export default function App() {
   }
   /**
    * A recognizer left running (continuous) until they've been quiet SEND_AFTER_SILENCE_MS after their last words,
-   * NOTHING_SAID_MS if they never start, MAX_TALK_MS at most. heard(): new words came in.
+   * NOTHING_SAID_MS if they never start, MAX_TALK_MS at most. speaking(): a voice was detected. heard(): new words came in.
    */
   function endAfterSilence(r: { stop: () => void }) {
     let timer: ReturnType<typeof setTimeout> | undefined
     let cap: ReturnType<typeof setTimeout> | undefined
     const wait = (ms: number) => { clearTimeout(timer); timer = setTimeout(() => { try { r.stop() } catch {} }, ms) }
+    let words = false
     return {
       started: () => { wait(NOTHING_SAID_MS); cap = setTimeout(() => { try { r.stop() } catch {} }, MAX_TALK_MS) },
-      heard: () => wait(SEND_AFTER_SILENCE_MS),
+      // They started talking inside the 3 seconds: don't close on them while their first words are on the way
+      speaking: () => { if (!words) wait(WORDS_PENDING_MS) },
+      heard: () => { words = true; wait(SEND_AFTER_SILENCE_MS) },
       done: () => { clearTimeout(timer); clearTimeout(cap) },
     }
   }
@@ -2040,6 +2047,7 @@ export default function App() {
     r.interimResults = true
     r.continuous = true
     const quiet = endAfterSilence(r)
+    r.onspeechstart = () => quiet.speaking()
     let final = ''
     let transcript = ''
     r.onresult = (e: any) => {

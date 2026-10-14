@@ -33,8 +33,8 @@ importers:
         specifier: ^1.13.0
         version: 1.13.0
       msedge-tts:
-        specifier: 2.0.8
-        version: 2.0.8
+        specifier: 2.1.0
+        version: 2.1.0(debug@4.4.3)
       pdfjs-dist:
         specifier: 6.3.289
         version: 6.3.289
@@ -1174,8 +1174,8 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  msedge-tts@2.0.8:
-    resolution: {integrity: sha512-OSQVLzrRMWKpJWfdVuPV7Ph1voh7fh3yBKM7qCIWXglrlVOO8fe8LzOBzlzVvu5eYPESMKOTofbgFb459v+euA==}
+  msedge-tts@2.1.0:
+    resolution: {integrity: sha512-eHvM/8ymTQzYuF65NuEkWBNUm+d36t97xlx2dnY7UyRd0AuJ7yEj0oSginJZarTF3VTCzx9ux5cdf2Lj9TXZxA==}
     engines: {node: '>=16.0.0'}
 
   nanoid@3.3.19:
@@ -2081,9 +2081,9 @@ snapshots:
 
   at-least-node@1.0.0: {}
 
-  axios@1.20.0:
+  axios@1.20.0(debug@4.4.3):
     dependencies:
-      follow-redirects: 1.16.1
+      follow-redirects: 1.16.1(debug@4.4.3)
       form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
@@ -2229,7 +2229,9 @@ snapshots:
 
   flatbuffers@25.9.23: {}
 
-  follow-redirects@1.16.1: {}
+  follow-redirects@1.16.1(debug@4.4.3):
+    optionalDependencies:
+      debug: 4.4.3
 
   form-data@4.0.6:
     dependencies:
@@ -2474,9 +2476,9 @@ snapshots:
 
   ms@2.1.3: {}
 
-  msedge-tts@2.0.8:
+  msedge-tts@2.1.0(debug@4.4.3):
     dependencies:
-      axios: 1.20.0
+      axios: 1.20.0(debug@4.4.3)
       buffer: 6.0.3
       isomorphic-ws: 5.0.0(ws@8.22.0)
       stream-browserify: 3.0.0

@@ -1,5 +1,6 @@
 import {maps} from './api/_lib/maps'
 import {scheduleExtract} from './api/_lib/schedule-extract'
+import { OPTIONS as ttsOptions, POST as ttsPost } from './api/tts'
 import {MAX_SCHEDULE_REQUEST} from './src/lib/schedule-source'
 import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -27,6 +28,34 @@ function crossOriginIsolation(): Plugin {
 }
 
 function localMaps():Plugin{return{name:'local-maps',configureServer(server){server.middlewares.use('/api/maps',async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const request=new Request('http://localhost:8443/api/maps',{method:req.method,headers:{'Content-Type':'application/json'},...(req.method==='POST'?{body:Buffer.concat(chunks).toString()}: {})});const result=await maps(request);res.statusCode=result.status;result.headers.forEach((v,k)=>res.setHeader(k,v));res.end(await result.text())})}}}
+
+/**
+ * Pal's Edge voice on the dev server too: /tts runs the same function the deployed site uses (api/tts.ts), so the
+ * voice is on by default with nothing else to start
+ */
+function localTts(): Plugin {
+  return {
+    name: 'local-edge-tts',
+    configureServer(server) {
+      server.middlewares.use('/tts', async (req, res, next) => {
+        if (req.method !== 'POST' && req.method !== 'OPTIONS') return next()
+        try {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(Buffer.from(chunk))
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (req.headers.origin) headers.Origin = req.headers.origin
+          const request = new Request(`http://${req.headers.host}/tts`, { method: req.method, headers, ...(req.method === 'POST' ? { body: Buffer.concat(chunks).toString() } : {}) })
+          const result = await (req.method === 'POST' ? ttsPost(request) : ttsOptions(request))
+          res.statusCode = result.status
+          result.headers.forEach((v, k) => res.setHeader(k, v))
+          res.end(Buffer.from(await result.arrayBuffer()))
+        } catch (err) {
+          next(err)
+        }
+      })
+    },
+  }
+}
 
 function localScheduleExtraction(key: string): Plugin {
   const configure = (server: Pick<ViteDevServer, 'middlewares'>) => {
@@ -68,6 +97,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       crossOriginIsolation(),
       localMaps(),
+      localTts(),
       localScheduleExtraction(process.env.GEMINI_API_KEY ?? serverEnv.GEMINI_API_KEY ?? ''),
       react(),
       tailwindcss(),
@@ -90,7 +120,6 @@ export default defineConfig(({ mode }) => {
     worker: { format: 'es' },
     optimizeDeps: { exclude: ['kokoro-js', 'kokoro-web'] },
     server: {
-      proxy: { '/tts': { target: 'http://127.0.0.1:8788', changeOrigin: false } },
       headers: ISOLATION_HEADERS,
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
@@ -115,10 +144,11 @@ export default defineConfig(({ mode }) => {
 
 /**
  * Builds ship only the voice files the app loads from its own server: the voice detector (vad/), the wake-word
- * engine (wakeword/, ~6 MB) and the ONNX runtime (kokoro/ort/). Whisper downloads from Hugging Face the first time
- * hands-free is turned on (stt.worker.ts falls back to it), and the Kokoro speech model was never used for
- * speaking: leaving them out keeps ~165 MB off every deploy and APK. The bundler's second copy of the ONNX runtime is never loaded either (paths point at kokoro/ort/).
- * The dev server still serves all of public/, so the voice self-test keeps working.
+ * engine (wakeword/, ~6 MB), the ONNX runtime (kokoro/ort/) and, on the web, Whisper (whisper/, 76 MB): fetched from
+ * Hugging Face instead it took minutes ("Getting ready… 15%") where the dev server loads it in seconds. The Android
+ * app leaves Whisper out to stay small and downloads it the first time (stt.worker.ts falls back to Hugging Face).
+ * The Kokoro speech model was never used for speaking, and the bundler's second copy of the ONNX runtime is never
+ * loaded either (paths point at kokoro/ort/). The dev server still serves all of public/.
  */
 function pruneUnusedModels(outDir: string): Plugin {
   return {
@@ -126,7 +156,7 @@ function pruneUnusedModels(outDir: string): Plugin {
     apply: 'build',
     closeBundle() {
       const out = path.resolve(configDirectory, outDir)
-      for (const dir of ['whisper', 'kokoro/models', 'kokoro/voices']) fs.rmSync(path.join(out, dir), { recursive: true, force: true })
+      for (const dir of [...(outDir === 'dist-android' ? ['whisper'] : []), 'kokoro/models', 'kokoro/voices']) fs.rmSync(path.join(out, dir), { recursive: true, force: true })
       const assets = path.join(out, 'assets')
       if (fs.existsSync(assets)) for (const f of fs.readdirSync(assets)) if (/^ort-wasm.*\.wasm$/.test(f)) fs.rmSync(path.join(assets, f))
     },
