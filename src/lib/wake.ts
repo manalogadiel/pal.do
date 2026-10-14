@@ -139,7 +139,7 @@ export function matchWake(heard: string, pal: PalId, userName?: string): { comma
     // Whisper glues or clips the greeting: "Hirei, add gym", "Heyray", "I, Ray. Set a timer". Only a known
     // spelling counts here, never a sound-alike, so ordinary sentences starting with "I" don't wake Pal
     const alt = (list: string[]) => list.map((n) => n.replace(/ /g, String.raw`\s*`)).join('|')
-    const glued = new RegExp(String.raw`^${FILLER}(?:hi|hey|hai|oy|uy)\s?(${alt(names)})(?:\s+|$)(.*)$`).exec(text)
+    const glued = new RegExp(String.raw`^${FILLER}(?:hi|hey|hai|hy|oy|uy)\s?(${alt(names)})(?:\s+|$)(.*)$`).exec(text)
       // A bare "I" only with a real spelling: "I deal with it" is not "Hi Diel"
       // ("I, Ray." with its comma is how Whisper writes a clipped "Hi Rei", so then any spelling counts)
       ?? new RegExp(String.raw`^${FILLER}i\s(${alt(/^\W*i\s*,/i.test(heard) ? names : names.filter((n) => !EVERYDAY.has(n)))})(?:\s+|$)(.*)$`).exec(text)

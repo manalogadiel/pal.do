@@ -84,7 +84,10 @@ export async function POST(req: Request) {
     const audio = await Promise.race([synthesize(pal, text.trim()), new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS))])
     // Never log spoken content
     return new Response(new Uint8Array(audio), { status: 200, headers: headers(req, { 'Content-Type': 'audio/mpeg' }) })
-  } catch {
-    return fail(req, 502, 'Speech unavailable')
+  } catch (err) {
+    // What went wrong (never what was being said), so a failure on the server can be traced
+    const e = err as Error
+    console.error('[tts]', e?.name, e?.message)
+    return new Response(JSON.stringify({ error: 'Speech unavailable', detail: String(e?.message ?? e).slice(0, 120) }), { status: 502, headers: headers(req, { 'Content-Type': 'application/json' }) })
   }
 }
