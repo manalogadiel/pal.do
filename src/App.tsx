@@ -2310,6 +2310,9 @@ export default function App() {
         onResumeSession={studyResume}
         onStopSession={() => studyStop(false)}
         onOpenApp={() => {
+          try {
+            window.focus()
+          } catch {}
           if (pipWindow) {
             pipWindow.close()
           }
