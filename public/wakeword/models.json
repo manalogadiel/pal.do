@@ -1,6 +1,6 @@
 {
   "rei": {
-    "threshold": 0.995
+    "threshold": 0.45
   },
   "diel": {
     "threshold": 0.3

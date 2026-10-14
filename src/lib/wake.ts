@@ -3,7 +3,7 @@
 // plus a one-letter-off match. A greeting is required: a name said on its own in the room doesn't wake Pal.
 import type { PalId } from './core'
 
-const GREETING = String.raw`(?:hi|hii+|hey|hay|hai|hello|helo|hallo|uy|oy|hoy|ok|okay)`
+const GREETING = String.raw`(?:hi|hii+|hey|hay|hai|hello|helo|hallo|uy|oy|hoy|ok|okay|what'?s\s+up|whats\s+up|sup|yo)`
 const FILLER = String.raw`(?:(?:uh|um|uhm|ah|eh|oh|so)\s+)?`
 
 const NAMES: Record<PalId, string[]> = {
@@ -11,7 +11,7 @@ const NAMES: Record<PalId, string[]> = {
   // spoken wake clips
   jhyvie: ['jhyvie', 'jhyvee', 'jhivie', 'jivie', 'jivi', 'jivee', 'jivy', 'jiv', 'jibi', 'jaivee', 'jayvee', 'jayvie', 'jaybee', 'jay vee', 'jay v', 'j v', 'jv', 'javi', 'javee', 'jeevie', 'jeevee', 'chivi', 'gv', 'jhy', 'tv', 't v', 'g v', 'gb'],
   jaypee: ['jaypee', 'jay pee', 'jaypi', 'jaipee', 'jeypee', 'jeepee', 'jay p', 'j p', 'jp', 'gp', 'g p', 'jrp'],
-  rei: ['rei', 'ray', 'rey', 'rae', 'raye', 'reh', 'wray', 're'],
+  rei: ['rei', 'ray', 'rey', 'rae', 'raye', 'reh', 'wray', 're', 'highway', 'high ray', 'hi way', 'way', 'rye'],
   diel: ['diel', 'deal', 'dial', 'deel', 'dyel', 'diehl', 'dil', 'dale', 'dell', 'deil', 'dl', 'd l', 'dee yell', 'gel', 'jel', 'jell'],
 }
 
@@ -125,6 +125,12 @@ export function matchWake(heard: string, pal: PalId, userName?: string): { comma
   // Measured clipped transcription of "Hi Jhyvie"; only at the start of spoken input.
   if (pal === 'jhyvie' && !['igb', 'i gb'].includes(user)) {
     const clipped = /^i\s*gb(?:\s+|$)(.*)$/.exec(text)
+    if (clipped) return { command: clipped[1].trim() }
+  }
+  // Measured clipped transcription of "Hi Rei" by Whisper when said fast (e.g. "highway", "Hi, how are you")
+  if (pal === 'rei') {
+    const clipped = /^(?:highway|hi\s*way|high\s*way)(?:\s+|$)(.*)$/.exec(text)
+      ?? /^(?:hi|hey)\s+(how\s+are\s+you.*)$/.exec(text)
     if (clipped) return { command: clipped[1].trim() }
   }
   const names = NAMES[pal].filter((n) => n !== user).sort((a, b) => b.length - a.length)
